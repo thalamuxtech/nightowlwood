@@ -136,6 +136,26 @@ body {
   transform-origin: left;
 }
 
+/* Slow-flowing brass hairline (footer separators) */
+.hairline-shimmer {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgb(42 33 26 / 0.6) 0%,
+    rgb(42 33 26 / 0.6) 35%,
+    rgb(201 143 67 / 0.7) 50%,
+    rgb(42 33 26 / 0.6) 65%,
+    rgb(42 33 26 / 0.6) 100%
+  );
+  background-size: 220% 100%;
+  animation: hairline-slide 9s linear infinite;
+}
+
+@keyframes hairline-slide {
+  from { background-position: 220% 0; }
+  to { background-position: -220% 0; }
+}
+
 /* Procedural wood-grain panel texture (theme-matched, zero external assets) */
 .bg-woodgrain {
   position: relative;

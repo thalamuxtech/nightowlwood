@@ -114,7 +114,8 @@ export function Footer() {
         </div>
       </div>
 
-      <div className="border-t border-night-700/60">
+      <div aria-hidden className="hairline-shimmer" />
+      <div>
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-5 py-5 text-xs text-cream-500 sm:flex-row sm:px-8">
           <p>
             © {new Date().getFullYear()} {SITE.name}. All rights reserved.
