@@ -41,7 +41,7 @@ export function ImageSlider({ images, alt, interval = 4500, className = "" }: Im
           <motion.img
             key={images[index]}
             src={images[index]}
-            alt={`${alt} — image ${index + 1} of ${images.length}`}
+            alt={`${alt}, image ${index + 1} of ${images.length}`}
             initial={{ opacity: 0, scale: 1.04 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}

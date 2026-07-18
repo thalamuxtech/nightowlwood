@@ -78,7 +78,7 @@ export default function SubscribersAdminPage() {
               <div className="min-w-0">
                 <p className="truncate text-cream-100">{sub.email}</p>
                 <p className="text-xs text-cream-500">
-                  {sub.createdAt?.toDate?.().toLocaleDateString() ?? "—"}
+                  {sub.createdAt?.toDate?.().toLocaleDateString() ?? "-"}
                 </p>
               </div>
               <button

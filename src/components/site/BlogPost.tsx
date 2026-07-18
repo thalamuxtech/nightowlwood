@@ -30,7 +30,7 @@ export function BlogPost() {
         if (snap.exists() && snap.data().published) {
           const data = { id: snap.id, ...snap.data() } as Post;
           setPost(data);
-          document.title = `${data.title} — Nightowl Woodworks`;
+          document.title = `${data.title} | Nightowl Woodworks`;
           setState("ready");
         } else {
           setState("missing");
@@ -117,7 +117,7 @@ export function BlogPost() {
         whileInView={{ opacity: 1 }}
         viewport={{ once: true }}
         transition={{ duration: 0.8 }}
-        className="mt-14 rounded-2xl border border-brass-500/30 bg-night-800/50 p-8 text-center"
+        className="glass mt-14 rounded-3xl !border-brass-500/30 p-8 text-center"
       >
         <h2 className="font-display text-2xl text-cream-50">Planning a project?</h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-cream-400">

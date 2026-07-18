@@ -49,7 +49,7 @@ export function BlogList() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}
               transition={{ duration: 0.7, delay: (i % 3) * 0.08, ease: EASE }}
-              className="group flex flex-col overflow-hidden rounded-2xl border border-night-700/70 bg-night-800/40 transition-all duration-400 hover:-translate-y-1.5 hover:border-brass-500/50 hover:shadow-glow"
+              className="glass group flex flex-col overflow-hidden rounded-3xl transition-all duration-400 hover:-translate-y-1.5 hover:shadow-glow"
             >
               <Link href={`/blog/post/?s=${encodeURIComponent(post.id)}`} className="flex h-full flex-col">
                 {post.images.length > 0 && (
@@ -100,7 +100,7 @@ function SkeletonGrid() {
   return (
     <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3" aria-label="Loading posts" role="status">
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="animate-pulse overflow-hidden rounded-2xl border border-night-700/70">
+        <div key={i} className="glass animate-pulse overflow-hidden rounded-3xl">
           <div className="aspect-[16/9] bg-night-800" />
           <div className="space-y-3 p-6">
             <div className="h-3 w-24 rounded bg-night-700" />

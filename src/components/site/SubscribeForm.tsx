@@ -48,7 +48,7 @@ export function SubscribeForm() {
             className="flex items-center gap-2 text-sm text-emerald-400"
             role="status"
           >
-            <CheckCircle2 size={16} /> You&apos;re subscribed — welcome aboard.
+            <CheckCircle2 size={16} /> You&apos;re subscribed. Welcome aboard.
           </motion.p>
         ) : (
           <motion.form

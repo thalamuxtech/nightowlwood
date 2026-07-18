@@ -149,11 +149,11 @@ export function RecordsBoard({
                 </td>
                 {columns.map((c) => (
                   <td key={c.key} className="max-w-52 truncate px-6 py-4 text-cream-300">
-                    {String(record[c.key] ?? "—")}
+                    {String(record[c.key] ?? "-")}
                   </td>
                 ))}
                 <td className="px-6 py-4 text-cream-400">
-                  {record.createdAt?.toDate?.().toLocaleDateString() ?? "—"}
+                  {record.createdAt?.toDate?.().toLocaleDateString() ?? "-"}
                 </td>
                 <td className="px-6 py-4">
                   <span
@@ -246,7 +246,7 @@ export function RecordsBoard({
                     <div key={f.key}>
                       <dt className="text-xs uppercase tracking-wider text-cream-500">{f.label}</dt>
                       <dd className="mt-1 whitespace-pre-wrap text-cream-100">
-                        {String(selected[f.key] ?? "—")}
+                        {String(selected[f.key] ?? "-")}
                       </dd>
                     </div>
                   ))}

@@ -62,7 +62,7 @@ export function QuoteForm() {
             key="success"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="flex min-h-[420px] flex-col items-center justify-center rounded-2xl border border-brass-500/40 bg-night-800/50 p-10 text-center"
+            className="glass flex min-h-[420px] flex-col items-center justify-center rounded-3xl !border-brass-500/40 p-10 text-center"
             role="status"
           >
             <motion.span
@@ -74,7 +74,7 @@ export function QuoteForm() {
             </motion.span>
             <h2 className="mt-6 font-display text-3xl text-cream-50">Request received</h2>
             <p className="mt-3 max-w-md text-cream-300">
-              Thank you — your project details are with our team. We&apos;ll get back to
+              Thank you. Your project details are with our team. We&apos;ll get back to
               you shortly, usually within one business day.
             </p>
             <button
@@ -146,7 +146,7 @@ export function QuoteForm() {
                   required
                   rows={6}
                   className={inputCls}
-                  placeholder="Dimensions, materials, quantities, timeline — or paste your cutting list."
+                  placeholder="Dimensions, materials, quantities, timeline, or paste your cutting list."
                 />
               </div>
               {/* Honeypot */}

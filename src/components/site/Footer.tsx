@@ -8,14 +8,16 @@ import { GrainDivider } from "./GrainDivider";
 
 export function Footer() {
   return (
-    <footer className="bg-woodgrain relative bg-night-900">
+    <footer className="bg-woodplanks relative">
       <GrainDivider />
       <div className="mx-auto grid max-w-7xl gap-12 px-5 pb-10 pt-14 sm:px-8 md:grid-cols-3">
         <div>
           <div className="flex items-center gap-3 text-brass-400">
             <OwlMark size={52} animate={false} />
             <div className="leading-tight">
-              <p className="font-display text-xl text-cream-100">Nightowl</p>
+              <p className="text-wood3d font-display text-2xl font-semibold tracking-wide">
+                Nightowl
+              </p>
               <p className="text-[0.65rem] uppercase tracking-[0.34em] text-cream-400">
                 Woodworks Ltd
               </p>

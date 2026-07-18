@@ -10,7 +10,7 @@ import { Reveal } from "@/components/motion/Reveal";
 import { GrainDivider } from "@/components/site/GrainDivider";
 
 export const metadata: Metadata = {
-  title: "About — A Modern Wood Processing Company",
+  title: "About | A Modern Wood Processing Company",
   description:
     "Nightowl Woodworks Ltd combines modern machinery with skilled craftsmanship to deliver precision wood processing for construction and interior projects in Nigeria.",
 };
@@ -20,7 +20,7 @@ export default function AboutPage() {
     <SiteShell>
       <PageHero
         eyebrow="About us"
-        title="Modern machinery. Skilled hands. One standard."
+        title="Modern machinery and skilled hands"
         intro={ABOUT.paragraphs[0]}
         image="/images/factory.jpg"
         imageAlt="Inside the Nightowl Woodworks production facility"
@@ -37,7 +37,7 @@ export default function AboutPage() {
             {ABOUT.pillars.map((pillar) => (
               <li
                 key={pillar}
-                className="flex flex-col items-center gap-2 rounded-2xl border border-night-700/60 bg-night-800/40 p-5 text-center"
+                className="glass flex flex-col items-center gap-2 rounded-3xl p-5 text-center"
               >
                 <CheckCircle2 size={20} className="text-brass-500" />
                 <span className="text-sm font-medium text-cream-200">{pillar}</span>
@@ -51,14 +51,14 @@ export default function AboutPage() {
       <section className="bg-night-900 py-20 lg:py-28">
         <div className="mx-auto grid max-w-6xl gap-8 px-5 sm:px-8 md:grid-cols-2">
           <Reveal>
-            <div className="h-full rounded-2xl border border-night-700/70 bg-night-800/50 p-9">
+            <div className="glass h-full rounded-3xl p-9">
               <Compass size={32} className="text-brass-400" aria-hidden />
               <h2 className="mt-5 font-display text-2xl text-cream-50">Our Vision</h2>
               <p className="mt-4 leading-relaxed text-cream-300">{ABOUT.vision}</p>
             </div>
           </Reveal>
           <Reveal delay={0.12}>
-            <div className="h-full rounded-2xl border border-night-700/70 bg-night-800/50 p-9">
+            <div className="glass h-full rounded-3xl p-9">
               <Target size={32} className="text-brass-400" aria-hidden />
               <h2 className="mt-5 font-display text-2xl text-cream-50">Our Mission</h2>
               <p className="mt-4 leading-relaxed text-cream-300">{ABOUT.mission}</p>
@@ -80,7 +80,7 @@ export default function AboutPage() {
           ))}
         </div>
         <Reveal className="order-1 lg:order-2">
-          <div className="relative overflow-hidden rounded-2xl shadow-card">
+          <div className="relative overflow-hidden rounded-3xl shadow-card">
             <Image
               src="/images/team.jpg"
               alt="The Nightowl Woodworks team at the production facility"
@@ -124,7 +124,7 @@ export default function AboutPage() {
             <div className="grid grid-cols-2 gap-4">
               {AWARD.images.map((img, i) => (
                 <Reveal key={img.src} delay={i * 0.08}>
-                  <div className="relative aspect-square overflow-hidden rounded-2xl shadow-card">
+                  <div className="relative aspect-square overflow-hidden rounded-3xl shadow-card">
                     <Image
                       src={img.src}
                       alt={img.alt}

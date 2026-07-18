@@ -258,6 +258,30 @@ body {
   -webkit-text-stroke: 1px rgb(201 143 67 / 0.18);
 }
 
+/* Realistic 3D wood text: real walnut texture clipped into the letters,
+   with stacked shadows that read as end-grain extrusion. */
+.text-wood3d {
+  background-image:
+    linear-gradient(to bottom, rgb(255 244 220 / 0.28), rgb(0 0 0 / 0.28)),
+    url("/images/wood-texture.jpg");
+  background-size: cover, 420px auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter:
+    drop-shadow(0 1px 0 #2a1c10)
+    drop-shadow(0 2px 0 #1c130b)
+    drop-shadow(0 6px 10px rgb(0 0 0 / 0.65));
+}
+
+/* Graceful fallback where background-clip: text is unsupported */
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .text-wood3d {
+    background: none;
+    color: var(--color-brass-400);
+  }
+}
+
 /* Brass end-grain ring accent (for numbered steps) */
 .ring-endgrain {
   background:

@@ -70,8 +70,8 @@ export default function WorkManagerPage() {
         <div>
           <h1 className="font-display text-3xl text-cream-50">Work Items</h1>
           <p className="mt-1 text-sm text-cream-500">
-            Everything on the public “Our Work” gallery — add, edit, reorder,
-            publish/hide, or delete.
+            Everything on the public “Our Work” gallery. Add, edit, reorder,
+            publish, hide, or delete.
           </p>
         </div>
         <button
@@ -86,7 +86,7 @@ export default function WorkManagerPage() {
         {loading && <p className="text-sm text-cream-500">Loading…</p>}
         {!loading && items.length === 0 && (
           <p className="rounded-2xl border border-dashed border-night-600 p-8 text-sm text-cream-500 sm:col-span-2 lg:col-span-3">
-            No work items yet — add your first project photo.
+            No work items yet. Add your first project photo.
           </p>
         )}
         {items.map((item, index) => (

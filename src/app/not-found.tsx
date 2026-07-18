@@ -11,7 +11,7 @@ export default function NotFound() {
         </span>
         <h1 className="text-title mt-8 text-cream-50">This page flew off</h1>
         <p className="mt-4 max-w-md text-cream-400">
-          The page you&apos;re looking for doesn&apos;t exist — but the workshop is
+          The page you&apos;re looking for doesn&apos;t exist, but the workshop is
           still open.
         </p>
         <Link

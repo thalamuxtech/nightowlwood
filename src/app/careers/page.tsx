@@ -7,9 +7,9 @@ import { Reveal } from "@/components/motion/Reveal";
 import { InternshipForm } from "@/components/site/InternshipForm";
 
 export const metadata: Metadata = {
-  title: "Internships & Careers — Learn Precision Woodworking",
+  title: "Internships & Careers | Learn Precision Woodworking",
   description:
-    "Join the Nightowl Woodworks internship programme — hands-on training in precision cutting, fabrication, finishing, and design on real client projects.",
+    "Join the Nightowl Woodworks internship programme for hands-on training in precision cutting, fabrication, finishing, and design on real client projects.",
 };
 
 const ICONS = [Wrench, GraduationCap, Users];
@@ -19,7 +19,7 @@ export default function CareersPage() {
     <SiteShell>
       <PageHero
         eyebrow="Internships & careers"
-        title="Learn the craft. On real machines. On real projects."
+        title="Learn the craft on real machines and real projects"
         intro={CAREERS.intro}
         image="/images/team.jpg"
         imageAlt="The Nightowl Woodworks team at work in the factory"
@@ -31,7 +31,7 @@ export default function CareersPage() {
             const Icon = ICONS[i % ICONS.length];
             return (
               <Reveal key={point.title} delay={i * 0.1}>
-                <div className="h-full rounded-2xl border border-night-700/70 bg-night-800/50 p-8 transition-colors duration-300 hover:border-brass-500/40">
+                <div className="glass h-full rounded-3xl p-8 transition-all duration-300 hover:shadow-glow">
                   <Icon size={30} className="text-brass-400" aria-hidden />
                   <h2 className="mt-4 font-display text-xl text-cream-50">{point.title}</h2>
                   <p className="mt-2 text-sm leading-relaxed text-cream-400">{point.description}</p>

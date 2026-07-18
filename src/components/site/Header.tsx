@@ -42,7 +42,7 @@ export function Header() {
           <Link
             href="/"
             className="flex items-center gap-3 text-cream-100 transition-colors duration-300 hover:text-brass-400"
-            aria-label={`${SITE.shortName} — home`}
+            aria-label={`${SITE.shortName} home`}
             onClick={() => setOpen(false)}
           >
             <span className="text-brass-400">
@@ -124,7 +124,7 @@ export function Header() {
               transition={{ delay: 0.5 }}
               className="mt-12 space-y-1 text-sm text-cream-400"
             >
-              <p>{SITE.name} — {SITE.location}</p>
+              <p>{SITE.name}, {SITE.location}</p>
               <a
                 href={SITE.whatsappHref}
                 target="_blank"

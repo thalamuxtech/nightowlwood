@@ -52,7 +52,7 @@ export function GeneralContactForm() {
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="flex min-h-[380px] flex-col items-center justify-center rounded-2xl border border-brass-500/40 bg-night-800/50 p-10 text-center"
+        className="glass flex min-h-[380px] flex-col items-center justify-center rounded-3xl !border-brass-500/40 p-10 text-center"
         role="status"
       >
         <motion.span
@@ -64,7 +64,7 @@ export function GeneralContactForm() {
         </motion.span>
         <h2 className="mt-6 font-display text-3xl text-cream-50">Message received</h2>
         <p className="mt-3 max-w-md text-cream-300">
-          Thanks for reaching out — we&apos;ll reply shortly.
+          Thanks for reaching out. We&apos;ll reply shortly.
         </p>
         <button
           onClick={() => setState("idle")}

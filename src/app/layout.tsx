@@ -19,8 +19,8 @@ const jost = Jost({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
   title: {
-    default: `${SITE.name} — Heirloom Custom Woodworking in Louisville, KY`,
-    template: `%s — ${SITE.name}`,
+    default: `${SITE.name} | Precision Wood Processing in Nigeria`,
+    template: `%s | ${SITE.name}`,
   },
   description: SITE.description,
   openGraph: {

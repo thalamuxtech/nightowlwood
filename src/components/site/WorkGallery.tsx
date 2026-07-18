@@ -104,7 +104,7 @@ export function WorkGallery() {
               exit={{ opacity: 0, scale: 0.94 }}
               transition={{ duration: 0.5, ease: EASE }}
               onClick={() => setActive(i)}
-              className="group relative aspect-[4/3] cursor-pointer overflow-hidden rounded-2xl text-left shadow-card"
+              className="group relative aspect-[4/3] cursor-pointer overflow-hidden rounded-3xl text-left shadow-card"
               aria-label={`Open ${item.title}`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}

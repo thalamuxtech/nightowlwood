@@ -47,7 +47,7 @@ export const CAREERS = {
     {
       title: "Learn on real projects",
       description:
-        "No simulations — you work on live orders for real clients, from cutting lists to installed interiors.",
+        "You work on live orders for real clients, from cutting lists to installed interiors.",
     },
     {
       title: "Modern equipment",
@@ -71,12 +71,12 @@ export const STATS = [
 export const ABOUT = {
   paragraphs: [
     "Nightowl Woodworks Ltd is a modern woodworking and fabrication company focused on precision board processing and high-quality wood components for construction and interior projects.",
-    "We specialise in accurate cutting, edge banding, and custom fabrication — supporting contractors, developers, and furniture professionals with reliable, production-ready solutions.",
+    "We specialise in accurate cutting, edge banding, and custom fabrication. We support contractors, developers, and furniture professionals with reliable, production-ready solutions.",
     "With a commitment to efficiency, quality, and attention to detail, every project meets industry standards while helping our clients achieve seamless installation and outstanding finishes.",
   ],
   pillars: ["Precision Cutting", "Modern Equipment", "Skilled Team", "On-Time Delivery"],
   vision:
-    "To be a leading and trusted name in wood processing and fabrication — known for consistent quality, precision, and reliability in every project we undertake.",
+    "To be a leading and trusted name in wood processing and fabrication, known for consistent quality, precision, and reliability in every project we undertake.",
   mission:
     "To provide high-quality cutting, edge banding, and fabrication services using modern equipment and skilled professionals, ensuring efficiency, accuracy, and timely delivery for every client.",
 };
@@ -92,7 +92,7 @@ export const SERVICES: Service[] = [
     key: "cutting",
     title: "Precision Cutting",
     description:
-      "Accurate cutting of MDF, plywood, and boards on high-precision sliding table saws — clean edges, exact dimensions, every time.",
+      "Accurate cutting of MDF, plywood, and boards on our sliding table saw, with clean edges and exact dimensions.",
   },
   {
     key: "edging",
@@ -104,25 +104,25 @@ export const SERVICES: Service[] = [
     key: "fabrication",
     title: "Fabrication",
     description:
-      "Production of custom cabinets, panels, and furniture components — built to specification and ready for installation.",
+      "Production of custom cabinets, panels, and furniture components, built to your specification and ready for installation.",
   },
   {
     key: "custom",
     title: "Custom Processing",
     description:
-      "Tailored solutions from your technical drawings and specifications, machined to tolerance for seamless assembly.",
+      "Tailored work from your technical drawings and specifications, machined to tolerance so assembly goes smoothly.",
   },
   {
     key: "delivery",
     title: "Delivery",
     description:
-      "Reliable, on-schedule delivery that keeps your site moving — no delays, no excuses.",
+      "Reliable delivery that arrives when we said it would, so your site keeps moving.",
   },
   {
     key: "advisory",
     title: "Technical Advisory",
     description:
-      "Professional guidance on materials, design optimisation, and production efficiency before a single board is cut.",
+      "Professional guidance on materials, design, and production efficiency before any board is cut.",
   },
 ];
 
@@ -191,7 +191,7 @@ export const PROCESS = [
     step: "01",
     title: "Material Inspection",
     description:
-      "Every board is checked for quality and consistency before production begins — substandard material never reaches the saw.",
+      "Every board is checked for quality and consistency before production begins. Substandard material never reaches the saw.",
   },
   {
     step: "02",
@@ -209,7 +209,7 @@ export const PROCESS = [
     step: "04",
     title: "Final Inspection",
     description:
-      "Each product is verified against specification before it leaves the factory — quality assured, ready to install.",
+      "Each product is verified against your specification before it leaves the factory, ready to install.",
   },
 ];
 
@@ -272,7 +272,7 @@ export const TESTIMONIALS = [
 export const TEAM = {
   paragraphs: [
     "Our team is made up of highly skilled machine operators, technicians, and craftsmen with extensive hands-on experience in precision wood processing and fabrication.",
-    "We combine technical expertise with a strong commitment to quality, ensuring every project meets strict production standards — from cutting to finishing, with attention to detail, efficiency, and safety at every stage.",
+    "We combine technical expertise with a strong commitment to quality. From cutting to finishing, every project meets strict production standards with attention to detail, efficiency, and safety at every stage.",
     "We continuously invest in training and modern techniques to stay ahead of the industry and deliver consistent results our clients can rely on.",
   ],
 };
@@ -280,8 +280,8 @@ export const TEAM = {
 export const AWARD = {
   headline: "Vice Chancellor Business Excellence & Community Impact Award 2026",
   paragraphs: [
-    "Nightowl Woodworks emerged as a winner at an innovation and entrepreneurship competition hosted at Nile University — a significant milestone in the company's growth journey and a recognition of its commitment to excellence in woodworking and interior solutions in Nigeria.",
-    "Founded by Asim Balarabe Yazid, Nightowl Woodworks designs and produces custom doors, kitchen cabinets, office furniture, and interior woodworks — combining modern machinery with skilled craftsmanship for residential and commercial clients.",
+    "Nightowl Woodworks emerged as a winner at an innovation and entrepreneurship competition hosted at Nile University. It is a significant milestone in the company's growth and a recognition of its commitment to excellence in woodworking and interior solutions in Nigeria.",
+    "Founded by Asim Balarabe Yazid, Nightowl Woodworks designs and produces custom doors, kitchen cabinets, office furniture, and other interior woodwork. The company combines modern machinery with skilled craftsmanship for residential and commercial clients.",
     "The award reinforces the brand's vision to expand its impact, grow production capacity, and contribute to the rise of local manufacturing.",
   ],
   images: [

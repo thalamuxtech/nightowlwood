@@ -18,7 +18,7 @@ export function SocialShowcase() {
     <section className="bg-night-900 py-20 lg:py-28">
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 sm:px-8 lg:grid-cols-2">
         <Reveal>
-          <div className="relative overflow-hidden rounded-2xl border border-night-700/70 shadow-card">
+          <div className="relative overflow-hidden rounded-3xl border border-night-700/70 shadow-card">
             <Image
               src="/images/social-showcase.jpg"
               alt="Nightowl Woodworks production videos and projects on social media"
@@ -33,7 +33,7 @@ export function SocialShowcase() {
             align="left"
             eyebrow="Follow the process"
             title="Watch the shop at work"
-            intro="Our latest projects, finishing, and installation work — documented as it happens. Real production videos showing the industrial workflow, precision, and attention to detail behind every order."
+            intro="Our latest projects, finishing, and installation work, documented as it happens. Watch real production videos that show the workflow and attention to detail behind every order."
           />
           <div className="mt-8 flex flex-wrap gap-3">
             {BADGES.map(({ icon: Icon, label }) => (

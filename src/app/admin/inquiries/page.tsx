@@ -116,7 +116,7 @@ export default function InquiriesPage() {
                 <td className="px-6 py-4 text-cream-300">{inquiry.projectType}</td>
                 <td className="px-6 py-4 text-cream-300">{inquiry.budget}</td>
                 <td className="px-6 py-4 text-cream-400">
-                  {inquiry.createdAt?.toDate?.().toLocaleDateString() ?? "—"}
+                  {inquiry.createdAt?.toDate?.().toLocaleDateString() ?? "-"}
                 </td>
                 <td className="px-6 py-4">
                   <span

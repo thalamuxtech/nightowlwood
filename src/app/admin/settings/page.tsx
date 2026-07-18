@@ -48,7 +48,7 @@ export default function SettingsPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch {
-      setError("Save failed — check permissions and try again.");
+      setError("Save failed. Check permissions and try again.");
     } finally {
       setSaving(false);
     }

@@ -68,7 +68,7 @@ export default function BlogAdminPage() {
         <div>
           <h1 className="font-display text-3xl text-cream-50">Blog</h1>
           <p className="mt-1 text-sm text-cream-500">
-            Write in Markdown, attach photos (they auto-slide on the article), publish when ready.
+            Write in Markdown, attach photos that auto-slide on the article, and publish when ready.
           </p>
         </div>
         <button
@@ -83,8 +83,8 @@ export default function BlogAdminPage() {
         {loading && <p className="text-sm text-cream-500">Loading…</p>}
         {!loading && posts.length === 0 && (
           <p className="rounded-2xl border border-dashed border-night-600 p-10 text-center text-sm text-cream-500">
-            No posts yet. Write your first article — e.g. “The best wood for kitchen
-            cabinets in Nigeria (and why)”.
+            No posts yet. Write your first article, for example “The best wood for kitchen
+            cabinets in Nigeria and why”.
           </p>
         )}
         <AnimatePresence>
@@ -107,7 +107,7 @@ export default function BlogAdminPage() {
                 <p className="truncate font-medium text-cream-100">{post.title}</p>
                 <p className="truncate text-xs text-cream-500">
                   /blog/post/?s={post.id} · {post.images.length} photo{post.images.length === 1 ? "" : "s"} ·{" "}
-                  {post.createdAt?.toDate?.().toLocaleDateString() ?? "—"}
+                  {post.createdAt?.toDate?.().toLocaleDateString() ?? "-"}
                 </p>
               </div>
               <span
@@ -189,7 +189,7 @@ function PostEditor({ post, onClose }: { post: Post | null; onClose: () => void 
       }
       setImages((prev) => [...prev, ...urls]);
     } catch {
-      setError("Image upload failed — check Storage permissions and try again.");
+      setError("Image upload failed. Check Storage permissions and try again.");
     } finally {
       setUploading(false);
     }
@@ -229,7 +229,7 @@ function PostEditor({ post, onClose }: { post: Post | null; onClose: () => void 
       );
       onClose();
     } catch {
-      setError("Save failed — check your connection and permissions.");
+      setError("Save failed. Check your connection and permissions.");
     } finally {
       setBusy(false);
     }
@@ -278,14 +278,14 @@ function PostEditor({ post, onClose }: { post: Post | null; onClose: () => void 
               value={title}
               onChange={(e) => onTitleChange(e.target.value)}
               className={inputCls}
-              placeholder="The best wood for kitchen cabinets — an expert's view"
+              placeholder="The best wood for kitchen cabinets"
             />
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
               <label htmlFor="post-slug" className="mb-1.5 block text-sm text-cream-300">
-                Slug (URL) {post && <span className="text-cream-500">— fixed after creation</span>}
+                Slug (URL) {post && <span className="text-cream-500">(fixed after creation)</span>}
               </label>
               <input
                 id="post-slug"
@@ -312,7 +312,7 @@ function PostEditor({ post, onClose }: { post: Post | null; onClose: () => void 
           {/* Images */}
           <div>
             <p className="mb-1.5 text-sm text-cream-300">
-              Photos <span className="text-cream-500">— first is the cover; multiple auto-slide</span>
+              Photos <span className="text-cream-500">(first is the cover; multiple photos auto-slide)</span>
             </p>
             <div className="flex flex-wrap gap-3">
               {images.map((url, i) => (

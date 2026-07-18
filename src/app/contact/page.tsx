@@ -7,9 +7,9 @@ import { ContactTabs } from "@/components/site/ContactTabs";
 import { Reveal } from "@/components/motion/Reveal";
 
 export const metadata: Metadata = {
-  title: "Get a Quote — Start Your Project",
+  title: "Get a Quote | Start Your Project",
   description:
-    "Request a quote from Nightowl Woodworks Ltd — precision cutting, edge banding, and custom fabrication. Reach us via the quote form or WhatsApp.",
+    "Request a quote from Nightowl Woodworks Ltd for precision cutting, edge banding, and custom fabrication. Reach us via the quote form or WhatsApp.",
 };
 
 export default function ContactPage() {
@@ -18,7 +18,7 @@ export default function ContactPage() {
       <PageHero
         eyebrow="Get a quote"
         title="Tell us about your project"
-        intro="Send your cutting list, drawings, or a simple description. We respond with an honest quote and a realistic timeline — usually within one business day."
+        intro="Send your cutting list, drawings, or a simple description. We respond with an honest quote and a realistic timeline, usually within one business day."
         image="/images/doors.jpg"
         imageAlt="Custom doors fabricated by Nightowl Woodworks"
       />
@@ -31,8 +31,8 @@ export default function ContactPage() {
             <div className="glass rounded-3xl p-8">
               <h2 className="font-display text-xl text-cream-50">Prefer to chat?</h2>
               <p className="mt-3 text-sm leading-relaxed text-cream-400">
-                Reach out for inquiries, collaborations, or project discussions —
-                we&apos;re fastest on WhatsApp.
+                Reach out for inquiries, collaborations, or project discussions.
+                We&apos;re fastest on WhatsApp.
               </p>
               <a
                 href={SITE.whatsappHref}

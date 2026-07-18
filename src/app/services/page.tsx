@@ -10,9 +10,9 @@ import { Reveal } from "@/components/motion/Reveal";
 import { PageHero } from "@/components/site/PageHero";
 
 export const metadata: Metadata = {
-  title: "Services — Precision Cutting, Edge Banding & Fabrication",
+  title: "Services | Precision Cutting, Edge Banding & Fabrication",
   description:
-    "Precision cutting, edge banding, fabrication, custom processing, delivery and technical advisory — industrial wood processing services by Nightowl Woodworks Ltd.",
+    "Precision cutting, edge banding, fabrication, custom processing, delivery, and technical advisory from Nightowl Woodworks Ltd.",
 };
 
 export default function ServicesPage() {
@@ -21,7 +21,7 @@ export default function ServicesPage() {
       <PageHero
         eyebrow="Our services"
         title="Everything between the drawing and the install"
-        intro="Six core services on one modern production line. Bring us a cutting list, a technical drawing, or just an idea — we take it from raw board to ready component."
+        intro="Six services on one modern production line. Bring us a cutting list, a technical drawing, or just an idea, and we take it from raw board to ready component."
         image="/images/edging.jpg"
         imageAlt="Edge banding machine finishing panels at Nightowl Woodworks"
       />
@@ -30,7 +30,7 @@ export default function ServicesPage() {
         <div className="grid gap-6 md:grid-cols-2">
           {SERVICES.map((service, i) => (
             <Reveal key={service.key} delay={(i % 2) * 0.1}>
-              <article className="group flex h-full gap-6 rounded-2xl border border-night-700/70 bg-night-800/50 p-8 transition-all duration-400 hover:-translate-y-1 hover:border-brass-500/50 hover:shadow-glow">
+              <article className="glass group flex h-full gap-6 rounded-3xl p-8 transition-all duration-400 hover:-translate-y-1 hover:shadow-glow">
                 <span className="shrink-0 text-brass-400 transition-transform duration-500 group-hover:scale-110">
                   <ServiceIcon name={service.key} size={46} />
                 </span>
@@ -48,13 +48,13 @@ export default function ServicesPage() {
         <div className="mx-auto max-w-7xl px-5 sm:px-8">
           <SectionHeading
             eyebrow="Our machines"
-            title="The equipment behind the precision"
+            title="The equipment we run"
             intro="Industrial machinery, maintained and calibrated for repeatable accuracy at volume."
           />
           <div className="mt-14 grid gap-8 md:grid-cols-2">
             {MACHINES.map((machine, i) => (
               <Reveal key={machine.title} delay={i * 0.12}>
-                <figure className="group overflow-hidden rounded-2xl border border-night-700/70 bg-night-800/50">
+                <figure className="glass group overflow-hidden rounded-3xl">
                   <div className="relative aspect-[16/10] overflow-hidden">
                     <Image
                       src={machine.image}
@@ -83,7 +83,7 @@ export default function ServicesPage() {
         <ol className="mt-14 space-y-8">
           {PROCESS.map((phase, i) => (
             <Reveal key={phase.step} delay={i * 0.06}>
-              <li className="flex gap-6 rounded-2xl border border-night-700/60 bg-night-800/40 p-7">
+              <li className="glass flex gap-6 rounded-3xl p-7">
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-brass-500/50 font-display text-brass-400">
                   {phase.step}
                 </span>

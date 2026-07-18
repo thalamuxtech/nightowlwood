@@ -80,7 +80,7 @@ function Hero() {
           transition={{ duration: 0.8, delay: 0.15, ease: EASE }}
           className="text-eyebrow"
         >
-          Nightowl Woodworks Ltd — {SITE.location}
+          Nightowl Woodworks Ltd, {SITE.location}
         </motion.p>
 
         <h1 className="text-display mt-6 max-w-4xl text-cream-50">
@@ -97,7 +97,7 @@ function Hero() {
           className="mt-7 max-w-xl text-lg leading-relaxed text-cream-200 sm:text-xl"
         >
           Industrial-grade cutting, edge banding, and custom fabrication for
-          construction and interiors — {SITE.slogan.toLowerCase().replace(/\.$/, "")}.
+          construction and interiors. {SITE.slogan}
         </motion.p>
 
         <motion.div
@@ -165,7 +165,7 @@ function AboutTeaser() {
   return (
     <section className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-24 sm:px-8 lg:grid-cols-2 lg:py-32">
       <Reveal>
-        <div className="relative overflow-hidden rounded-2xl shadow-card">
+        <div className="relative overflow-hidden rounded-3xl shadow-card">
           <Image
             src="/images/factory.jpg"
             alt="Inside the Nightowl Woodworks production facility"
@@ -214,7 +214,7 @@ function ServicesGrid() {
         <SectionHeading
           eyebrow="Our services"
           title="From raw board to ready component"
-          intro="Six core services, one production line — everything your project needs between the drawing and the install."
+          intro="Six services on one production line, covering everything your project needs between the drawing and the install."
         />
         <Stagger className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3" stagger={0.08}>
           {SERVICES.map((service) => (
@@ -264,7 +264,7 @@ function WorkStrip() {
             <m.figure
               key={item.slug}
               variants={staggerItem}
-              className="group relative aspect-[4/3] overflow-hidden rounded-2xl shadow-card"
+              className="group relative aspect-[4/3] overflow-hidden rounded-3xl shadow-card"
             >
               <Image
                 src={item.image}
@@ -303,7 +303,7 @@ function IndustriesBand() {
             <m.div
               key={industry.key}
               variants={staggerItem}
-              className="rounded-2xl border border-night-700/70 bg-night-800/50 p-8 text-center transition-colors duration-300 hover:border-brass-500/40"
+              className="glass rounded-3xl p-8 text-center transition-all duration-300 hover:shadow-glow"
             >
               <span className="mx-auto inline-block text-brass-400">
                 <ServiceIcon name={industry.key} size={44} />
@@ -336,7 +336,7 @@ function ProcessTimeline() {
       <div className="mx-auto max-w-4xl px-5 sm:px-8">
         <SectionHeading
           eyebrow="Quality & process assurance"
-          title="Four checkpoints. Zero compromises."
+          title="How we control quality"
         />
         <div className="relative mt-16">
           <span
@@ -374,12 +374,12 @@ function MachinesBand() {
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
         <SectionHeading
           eyebrow="Our machines"
-          title="Modern equipment, calibrated daily"
+          title="Our machines"
         />
         <div className="mt-14 grid gap-8 md:grid-cols-2">
           {MACHINES.map((machine, i) => (
             <Reveal key={machine.title} delay={i * 0.12}>
-              <figure className="group overflow-hidden rounded-2xl border border-night-700/70 bg-night-800/50">
+              <figure className="glass group overflow-hidden rounded-3xl">
                 <div className="relative aspect-[16/10] overflow-hidden">
                   <Image
                     src={machine.image}
@@ -406,7 +406,7 @@ function Testimonials() {
   return (
     <section className="py-24 lg:py-32">
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
-        <SectionHeading eyebrow="What our clients say" title="Trusted at volume, valued in detail" />
+        <SectionHeading eyebrow="What our clients say" title="What our clients say" />
         <Stagger className="mt-14 grid gap-6 md:grid-cols-3" stagger={0.12}>
           {TESTIMONIALS.map((t) => (
             <m.blockquote
@@ -436,8 +436,8 @@ function AwardTeaser() {
           <SectionHeading
             align="left"
             eyebrow="News"
-            title="Award-winning, and just getting started"
-            intro={`Winner — ${AWARD.headline}, from the innovation and entrepreneurship competition at Nile University.`}
+            title="Recognised for excellence"
+            intro={`Winner of the ${AWARD.headline} at the Nile University innovation and entrepreneurship competition.`}
           />
           <Reveal delay={0.2}>
             <Link
@@ -453,7 +453,7 @@ function AwardTeaser() {
             <m.div
               key={img.src}
               variants={staggerItem}
-              className="relative aspect-square overflow-hidden rounded-2xl shadow-card"
+              className="relative aspect-square overflow-hidden rounded-3xl shadow-card"
             >
               <Image
                 src={img.src}
@@ -517,7 +517,7 @@ function CtaBand() {
       <GrainDivider />
       <span
         aria-hidden
-        className="text-carved pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 select-none whitespace-nowrap font-display font-semibold uppercase tracking-[0.08em]"
+        className="text-wood3d pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 select-none whitespace-nowrap font-display font-semibold uppercase tracking-[0.08em] opacity-35"
         style={{ fontSize: "clamp(4rem, 16vw, 13rem)" }}
       >
         Precision
@@ -528,7 +528,7 @@ function CtaBand() {
             Your next project deserves <span className="text-brass-400">precision</span>.
           </h2>
           <p className="mx-auto mt-5 max-w-xl leading-relaxed text-cream-300">
-            Send us your drawings or describe the job — we&apos;ll respond with an
+            Send us your drawings or describe the job. We&apos;ll respond with an
             honest quote and a realistic timeline.
           </p>
           <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
@@ -550,7 +550,6 @@ function CtaBand() {
           </div>
         </Reveal>
       </div>
-      <GrainDivider flip />
     </section>
   );
 }

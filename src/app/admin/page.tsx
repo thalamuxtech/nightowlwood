@@ -158,7 +158,7 @@ export default function AdminOverviewPage() {
       </div>
 
       <div className="mt-8 rounded-2xl border border-night-700/70 bg-night-900 p-6">
-        <h2 className="font-display text-lg text-cream-100">Inquiries — last 30 days</h2>
+        <h2 className="font-display text-lg text-cream-100">Inquiries in the last 30 days</h2>
         <div className="mt-4 h-64">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={trend} margin={{ left: -28, right: 8, top: 8 }}>
@@ -218,7 +218,7 @@ export default function AdminOverviewPage() {
           {loading && <li className="py-5 text-sm text-cream-500">Loading…</li>}
           {!loading && inquiries.length === 0 && (
             <li className="py-5 text-sm text-cream-500">
-              No inquiries yet — they&apos;ll appear here the moment the quote form is used.
+              No inquiries yet. They&apos;ll appear here the moment the quote form is used.
             </li>
           )}
           {inquiries.slice(0, 5).map((inquiry) => (

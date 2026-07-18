@@ -56,7 +56,7 @@ export function InternshipForm() {
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="flex min-h-[420px] flex-col items-center justify-center rounded-2xl border border-brass-500/40 bg-night-800/50 p-10 text-center"
+        className="glass flex min-h-[420px] flex-col items-center justify-center rounded-3xl !border-brass-500/40 p-10 text-center"
         role="status"
       >
         <motion.span
@@ -118,7 +118,7 @@ export function InternshipForm() {
           <label htmlFor="in-background" className="mb-2 block text-sm font-medium text-cream-200">
             Education / experience
           </label>
-          <textarea id="in-background" name="background" rows={3} className={inputCls} placeholder="School, training, or any hands-on experience — none required." />
+          <textarea id="in-background" name="background" rows={3} className={inputCls} placeholder="School, training, or any hands-on experience. None required." />
         </div>
         <div className="sm:col-span-2">
           <label htmlFor="in-portfolio" className="mb-2 block text-sm font-medium text-cream-200">
