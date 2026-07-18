@@ -7,7 +7,7 @@ import { getDb } from "@/lib/firebase";
 import type { SiteSettings } from "@/lib/types";
 
 const DEFAULTS: SiteSettings = {
-  contactEmail: "",
+  contactEmail: "info@nightowl.com.ng",
   contactPhone: "+234 808 444 1277",
   instagram: "https://www.instagram.com/nightowlwoodworksng",
   facebook: "",

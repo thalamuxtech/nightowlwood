@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Instagram, MessageCircle, Music2 } from "lucide-react";
+import { Instagram, Mail, MessageCircle, Music2 } from "lucide-react";
 import { SITE } from "@/lib/content";
 import { SiteShell } from "@/components/site/SiteShell";
 import { PageHero } from "@/components/site/PageHero";
@@ -43,6 +43,12 @@ export default function ContactPage() {
                 <MessageCircle size={18} /> Chat on WhatsApp
               </a>
               <p className="mt-3 text-center text-xs text-cream-500">{SITE.whatsappNumber}</p>
+              <a
+                href={`mailto:${SITE.email}`}
+                className="mt-4 flex items-center justify-center gap-2.5 rounded-full border border-night-600 px-6 py-3 text-sm text-cream-200 transition-all duration-300 hover:border-brass-500/60 hover:text-brass-300"
+              >
+                <Mail size={16} className="text-brass-400" /> {SITE.email}
+              </a>
             </div>
           </Reveal>
 

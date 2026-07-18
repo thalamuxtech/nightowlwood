@@ -3,6 +3,7 @@ export const SITE = {
   shortName: "Nightowl Woodworks",
   slogan: "Precision in every cut.",
   location: "Nigeria",
+  email: "info@nightowl.com.ng",
   whatsappNumber: "+234 808 444 1277",
   whatsappHref:
     "https://wa.me/2348084441277?text=Hello%20I%20want%20to%20make%20an%20inquiry",

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Instagram, MapPin, MessageCircle, Music2, Youtube } from "lucide-react";
+import { Instagram, Mail, MapPin, MessageCircle, Music2, Youtube } from "lucide-react";
 import { COMPLIANCE, NAV_LINKS, SITE } from "@/lib/content";
 import { OwlMark } from "./OwlMark";
 import { GrainDivider } from "./GrainDivider";
@@ -66,6 +66,14 @@ export function Footer() {
               >
                 <MessageCircle size={16} className="text-brass-500" />
                 WhatsApp {SITE.whatsappNumber}
+              </a>
+            </li>
+            <li>
+              <a
+                href={`mailto:${SITE.email}`}
+                className="flex items-center gap-3 transition-colors duration-300 hover:text-brass-300"
+              >
+                <Mail size={16} className="text-brass-500" /> {SITE.email}
               </a>
             </li>
             <li className="flex items-center gap-3">
