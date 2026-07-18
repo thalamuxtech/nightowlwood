@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90" width="480" height="360">
+  <!-- Nightowl Woodworks header mark: line-art peeking owl (cream) -->
+  <g fill="none" stroke="#f5efe2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 14 82 Q 16 44 38 28 Q 50 20 60 20 Q 70 20 82 28 Q 104 44 106 82"/>
+    <path d="M 52 22 L 56 12 L 60 20 L 64 12 L 68 22"/>
+    <path d="M 18 46 Q 40 30 58 40 Q 62 42 66 40 Q 84 30 104 46 Q 84 40 66 46 Q 62 48 58 46 Q 40 40 18 46 Z"/>
+    <path d="M 42 58 A 9 9 0 1 0 42.01 58"/>
+    <path d="M 78 58 A 9 9 0 1 0 78.01 58"/>
+    <path d="M 44 58 A 2.5 2.5 0 1 0 44.01 58" fill="#f5efe2"/>
+    <path d="M 80 58 A 2.5 2.5 0 1 0 80.01 58" fill="#f5efe2"/>
+    <path d="M 60 60 L 56 70 Q 60 74 64 70 Z"/>
+    <path d="M 26 54 L 31 56 M 27 62 L 32 62"/>
+    <path d="M 94 54 L 89 56 M 93 62 L 88 62"/>
+    <path d="M 8 82 L 112 82"/>
+  </g>
+</svg>
