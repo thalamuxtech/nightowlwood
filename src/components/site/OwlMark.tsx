@@ -49,33 +49,44 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
       {/* Heavy brow sweeping across */}
       {path("M 18 46 Q 40 30 58 40 Q 62 42 66 40 Q 84 30 104 46 Q 84 40 66 46 Q 62 48 58 46 Q 40 40 18 46 Z", 0.7, "brow")}
       {/* Eyes */}
-      {path("M 42 58 A 9 9 0 1 0 42.01 58", 1.1, "eyeL")}
-      {path("M 78 58 A 9 9 0 1 0 78.01 58", 1.2, "eyeR")}
-      {/* Pupils: constant gentle glancing (left, hold, right, recentre) */}
+      {/* Eyes: glancing pupils + periodic blink so the owl visibly lives */}
       <motion.g
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, delay: draw ? 1.35 : 0 }}
+        style={{ transformBox: "fill-box", transformOrigin: "center" }}
+        animate={reduce ? undefined : { scaleY: [1, 1, 0.12, 1, 1] }}
+        transition={{
+          duration: 4.6,
+          times: [0, 0.86, 0.92, 0.97, 1],
+          repeat: Infinity,
+          delay: draw ? 2.2 : 1,
+        }}
       >
+        {path("M 42 58 A 9 9 0 1 0 42.01 58", 1.1, "eyeL")}
+        {path("M 78 58 A 9 9 0 1 0 78.01 58", 1.2, "eyeR")}
         <motion.g
-          animate={
-            reduce
-              ? undefined
-              : {
-                  x: [0, -3.5, -3.5, 0, 3.5, 3.5, 0, 0],
-                  y: [0, 1, 1, 0, 1, 1, 0, 0],
-                }
-          }
-          transition={{
-            duration: 7,
-            times: [0, 0.12, 0.3, 0.42, 0.55, 0.75, 0.86, 1],
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: draw ? 2 : 0.8,
-          }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: draw ? 1.35 : 0 }}
         >
-          <circle cx="42" cy="58" r="2.6" fill="currentColor" />
-          <circle cx="78" cy="58" r="2.6" fill="currentColor" />
+          <motion.g
+            animate={
+              reduce
+                ? undefined
+                : {
+                    x: [0, -4.2, -4.2, 4.2, 4.2, 0],
+                    y: [0, 1.5, 1.5, 1.5, 1.5, 0],
+                  }
+            }
+            transition={{
+              duration: 5,
+              times: [0, 0.14, 0.34, 0.52, 0.74, 0.9],
+              repeat: Infinity,
+              ease: "easeInOut",
+              delay: draw ? 2 : 0.6,
+            }}
+          >
+            <circle cx="42" cy="58" r="3" fill="currentColor" />
+            <circle cx="78" cy="58" r="3" fill="currentColor" />
+          </motion.g>
         </motion.g>
       </motion.g>
       {/* Beak */}
