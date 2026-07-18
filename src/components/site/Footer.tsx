@@ -123,7 +123,7 @@ export function Footer() {
             © {new Date().getFullYear()} {SITE.name}. All rights reserved.
           </p>
           <p className="sm:text-center">
-            Designed by{" "}
+            Powered by{" "}
             <a
               href="https://thalamux-tech.web.app"
               target="_blank"
