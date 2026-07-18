@@ -25,7 +25,6 @@ import { Tilt3D } from "@/components/motion/Tilt3D";
 import { SawdustParticles } from "@/components/motion/SawdustParticles";
 import { SectionHeading } from "./SectionHeading";
 import { ServiceIcon } from "./ServiceIcon";
-import { GrainDivider } from "./GrainDivider";
 import { motion as m } from "framer-motion";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -502,7 +501,7 @@ function ComplianceStrip() {
 
 function CtaBand() {
   return (
-    <section className="bg-woodgrain relative overflow-hidden py-14 lg:py-16">
+    <section className="bg-woodgrain relative overflow-hidden py-10 lg:py-12">
       <div className="absolute inset-0 -z-10">
         <Image
           src="/images/cutting.jpg"
@@ -514,23 +513,26 @@ function CtaBand() {
         />
         <div className="absolute inset-0 bg-gradient-to-b from-night-950 via-night-950/55 to-night-950" />
       </div>
-      <GrainDivider />
-      <span
-        aria-hidden
-        className="text-wood3d pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 select-none whitespace-nowrap font-display font-semibold uppercase tracking-[0.08em] opacity-35"
-        style={{ fontSize: "clamp(4rem, 16vw, 13rem)" }}
-      >
-        Precision
-      </span>
-      <div className="mx-auto max-w-3xl px-5 py-4 text-center sm:px-8">
+      <div className="mx-auto max-w-3xl px-5 text-center sm:px-8">
         <Reveal>
-          <h2 className="text-title text-cream-50">
-            Your next project deserves <span className="text-brass-400">precision</span>.
-          </h2>
-          <p className="mx-auto mt-5 max-w-xl leading-relaxed text-cream-300">
-            Send us your drawings or describe the job. We&apos;ll respond with an
-            honest quote and a realistic timeline.
-          </p>
+          <div className="relative">
+            <span
+              aria-hidden
+              className="text-wood3d pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 select-none whitespace-nowrap font-display font-semibold uppercase tracking-[0.08em] opacity-35"
+              style={{ fontSize: "clamp(3.5rem, 13vw, 10rem)" }}
+            >
+              Precision
+            </span>
+            <div className="relative">
+              <h2 className="text-title text-cream-50">
+                Your next project deserves <span className="text-brass-400">precision</span>.
+              </h2>
+              <p className="mx-auto mt-5 max-w-xl leading-relaxed text-cream-300">
+                Send us your drawings or describe the job. We&apos;ll respond with an
+                honest quote and a realistic timeline.
+              </p>
+            </div>
+          </div>
           <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
             <Link
               href="/contact/"
