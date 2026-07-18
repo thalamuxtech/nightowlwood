@@ -118,10 +118,11 @@ export function Footer() {
 
       <div aria-hidden className="hairline-shimmer" />
       <div>
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-5 py-5 text-xs text-cream-500 sm:flex-row sm:px-8">
+        <div className="mx-auto grid max-w-7xl items-center gap-2 px-5 py-5 text-center text-xs text-cream-500 sm:grid-cols-3 sm:px-8 sm:text-left">
           <p>
             © {new Date().getFullYear()} {SITE.name}. All rights reserved.
-            <span className="mx-1.5" aria-hidden>·</span>
+          </p>
+          <p className="sm:text-center">
             Designed by{" "}
             <a
               href="https://thalamux-tech.web.app"
@@ -132,7 +133,7 @@ export function Footer() {
               Thalamuxtech
             </a>
           </p>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-center gap-4 sm:justify-end">
             <p className="font-display italic text-cream-500">{SITE.slogan}</p>
             <Link
               href="/admin/"
