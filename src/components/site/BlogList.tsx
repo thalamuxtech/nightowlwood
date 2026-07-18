@@ -52,22 +52,22 @@ export function BlogList() {
               className="group flex flex-col overflow-hidden rounded-2xl border border-night-700/70 bg-night-800/40 transition-all duration-400 hover:-translate-y-1.5 hover:border-brass-500/50 hover:shadow-glow"
             >
               <Link href={`/blog/post/?s=${encodeURIComponent(post.id)}`} className="flex h-full flex-col">
-                <div className="relative aspect-[16/9] overflow-hidden bg-night-800">
-                  {post.images[0] && (
-                    // eslint-disable-next-line @next/next/no-img-element
+                {post.images.length > 0 && (
+                  <div className="relative aspect-[16/9] overflow-hidden bg-night-800">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={post.images[0]}
                       alt={post.title}
                       loading="lazy"
                       className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-107"
                     />
-                  )}
-                  {post.images.length > 1 && (
-                    <span className="absolute right-3 top-3 rounded-full bg-night-950/75 px-2.5 py-1 text-xs text-cream-200 backdrop-blur-sm">
-                      {post.images.length} photos
-                    </span>
-                  )}
-                </div>
+                    {post.images.length > 1 && (
+                      <span className="absolute right-3 top-3 rounded-full bg-night-950/75 px-2.5 py-1 text-xs text-cream-200 backdrop-blur-sm">
+                        {post.images.length} photos
+                      </span>
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-1 flex-col p-6">
                   <p className="text-xs uppercase tracking-[0.2em] text-brass-400">
                     {post.createdAt?.toDate?.().toLocaleDateString(undefined, {
