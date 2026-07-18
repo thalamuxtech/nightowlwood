@@ -3,7 +3,7 @@ import { Instagram, Mail, MessageCircle, Music2 } from "lucide-react";
 import { SITE } from "@/lib/content";
 import { SiteShell } from "@/components/site/SiteShell";
 import { PageHero } from "@/components/site/PageHero";
-import { QuoteForm } from "@/components/site/QuoteForm";
+import { ContactTabs } from "@/components/site/ContactTabs";
 import { Reveal } from "@/components/motion/Reveal";
 
 export const metadata: Metadata = {
@@ -24,7 +24,7 @@ export default function ContactPage() {
       />
 
       <section className="mx-auto grid max-w-7xl gap-14 px-5 py-20 sm:px-8 lg:grid-cols-[1fr_380px] lg:py-28">
-        <QuoteForm />
+        <ContactTabs />
 
         <aside className="space-y-6">
           <Reveal delay={0.15}>

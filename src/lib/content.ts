@@ -21,9 +21,46 @@ export const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/services/", label: "Services" },
   { href: "/work/", label: "Our Work" },
+  { href: "/blog/", label: "Blog" },
   { href: "/about/", label: "About" },
   { href: "/contact/", label: "Get a Quote" },
 ];
+
+export const FOOTER_LINKS = [
+  ...NAV_LINKS,
+  { href: "/careers/", label: "Internships & Careers" },
+];
+
+export const INTERN_AREAS = [
+  "Machine operation (saw / edge bander)",
+  "Joinery & fabrication",
+  "Finishing & assembly",
+  "Design / CAD & cutting lists",
+  "Business, sales & logistics",
+  "Content & social media",
+];
+
+export const CAREERS = {
+  intro:
+    "We believe the future of Nigerian manufacturing is trained hands. Our internship programme puts you on the factory floor with modern machines, real client projects, and craftsmen who take teaching seriously.",
+  points: [
+    {
+      title: "Learn on real projects",
+      description:
+        "No simulations — you work on live orders for real clients, from cutting lists to installed interiors.",
+    },
+    {
+      title: "Modern equipment",
+      description:
+        "Train on the sliding table saw, edge banding machine, and the tooling professionals actually use.",
+    },
+    {
+      title: "Mentorship that sticks",
+      description:
+        "Every intern is paired with a senior operator or craftsman who is accountable for your growth.",
+    },
+  ],
+};
 
 export const STATS = [
   { value: 150, suffix: "+", label: "Boards processed daily" },

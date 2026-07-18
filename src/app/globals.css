@@ -136,6 +136,120 @@ body {
   transform-origin: left;
 }
 
+/* Procedural wood-grain panel texture (theme-matched, zero external assets) */
+.bg-woodgrain {
+  position: relative;
+}
+.bg-woodgrain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Cfilter id='wood' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012 0.09' numOctaves='4' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0.16 0 0 0 0 0.12 0 0 0 0 0.08 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23wood)'/%3E%3C/svg%3E");
+  background-size: 420px 420px;
+}
+.bg-woodgrain > * {
+  position: relative;
+}
+
+/* Carved / embossed display text */
+.text-carved {
+  color: var(--color-night-800);
+  text-shadow:
+    0 1px 0 rgb(245 239 226 / 0.08),
+    0 -1px 1px rgb(0 0 0 / 0.85),
+    0 2px 3px rgb(0 0 0 / 0.4);
+  -webkit-text-stroke: 1px rgb(201 143 67 / 0.18);
+}
+
+/* Brass end-grain ring accent (for numbered steps) */
+.ring-endgrain {
+  background:
+    radial-gradient(circle at 50% 50%, transparent 55%, rgb(201 143 67 / 0.12) 56%, transparent 60%),
+    radial-gradient(circle at 50% 50%, transparent 70%, rgb(201 143 67 / 0.1) 71%, transparent 75%),
+    radial-gradient(circle at 50% 50%, rgb(29 23 18 / 1) 0%, rgb(20 16 13 / 1) 100%);
+}
+
+/* Markdown article typography */
+.prose-nightowl {
+  color: var(--color-cream-200);
+  line-height: 1.8;
+  font-size: 1.05rem;
+}
+.prose-nightowl h1,
+.prose-nightowl h2,
+.prose-nightowl h3,
+.prose-nightowl h4 {
+  font-family: var(--font-display);
+  color: var(--color-cream-50);
+  margin: 2em 0 0.6em;
+  line-height: 1.25;
+}
+.prose-nightowl h2 { font-size: 1.7rem; }
+.prose-nightowl h3 { font-size: 1.35rem; }
+.prose-nightowl p { margin: 1.1em 0; }
+.prose-nightowl a {
+  color: var(--color-brass-400);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prose-nightowl a:hover { color: var(--color-brass-300); }
+.prose-nightowl strong { color: var(--color-cream-50); }
+.prose-nightowl ul, .prose-nightowl ol { margin: 1.1em 0; padding-left: 1.5em; }
+.prose-nightowl li { margin: 0.45em 0; }
+.prose-nightowl ul li::marker { color: var(--color-brass-500); }
+.prose-nightowl ol li::marker { color: var(--color-brass-400); }
+.prose-nightowl blockquote {
+  border-left: 3px solid var(--color-brass-500);
+  padding-left: 1.2em;
+  margin: 1.6em 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--color-cream-300);
+}
+.prose-nightowl code {
+  background: var(--color-night-800);
+  border: 1px solid var(--color-night-600);
+  border-radius: 6px;
+  padding: 0.15em 0.45em;
+  font-size: 0.9em;
+}
+.prose-nightowl pre {
+  background: var(--color-night-900);
+  border: 1px solid var(--color-night-700);
+  border-radius: 12px;
+  padding: 1.2em;
+  overflow-x: auto;
+  margin: 1.4em 0;
+}
+.prose-nightowl pre code { background: none; border: none; padding: 0; }
+.prose-nightowl img { border-radius: 14px; margin: 1.6em 0; max-width: 100%; }
+.prose-nightowl hr {
+  border: none;
+  height: 1px;
+  margin: 2.4em 0;
+  background: linear-gradient(to right, transparent, var(--color-walnut-500), transparent);
+}
+.prose-nightowl table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.6em 0;
+  font-size: 0.95em;
+  display: block;
+  overflow-x: auto;
+}
+.prose-nightowl th, .prose-nightowl td {
+  border: 1px solid var(--color-night-600);
+  padding: 0.6em 0.9em;
+  text-align: left;
+}
+.prose-nightowl th {
+  background: var(--color-night-800);
+  color: var(--color-cream-100);
+  font-weight: 600;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .grain::after { animation: none; }

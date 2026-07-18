@@ -1,7 +1,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Instagram, Lock, Mail, MapPin, MessageCircle, Music2, Youtube } from "lucide-react";
-import { COMPLIANCE, NAV_LINKS, SITE } from "@/lib/content";
+import { COMPLIANCE, FOOTER_LINKS, SITE } from "@/lib/content";
+import { SubscribeForm } from "./SubscribeForm";
 import { OwlMark } from "./OwlMark";
 import { GrainDivider } from "./GrainDivider";
 
@@ -41,7 +42,7 @@ export function Footer() {
         <nav className="text-sm" aria-label="Footer">
           <p className="text-eyebrow mb-5">Explore</p>
           <ul className="space-y-3">
-            {NAV_LINKS.map((link) => (
+            {FOOTER_LINKS.map((link) => (
               <li key={link.href}>
                 <Link
                   href={link.href}
@@ -80,6 +81,7 @@ export function Footer() {
               <MapPin size={16} className="text-brass-500" /> {SITE.location}
             </li>
           </ul>
+          <SubscribeForm />
           <div className="mt-6 flex gap-3">
             <a
               href={SITE.instagram}

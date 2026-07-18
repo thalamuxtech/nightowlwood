@@ -21,6 +21,8 @@ import {
 } from "@/lib/content";
 import { Reveal, Stagger, staggerItem, WordsReveal } from "@/components/motion/Reveal";
 import { Counter } from "@/components/motion/Counter";
+import { Tilt3D } from "@/components/motion/Tilt3D";
+import { SawdustParticles } from "@/components/motion/SawdustParticles";
 import { SectionHeading } from "./SectionHeading";
 import { ServiceIcon } from "./ServiceIcon";
 import { GrainDivider } from "./GrainDivider";
@@ -68,6 +70,8 @@ function Hero() {
         />
         <div className="absolute inset-0 bg-gradient-to-b from-night-950/80 via-night-950/60 to-night-950" />
       </motion.div>
+
+      <SawdustParticles />
 
       <motion.div style={{ opacity }} className="mx-auto w-full max-w-7xl px-5 pt-24 sm:px-8">
         <motion.p
@@ -140,7 +144,7 @@ function Hero() {
 
 function StatsBand() {
   return (
-    <section className="relative bg-night-900 py-16 sm:py-20">
+    <section className="bg-woodgrain relative bg-night-900 py-16 sm:py-20">
       <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 px-5 sm:grid-cols-3 sm:px-8">
         {STATS.map((stat, i) => (
           <Reveal key={stat.label} delay={i * 0.12} className="text-center">
@@ -212,21 +216,21 @@ function ServicesGrid() {
         />
         <Stagger className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3" stagger={0.08}>
           {SERVICES.map((service) => (
-            <m.article
-              key={service.key}
-              variants={staggerItem}
-              className="group relative overflow-hidden rounded-2xl border border-night-700/70 bg-night-800/60 p-8 transition-all duration-400 hover:-translate-y-1.5 hover:border-brass-500/50 hover:shadow-glow"
-            >
-              <span className="text-brass-400 transition-transform duration-500 group-hover:scale-110 inline-block">
-                <ServiceIcon name={service.key} />
-              </span>
-              <h3 className="mt-5 font-display text-xl text-cream-50">{service.title}</h3>
-              <p className="mt-3 text-sm leading-relaxed text-cream-400">{service.description}</p>
-              <span
-                aria-hidden
-                className="absolute inset-x-0 bottom-0 h-0.5 origin-left scale-x-0 bg-gradient-to-r from-brass-500 to-brass-300 transition-transform duration-500 group-hover:scale-x-100"
-              />
-            </m.article>
+            <m.div key={service.key} variants={staggerItem} className="h-full">
+              <Tilt3D className="h-full">
+                <article className="group relative h-full overflow-hidden rounded-2xl border border-night-700/70 bg-night-800/60 p-8 transition-colors duration-400 hover:border-brass-500/50 hover:shadow-glow">
+                  <span className="inline-block text-brass-400 transition-transform duration-500 group-hover:scale-110">
+                    <ServiceIcon name={service.key} />
+                  </span>
+                  <h3 className="mt-5 font-display text-xl text-cream-50">{service.title}</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-cream-400">{service.description}</p>
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-0 bottom-0 h-0.5 origin-left scale-x-0 bg-gradient-to-r from-brass-500 to-brass-300 transition-transform duration-500 group-hover:scale-x-100"
+                  />
+                </article>
+              </Tilt3D>
+            </m.div>
           ))}
         </Stagger>
       </div>
@@ -346,7 +350,7 @@ function ProcessTimeline() {
               }`}
             >
               <span
-                className={`absolute left-6 top-1 flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full border border-brass-500/50 bg-night-900 font-display text-sm text-brass-400 shadow-glow ${
+                className={`ring-endgrain absolute left-6 top-1 flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full border border-brass-500/50 font-display text-sm text-brass-400 shadow-glow ${
                   i % 2 === 0 ? "sm:left-auto sm:right-0 sm:translate-x-1/2" : "sm:left-0 sm:-translate-x-1/2"
                 }`}
               >
@@ -496,7 +500,7 @@ function ComplianceStrip() {
 
 function CtaBand() {
   return (
-    <section className="relative overflow-hidden py-24 lg:py-32">
+    <section className="bg-woodgrain relative overflow-hidden py-24 lg:py-32">
       <div className="absolute inset-0 -z-10">
         <Image
           src="/images/cutting.jpg"

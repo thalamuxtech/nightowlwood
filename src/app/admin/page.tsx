@@ -3,7 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, CalendarCheck, CheckCheck, Inbox, PhoneCall } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarCheck,
+  CheckCheck,
+  GraduationCap,
+  Inbox,
+  MailOpen,
+  Newspaper,
+  PhoneCall,
+  Users,
+} from "lucide-react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -24,9 +34,37 @@ const STATUS_META: Record<InquiryStatus, { label: string; icon: typeof Inbox; co
   closed: { label: "Closed", icon: CheckCheck, color: "text-emerald-400" },
 };
 
+/** Live document counts across the other admin collections. */
+function useCollectionCounts() {
+  const [counts, setCounts] = useState<Record<string, number | null>>({
+    posts: null,
+    internApplications: null,
+    contacts: null,
+    subscribers: null,
+  });
+  useEffect(() => {
+    const unsubs = Object.keys(counts).map((name) =>
+      onSnapshot(collection(getDb(), name), (snap) =>
+        setCounts((c) => ({ ...c, [name]: snap.size }))
+      )
+    );
+    return () => unsubs.forEach((u) => u());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return counts;
+}
+
+const OTHER_TILES = [
+  { key: "posts", label: "Blog posts", icon: Newspaper, href: "/admin/blog/" },
+  { key: "internApplications", label: "Internship applications", icon: GraduationCap, href: "/admin/internships/" },
+  { key: "contacts", label: "Contact messages", icon: MailOpen, href: "/admin/contacts/" },
+  { key: "subscribers", label: "Subscribers", icon: Users, href: "/admin/subscribers/" },
+];
+
 export default function AdminOverviewPage() {
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [loading, setLoading] = useState(true);
+  const otherCounts = useCollectionCounts();
 
   useEffect(() => {
     const q = query(collection(getDb(), "inquiries"), orderBy("createdAt", "desc"));
@@ -93,6 +131,30 @@ export default function AdminOverviewPage() {
             </motion.div>
           );
         })}
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {OTHER_TILES.map(({ key, label, icon: Icon, href }, idx) => (
+          <motion.div
+            key={key}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 + idx * 0.06, duration: 0.5 }}
+          >
+            <Link
+              href={href}
+              className="block rounded-2xl border border-night-700/70 bg-night-900 p-6 transition-colors duration-300 hover:border-brass-500/40"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-cream-400">{label}</span>
+                <Icon size={18} className="text-brass-400" />
+              </div>
+              <p className="mt-3 font-display text-4xl text-cream-50">
+                {otherCounts[key] ?? "–"}
+              </p>
+            </Link>
+          </motion.div>
+        ))}
       </div>
 
       <div className="mt-8 rounded-2xl border border-night-700/70 bg-night-900 p-6">

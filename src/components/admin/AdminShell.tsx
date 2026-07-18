@@ -6,12 +6,16 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   GalleryHorizontalEnd,
+  GraduationCap,
   Inbox,
   LayoutDashboard,
   Loader2,
   LogOut,
+  MailOpen,
+  Newspaper,
   Settings,
   ShieldAlert,
+  Users,
 } from "lucide-react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
 import { getFirebaseAuth } from "@/lib/firebase";
@@ -22,7 +26,11 @@ export const useAdminUser = () => useContext(AdminUserContext);
 
 const NAV = [
   { href: "/admin/", label: "Overview", icon: LayoutDashboard },
-  { href: "/admin/inquiries/", label: "Inquiries", icon: Inbox },
+  { href: "/admin/inquiries/", label: "Quotes", icon: Inbox },
+  { href: "/admin/blog/", label: "Blog", icon: Newspaper },
+  { href: "/admin/internships/", label: "Internships", icon: GraduationCap },
+  { href: "/admin/contacts/", label: "Messages", icon: MailOpen },
+  { href: "/admin/subscribers/", label: "Subscribers", icon: Users },
   { href: "/admin/work/", label: "Work Items", icon: GalleryHorizontalEnd },
   { href: "/admin/settings/", label: "Settings", icon: Settings },
 ];
@@ -70,7 +78,7 @@ function Sidebar({ email }: { email: string }) {
           <OwlMark size={32} animate={false} />
           <span className="font-display text-cream-100">Admin</span>
         </span>
-        <nav className="flex gap-1" aria-label="Admin">
+        <nav className="flex max-w-[70vw] gap-1 overflow-x-auto" aria-label="Admin">
           {NAV.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}

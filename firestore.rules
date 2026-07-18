@@ -10,22 +10,51 @@ service cloud.firestore {
         && request.auth.token.email in ['admin@nighowl.com.ng'];
     }
 
-    // Public quote requests: anyone may create a well-formed inquiry;
-    // only signed-in staff may read, update, or delete.
+    function validSubmission(required) {
+      return request.resource.data.keys().hasAll(required.concat(['status', 'createdAt']))
+        && request.resource.data.status == 'new'
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() < 200
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 3
+        && request.resource.data.email.size() < 320
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() < 5000;
+    }
+
+    // Quote requests
     match /inquiries/{id} {
-      allow create: if
-        request.resource.data.keys().hasAll(['name', 'email', 'message', 'status', 'createdAt']) &&
-        request.resource.data.status == 'new' &&
-        request.resource.data.name is string &&
-        request.resource.data.name.size() > 0 &&
-        request.resource.data.name.size() < 200 &&
-        request.resource.data.email is string &&
-        request.resource.data.email.size() > 3 &&
-        request.resource.data.email.size() < 320 &&
-        request.resource.data.message is string &&
-        request.resource.data.message.size() > 0 &&
-        request.resource.data.message.size() < 5000;
+      allow create: if validSubmission(['name', 'email', 'message']);
       allow read, update, delete: if isAdmin();
+    }
+
+    // Internship applications
+    match /internApplications/{id} {
+      allow create: if validSubmission(['name', 'email', 'message', 'area']);
+      allow read, update, delete: if isAdmin();
+    }
+
+    // General contact messages
+    match /contacts/{id} {
+      allow create: if validSubmission(['name', 'email', 'message']);
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Newsletter subscribers — create-only (no overwrite), staff manage.
+    match /subscribers/{id} {
+      allow create: if request.resource.data.keys().hasAll(['email', 'createdAt'])
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 3
+        && request.resource.data.email.size() < 320;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Blog posts — public may read published; staff write.
+    match /posts/{id} {
+      allow read: if resource.data.published == true || isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
     // Gallery items managed from the dashboard; public may read published ones.

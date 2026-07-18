@@ -57,7 +57,7 @@ export function Header() {
           </Link>
 
           <nav className="hidden items-center gap-9 md:flex" aria-label="Primary">
-            {NAV_LINKS.slice(0, 4).map((link) => (
+            {NAV_LINKS.slice(0, 5).map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
