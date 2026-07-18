@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Weekly rebuild so newly published blog posts get static SEO pages
+    - cron: "0 3 * * 1"
 
 concurrency:
   group: deploy-live

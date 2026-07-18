@@ -10,6 +10,7 @@ import { Reveal } from "@/components/motion/Reveal";
 import { GrainDivider } from "@/components/site/GrainDivider";
 
 export const metadata: Metadata = {
+  alternates: { canonical: "/about/" },
   title: "About | A Modern Wood Processing Company",
   description:
     "Nightowl Woodworks Ltd combines modern machinery with skilled craftsmanship to deliver precision wood processing for construction and interior projects in Nigeria.",

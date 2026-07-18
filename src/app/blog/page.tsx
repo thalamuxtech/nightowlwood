@@ -4,6 +4,7 @@ import { PageHero } from "@/components/site/PageHero";
 import { BlogList } from "@/components/site/BlogList";
 
 export const metadata: Metadata = {
+  alternates: { canonical: "/blog/" },
   title: "Blog | Wood Knowledge from the Factory Floor",
   description:
     "Expert answers to real questions about the best woods for kitchens, finishes that last, and lessons from the Nightowl Woodworks production floor.",

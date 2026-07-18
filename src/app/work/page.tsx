@@ -5,6 +5,7 @@ import { WorkGallery } from "@/components/site/WorkGallery";
 import { SocialShowcase } from "@/components/site/SocialShowcase";
 
 export const metadata: Metadata = {
+  alternates: { canonical: "/work/" },
   title: "Our Work | Projects & Live Production",
   description:
     "Kitchens, closets, consoles, doors, and custom fabrication. Explore Nightowl Woodworks projects and watch live production on TikTok and Instagram.",

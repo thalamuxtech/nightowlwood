@@ -7,6 +7,7 @@ import { ContactTabs } from "@/components/site/ContactTabs";
 import { Reveal } from "@/components/motion/Reveal";
 
 export const metadata: Metadata = {
+  alternates: { canonical: "/contact/" },
   title: "Get a Quote | Start Your Project",
   description:
     "Request a quote from Nightowl Woodworks Ltd for precision cutting, edge banding, and custom fabrication. Reach us via the quote form or WhatsApp.",

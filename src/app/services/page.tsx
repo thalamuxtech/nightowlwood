@@ -10,6 +10,7 @@ import { Reveal } from "@/components/motion/Reveal";
 import { PageHero } from "@/components/site/PageHero";
 
 export const metadata: Metadata = {
+  alternates: { canonical: "/services/" },
   title: "Services | Precision Cutting, Edge Banding & Fabrication",
   description:
     "Precision cutting, edge banding, fabrication, custom processing, delivery, and technical advisory from Nightowl Woodworks Ltd.",

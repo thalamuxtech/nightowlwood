@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "optimize:images": "node scripts/optimize-images.mjs"
+    "optimize:images": "node scripts/optimize-images.mjs",
+    "prebuild": "node scripts/snapshot-posts.mjs"
   },
   "dependencies": {
     "firebase": "^11.10.0",

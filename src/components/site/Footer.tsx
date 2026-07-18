@@ -121,6 +121,16 @@ export function Footer() {
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-5 py-5 text-xs text-cream-500 sm:flex-row sm:px-8">
           <p>
             © {new Date().getFullYear()} {SITE.name}. All rights reserved.
+            <span className="mx-1.5" aria-hidden>·</span>
+            Designed by{" "}
+            <a
+              href="https://thalamux-tech.web.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-cream-400 transition-colors duration-300 hover:text-brass-300"
+            >
+              Thalamuxtech
+            </a>
           </p>
           <div className="flex items-center gap-4">
             <p className="font-display italic text-cream-500">{SITE.slogan}</p>

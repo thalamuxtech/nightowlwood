@@ -7,6 +7,7 @@ import { Reveal } from "@/components/motion/Reveal";
 import { InternshipForm } from "@/components/site/InternshipForm";
 
 export const metadata: Metadata = {
+  alternates: { canonical: "/careers/" },
   title: "Internships & Careers | Learn Precision Woodworking",
   description:
     "Join the Nightowl Woodworks internship programme for hands-on training in precision cutting, fabrication, finishing, and design on real client projects.",

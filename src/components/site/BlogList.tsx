@@ -6,12 +6,45 @@ import { motion } from "framer-motion";
 import { ArrowRight, BookOpen } from "lucide-react";
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
-import type { Post } from "@/lib/types";
+import snapshot from "@/content/posts.json";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
+interface PostCard {
+  id: string;
+  title: string;
+  excerpt: string;
+  images: string[];
+  dateIso: string | null;
+}
+
+// Posts captured at build time have static pages; newer ones use the reader.
+const STATIC_SLUGS = new Set(snapshot.map((p) => p.slug));
+
+const INITIAL: PostCard[] = snapshot.map((p) => ({
+  id: p.slug,
+  title: p.title,
+  excerpt: p.excerpt,
+  images: p.images,
+  dateIso: p.createdAt,
+}));
+
+function postHref(id: string) {
+  return STATIC_SLUGS.has(id) ? `/blog/${id}/` : `/blog/post/?s=${encodeURIComponent(id)}`;
+}
+
+function formatDate(iso: string | null) {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(new Date(iso));
+}
+
 export function BlogList() {
-  const [posts, setPosts] = useState<Post[] | null>(null);
+  const [posts, setPosts] = useState<PostCard[]>(INITIAL);
+  const [live, setLive] = useState(false);
 
   useEffect(() => {
     const q = query(
@@ -21,17 +54,31 @@ export function BlogList() {
     );
     return onSnapshot(
       q,
-      (snap) => setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Post)),
-      () => setPosts([])
+      (snap) => {
+        setPosts(
+          snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              title: data.title ?? "",
+              excerpt: data.excerpt ?? "",
+              images: data.images ?? [],
+              dateIso: data.createdAt?.toDate?.().toISOString() ?? null,
+            };
+          })
+        );
+        setLive(true);
+      },
+      () => setLive(true) // keep the build-time snapshot on error
     );
   }, []);
 
   return (
     <section className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
-      {posts === null && <SkeletonGrid />}
+      {posts.length === 0 && !live && <SkeletonGrid />}
 
-      {posts?.length === 0 && (
-        <div className="mx-auto max-w-md rounded-2xl border border-dashed border-night-600 p-12 text-center">
+      {posts.length === 0 && live && (
+        <div className="mx-auto max-w-md rounded-3xl border border-dashed border-night-600 p-12 text-center">
           <BookOpen size={36} className="mx-auto text-brass-400" aria-hidden />
           <h2 className="mt-4 font-display text-xl text-cream-100">First posts coming soon</h2>
           <p className="mt-2 text-sm text-cream-400">
@@ -40,7 +87,7 @@ export function BlogList() {
         </div>
       )}
 
-      {posts && posts.length > 0 && (
+      {posts.length > 0 && (
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {posts.map((post, i) => (
             <motion.article
@@ -51,7 +98,7 @@ export function BlogList() {
               transition={{ duration: 0.7, delay: (i % 3) * 0.08, ease: EASE }}
               className="glass group flex flex-col overflow-hidden rounded-3xl transition-all duration-400 hover:-translate-y-1.5 hover:shadow-glow"
             >
-              <Link href={`/blog/post/?s=${encodeURIComponent(post.id)}`} className="flex h-full flex-col">
+              <Link href={postHref(post.id)} className="flex h-full flex-col">
                 {post.images.length > 0 && (
                   <div className="relative aspect-[16/9] overflow-hidden bg-night-800">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -70,11 +117,7 @@ export function BlogList() {
                 )}
                 <div className="flex flex-1 flex-col p-6">
                   <p className="text-xs uppercase tracking-[0.2em] text-brass-400">
-                    {post.createdAt?.toDate?.().toLocaleDateString(undefined, {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    }) ?? ""}
+                    {formatDate(post.dateIso)}
                   </p>
                   <h2 className="mt-2 font-display text-xl leading-snug text-cream-50">
                     {post.title}
