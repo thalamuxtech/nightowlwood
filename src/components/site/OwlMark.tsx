@@ -51,9 +51,33 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
       {/* Eyes */}
       {path("M 42 58 A 9 9 0 1 0 42.01 58", 1.1, "eyeL")}
       {path("M 78 58 A 9 9 0 1 0 78.01 58", 1.2, "eyeR")}
-      {/* Pupils */}
-      {path("M 44 58 A 2.5 2.5 0 1 0 44.01 58", 1.35, "pupL", { fill: "currentColor" })}
-      {path("M 80 58 A 2.5 2.5 0 1 0 80.01 58", 1.4, "pupR", { fill: "currentColor" })}
+      {/* Pupils: constant gentle glancing (left, hold, right, recentre) */}
+      <motion.g
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: draw ? 1.35 : 0 }}
+      >
+        <motion.g
+          animate={
+            reduce
+              ? undefined
+              : {
+                  x: [0, -3.5, -3.5, 0, 3.5, 3.5, 0, 0],
+                  y: [0, 1, 1, 0, 1, 1, 0, 0],
+                }
+          }
+          transition={{
+            duration: 7,
+            times: [0, 0.12, 0.3, 0.42, 0.55, 0.75, 0.86, 1],
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: draw ? 2 : 0.8,
+          }}
+        >
+          <circle cx="42" cy="58" r="2.6" fill="currentColor" />
+          <circle cx="78" cy="58" r="2.6" fill="currentColor" />
+        </motion.g>
+      </motion.g>
       {/* Beak */}
       {path("M 60 60 L 56 70 Q 60 74 64 70 Z", 1.5, "beak")}
       {/* Eye flare lines */}
