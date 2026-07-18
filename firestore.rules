@@ -3,8 +3,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Staff allowlist — public signup is enabled on this project, so a signed-in
+    // session alone is NOT proof of staff. Only these exact accounts are staff.
     function isAdmin() {
-      return request.auth != null;
+      return request.auth != null
+        && request.auth.token.email in ['admin@nighowl.com.ng'];
     }
 
     // Public quote requests: anyone may create a well-formed inquiry;

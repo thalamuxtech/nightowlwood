@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Instagram, Mail, MapPin, MessageCircle, Music2, Youtube } from "lucide-react";
+import { Instagram, Lock, Mail, MapPin, MessageCircle, Music2, Youtube } from "lucide-react";
 import { COMPLIANCE, NAV_LINKS, SITE } from "@/lib/content";
 import { OwlMark } from "./OwlMark";
 import { GrainDivider } from "./GrainDivider";
@@ -117,7 +117,16 @@ export function Footer() {
           <p>
             © {new Date().getFullYear()} {SITE.name}. All rights reserved.
           </p>
-          <p className="font-display italic text-cream-500">{SITE.slogan}</p>
+          <div className="flex items-center gap-4">
+            <p className="font-display italic text-cream-500">{SITE.slogan}</p>
+            <Link
+              href="/admin/"
+              aria-label="Staff sign-in"
+              className="opacity-25 transition-opacity duration-300 hover:opacity-70"
+            >
+              <Lock size={14} />
+            </Link>
+          </div>
         </div>
       </div>
     </footer>
