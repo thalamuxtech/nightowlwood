@@ -68,7 +68,7 @@ function Hero() {
           className="object-cover"
           sizes="100vw"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-night-950/80 via-night-950/60 to-night-950" />
+        <div className="absolute inset-0 bg-gradient-to-b from-night-950/65 via-night-950/25 to-night-950" />
       </motion.div>
 
       <SawdustParticles />
@@ -173,7 +173,7 @@ function AboutTeaser() {
             height={720}
             className="h-full w-full object-cover transition-transform duration-700 hover:scale-105"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-night-950/50 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-night-950/30 to-transparent" />
         </div>
       </Reveal>
       <div>
@@ -273,7 +273,7 @@ function WorkStrip() {
                 sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                 className="object-cover transition-transform duration-700 group-hover:scale-108"
               />
-              <figcaption className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-night-950/90 via-night-950/25 to-transparent p-6">
+              <figcaption className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-night-950/85 via-night-950/10 to-transparent p-6">
                 <span className="text-[0.68rem] uppercase tracking-[0.25em] text-brass-400">
                   {item.category}
                 </span>
@@ -510,9 +510,9 @@ function CtaBand() {
           aria-hidden
           fill
           sizes="100vw"
-          className="object-cover opacity-25"
+          className="object-cover opacity-50"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-night-950 via-night-950/80 to-night-950" />
+        <div className="absolute inset-0 bg-gradient-to-b from-night-950 via-night-950/55 to-night-950" />
       </div>
       <GrainDivider />
       <span

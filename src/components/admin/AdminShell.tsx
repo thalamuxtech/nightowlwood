@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Eye,
+  EyeOff,
   GalleryHorizontalEnd,
   GraduationCap,
   Inbox,
@@ -13,6 +15,8 @@ import {
   LogOut,
   MailOpen,
   Newspaper,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   ShieldAlert,
   Users,
@@ -70,6 +74,19 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
 function Sidebar({ email }: { email: string }) {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    setCollapsed(localStorage.getItem("admin-sidebar-collapsed") === "1");
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((v) => {
+      localStorage.setItem("admin-sidebar-collapsed", v ? "0" : "1");
+      return !v;
+    });
+  }
+
   return (
     <>
       {/* Mobile top bar */}
@@ -101,40 +118,72 @@ function Sidebar({ email }: { email: string }) {
         </nav>
       </div>
 
-      {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r border-night-700/60 bg-night-900 p-6 lg:flex">
-        <Link href="/" className="flex items-center gap-3 text-brass-400" aria-label="View public site">
-          <OwlMark size={40} animate={false} />
-          <span className="leading-tight">
-            <span className="block font-display text-lg text-cream-100">Nightowl</span>
-            <span className="block text-[0.6rem] uppercase tracking-[0.3em] text-cream-400">
-              Admin
-            </span>
-          </span>
-        </Link>
-        <nav className="mt-10 flex flex-1 flex-col gap-1.5" aria-label="Admin">
+      {/* Desktop sidebar — collapsible */}
+      <aside
+        className={`sticky top-0 hidden h-svh shrink-0 flex-col border-r border-night-700/60 bg-night-900 transition-all duration-300 lg:flex ${
+          collapsed ? "w-[76px] p-3" : "w-64 p-6"
+        }`}
+      >
+        <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between"}`}>
+          <Link
+            href="/"
+            className="flex items-center gap-3 text-brass-400"
+            aria-label="View public site"
+          >
+            <OwlMark size={collapsed ? 34 : 40} animate={false} />
+            {!collapsed && (
+              <span className="leading-tight">
+                <span className="block font-display text-lg text-cream-100">Nightowl</span>
+                <span className="block text-[0.6rem] uppercase tracking-[0.3em] text-cream-400">
+                  Admin
+                </span>
+              </span>
+            )}
+          </Link>
+        </div>
+
+        <button
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className={`mt-6 flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-cream-400 transition-colors duration-200 hover:bg-night-800 hover:text-cream-100 ${
+            collapsed ? "justify-center" : ""
+          }`}
+        >
+          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          {!collapsed && <span>Collapse</span>}
+        </button>
+
+        <nav className="mt-4 flex flex-1 flex-col gap-1.5" aria-label="Admin">
           {NAV.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
+              title={collapsed ? label : undefined}
               aria-current={pathname === href ? "page" : undefined}
-              className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors duration-200 ${
+              className={`flex items-center gap-3 rounded-xl py-3 text-sm font-medium transition-colors duration-200 ${
+                collapsed ? "justify-center px-0" : "px-4"
+              } ${
                 pathname === href
                   ? "bg-brass-500 text-night-950"
                   : "text-cream-300 hover:bg-night-800 hover:text-cream-100"
               }`}
             >
-              <Icon size={18} /> {label}
+              <Icon size={18} className="shrink-0" />
+              {!collapsed && label}
             </Link>
           ))}
         </nav>
         <div className="border-t border-night-700/60 pt-4">
-          <p className="truncate text-xs text-cream-500">{email}</p>
+          {!collapsed && <p className="truncate text-xs text-cream-500">{email}</p>}
           <button
             onClick={() => signOut(getFirebaseAuth())}
-            className="mt-3 flex w-full cursor-pointer items-center gap-3 rounded-xl px-4 py-3 text-sm text-cream-300 transition-colors duration-200 hover:bg-night-800 hover:text-cream-100"
+            title={collapsed ? "Sign out" : undefined}
+            className={`mt-3 flex w-full cursor-pointer items-center gap-3 rounded-xl py-3 text-sm text-cream-300 transition-colors duration-200 hover:bg-night-800 hover:text-cream-100 ${
+              collapsed ? "justify-center px-0" : "px-4"
+            }`}
           >
-            <LogOut size={18} /> Sign out
+            <LogOut size={18} className="shrink-0" />
+            {!collapsed && "Sign out"}
           </button>
         </div>
       </aside>
@@ -145,6 +194,7 @@ function Sidebar({ email }: { email: string }) {
 function LoginScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -195,14 +245,24 @@ function LoginScreen() {
             <label htmlFor="admin-password" className="mb-1.5 block text-sm text-cream-300">
               Password
             </label>
-            <input
-              id="admin-password"
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
-            />
+            <div className="relative">
+              <input
+                id="admin-password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                required
+                autoComplete="current-password"
+                className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 pr-12 text-cream-100 focus:border-brass-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-cream-400 transition-colors hover:text-brass-300"
+              >
+                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
           </div>
           <AnimatePresence>
             {error && (

@@ -50,7 +50,7 @@ export function ImageSlider({ images, alt, interval = 4500, className = "" }: Im
             loading="lazy"
           />
         </AnimatePresence>
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-night-950/30 to-transparent" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-night-950/15 to-transparent" />
       </div>
 
       {images.length > 1 && (

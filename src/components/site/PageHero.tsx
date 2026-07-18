@@ -21,7 +21,7 @@ export function PageHero({ eyebrow, title, intro, image, imageAlt = "" }: PageHe
       {image && (
         <div className="absolute inset-0 -z-10">
           <Image src={image} alt={imageAlt} fill priority sizes="100vw" className="object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-b from-night-950/85 via-night-950/70 to-night-950" />
+          <div className="absolute inset-0 bg-gradient-to-b from-night-950/60 via-night-950/30 to-night-950" />
         </div>
       )}
       <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
