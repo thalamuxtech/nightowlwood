@@ -35,7 +35,7 @@ export function Footer() {
                 alt={badge.alt}
                 width={40}
                 height={40}
-                className="h-9 w-9 rounded-full bg-cream-50 object-contain p-1"
+                className="h-9 w-9 rounded-full bg-cream-50 object-contain p-1 transition-transform duration-300 hover:scale-[1.7]"
               />
             ))}
           </div>

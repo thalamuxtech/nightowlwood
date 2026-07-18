@@ -486,7 +486,7 @@ function ComplianceStrip() {
                 alt={badge.alt}
                 width={56}
                 height={56}
-                className="h-14 w-14 rounded-full bg-cream-50 object-contain p-1.5"
+                className="h-14 w-14 rounded-full bg-cream-50 object-contain p-1.5 transition-transform duration-300 hover:scale-150"
               />
               <span className="text-[0.65rem] uppercase tracking-[0.2em] text-cream-500">
                 {badge.name}

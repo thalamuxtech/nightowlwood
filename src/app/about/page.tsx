@@ -155,7 +155,7 @@ export default function AboutPage() {
                   alt={badge.alt}
                   width={64}
                   height={64}
-                  className="h-16 w-16 rounded-full bg-cream-50 object-contain p-2"
+                  className="h-16 w-16 rounded-full bg-cream-50 object-contain p-2 transition-transform duration-300 hover:scale-150"
                 />
                 <span className="text-[0.65rem] uppercase tracking-[0.2em] text-cream-500">
                   {badge.name}
