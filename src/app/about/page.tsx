@@ -49,7 +49,7 @@ export default function AboutPage() {
       </section>
 
       {/* Vision & Mission */}
-      <section className="bg-night-900 py-20 lg:py-28">
+      <section className="bg-woodplanks relative py-20 lg:py-28">
         <div className="mx-auto grid max-w-6xl gap-8 px-5 sm:px-8 md:grid-cols-2">
           <Reveal>
             <div className="glass h-full rounded-3xl p-9">

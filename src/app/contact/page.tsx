@@ -20,11 +20,11 @@ export default function ContactPage() {
         eyebrow="Get a quote"
         title="Tell us about your project"
         intro="Send your cutting list, drawings, or a simple description. We respond with an honest quote and a realistic timeline, usually within one business day."
-        image="/images/doors.jpg"
-        imageAlt="Custom doors fabricated by Nightowl Woodworks"
+        image="/images/cutting.jpg"
+        imageAlt="Precision cutting in progress at the Nightowl Woodworks factory"
       />
 
-      <section className="mx-auto grid max-w-7xl gap-14 px-5 py-20 sm:px-8 lg:grid-cols-[1fr_380px] lg:py-28">
+      <section className="bg-woodgrain relative"><div className="mx-auto grid max-w-7xl gap-14 px-5 py-20 sm:px-8 lg:grid-cols-[1fr_380px] lg:py-28">
         <ContactTabs />
 
         <aside className="space-y-6">
@@ -80,7 +80,7 @@ export default function ContactPage() {
             </div>
           </Reveal>
         </aside>
-      </section>
+      </div></section>
     </SiteShell>
   );
 }
