@@ -13,7 +13,7 @@ export function Footer() {
       <div className="mx-auto grid max-w-7xl gap-12 px-5 pb-10 pt-14 sm:px-8 md:grid-cols-3">
         <div>
           <div className="flex items-center gap-3 text-brass-400">
-            <OwlMark size={52} animate={false} />
+            <OwlMark size={68} animate={false} />
             <div className="leading-tight">
               <p className="text-wood3d-light font-display text-3xl font-semibold tracking-wide">
                 Nightowl
