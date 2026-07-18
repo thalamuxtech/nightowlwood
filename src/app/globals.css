@@ -274,9 +274,25 @@ body {
     drop-shadow(0 6px 10px rgb(0 0 0 / 0.65));
 }
 
+/* Brighter wood text for small sizes on dark backgrounds (footer brand) */
+.text-wood3d-light {
+  background-image:
+    linear-gradient(to bottom, rgb(255 236 200 / 0.72), rgb(201 143 67 / 0.35)),
+    url("/images/wood-texture.jpg");
+  background-size: cover, 260px auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-stroke: 1px rgb(236 201 143 / 0.45);
+  filter:
+    drop-shadow(0 1px 0 #1c130b)
+    drop-shadow(0 3px 6px rgb(0 0 0 / 0.7));
+}
+
 /* Graceful fallback where background-clip: text is unsupported */
 @supports not ((-webkit-background-clip: text) or (background-clip: text)) {
-  .text-wood3d {
+  .text-wood3d,
+  .text-wood3d-light {
     background: none;
     color: var(--color-brass-400);
   }

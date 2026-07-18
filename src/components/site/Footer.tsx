@@ -15,7 +15,7 @@ export function Footer() {
           <div className="flex items-center gap-3 text-brass-400">
             <OwlMark size={52} animate={false} />
             <div className="leading-tight">
-              <p className="text-wood3d font-display text-2xl font-semibold tracking-wide">
+              <p className="text-wood3d-light font-display text-3xl font-semibold tracking-wide">
                 Nightowl
               </p>
               <p className="text-[0.65rem] uppercase tracking-[0.34em] text-cream-400">
