@@ -226,6 +226,52 @@ body {
   z-index: 1;
 }
 
+/* Diagonal parquet — criss-cross seams over the walnut texture */
+.bg-woodparquet {
+  position: relative;
+}
+.bg-woodparquet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgb(245 239 226 / 0.045) 0px,
+      transparent 2px,
+      transparent 108px,
+      rgb(0 0 0 / 0.6) 110px,
+      rgb(0 0 0 / 0.6) 112px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgb(245 239 226 / 0.045) 0px,
+      transparent 2px,
+      transparent 108px,
+      rgb(0 0 0 / 0.6) 110px,
+      rgb(0 0 0 / 0.6) 112px
+    ),
+    linear-gradient(to bottom, rgb(12 10 8 / 0.7), rgb(12 10 8 / 0.55) 55%, rgb(12 10 8 / 0.74)),
+    url("/images/wood-texture.jpg");
+  background-size: auto, auto, cover, 500px auto;
+  background-position: center;
+}
+.bg-woodparquet::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow:
+    inset 0 1px 0 rgb(245 239 226 / 0.06),
+    inset 0 20px 38px -20px rgb(0 0 0 / 0.88),
+    inset 0 -20px 38px -20px rgb(0 0 0 / 0.88);
+}
+.bg-woodparquet > * {
+  position: relative;
+  z-index: 1;
+}
+
 /* iOS-style frosted glass surface */
 .glass {
   background: linear-gradient(to bottom, rgb(36 29 23 / 0.55), rgb(29 23 18 / 0.45));

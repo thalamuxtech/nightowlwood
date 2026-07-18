@@ -208,7 +208,7 @@ function AboutTeaser() {
 
 function ServicesGrid() {
   return (
-    <section className="bg-night-900 py-24 lg:py-32">
+    <section className="bg-woodparquet relative py-24 lg:py-32">
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
         <SectionHeading
           eyebrow="Our services"
@@ -330,6 +330,14 @@ function IndustriesBand() {
 }
 
 function ProcessTimeline() {
+  const ref = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start 0.85", "end 0.45"],
+  });
+  const sparkTop = useTransform(scrollYProgress, (v) => `${v * 100}%`);
+
   return (
     <section className="py-24 lg:py-32">
       <div className="mx-auto max-w-4xl px-5 sm:px-8">
@@ -337,30 +345,82 @@ function ProcessTimeline() {
           eyebrow="Quality & process assurance"
           title="How we control quality"
         />
-        <div className="relative mt-16">
+        <div ref={ref} className="relative mt-16">
+          {/* Track */}
           <span
             aria-hidden
-            className="absolute left-6 top-0 h-full w-px bg-gradient-to-b from-brass-500/60 via-walnut-500/40 to-transparent sm:left-1/2"
+            className="absolute left-6 top-0 h-full w-px bg-night-600/60 sm:left-1/2"
           />
-          {PROCESS.map((phase, i) => (
-            <Reveal
-              key={phase.step}
-              delay={i * 0.08}
-              className={`relative mb-12 pl-16 sm:w-1/2 sm:pl-0 ${
-                i % 2 === 0 ? "sm:pr-14 sm:text-right" : "sm:ml-auto sm:pl-14"
-              }`}
-            >
-              <span
-                className={`ring-endgrain absolute left-6 top-1 flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full border border-brass-500/50 font-display text-sm text-brass-400 shadow-glow ${
-                  i % 2 === 0 ? "sm:left-auto sm:right-0 sm:translate-x-1/2" : "sm:left-0 sm:-translate-x-1/2"
+          {/* Progress line draws down as you scroll */}
+          <motion.span
+            aria-hidden
+            style={{ scaleY: reduce ? 1 : scrollYProgress }}
+            className="absolute left-6 top-0 h-full w-px origin-top bg-gradient-to-b from-brass-400 via-brass-500 to-brass-600 shadow-glow sm:left-1/2"
+          />
+          {/* Traveling spark riding the line */}
+          {!reduce && (
+            <motion.span
+              aria-hidden
+              style={{ top: sparkTop }}
+              className="absolute left-6 z-10 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brass-300 shadow-[0_0_14px_4px_rgb(219_169_95/0.55)] sm:left-1/2"
+            />
+          )}
+
+          {PROCESS.map((phase, i) => {
+            const fromLeft = i % 2 === 0;
+            return (
+              <motion.div
+                key={phase.step}
+                initial={{ opacity: 0, x: reduce ? 0 : fromLeft ? -70 : 70 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true, margin: "-90px" }}
+                transition={{ type: "spring", stiffness: 90, damping: 16 }}
+                className={`relative mb-12 pl-16 sm:w-1/2 sm:pl-0 ${
+                  fromLeft ? "sm:pr-14 sm:text-right" : "sm:ml-auto sm:pl-14"
                 }`}
               >
-                {phase.step}
-              </span>
-              <h3 className="font-display text-xl text-cream-50">{phase.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-cream-400">{phase.description}</p>
-            </Reveal>
-          ))}
+                <motion.span
+                  initial={{ scale: 0, rotate: -120 }}
+                  whileInView={{ scale: 1, rotate: 0 }}
+                  viewport={{ once: true, margin: "-90px" }}
+                  transition={{ type: "spring", stiffness: 220, damping: 13, delay: 0.15 }}
+                  className={`ring-endgrain absolute left-6 top-1 flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full border border-brass-500/50 font-display text-sm text-brass-400 shadow-glow ${
+                    fromLeft ? "sm:left-auto sm:right-0 sm:translate-x-1/2" : "sm:left-0 sm:-translate-x-1/2"
+                  }`}
+                >
+                  {phase.step}
+                  {!reduce && (
+                    <motion.span
+                      aria-hidden
+                      initial={{ scale: 1, opacity: 0 }}
+                      whileInView={{ scale: [1, 1.9], opacity: [0.6, 0] }}
+                      viewport={{ once: true, margin: "-90px" }}
+                      transition={{ duration: 1.1, delay: 0.35, ease: "easeOut" }}
+                      className="absolute inset-0 rounded-full border border-brass-400"
+                    />
+                  )}
+                </motion.span>
+                <motion.h3
+                  initial={{ opacity: 0, y: 10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-90px" }}
+                  transition={{ delay: 0.25, duration: 0.5 }}
+                  className="font-display text-xl text-cream-50"
+                >
+                  {phase.title}
+                </motion.h3>
+                <motion.p
+                  initial={{ opacity: 0, y: 10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-90px" }}
+                  transition={{ delay: 0.35, duration: 0.5 }}
+                  className="mt-2 text-sm leading-relaxed text-cream-400"
+                >
+                  {phase.description}
+                </motion.p>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </section>
