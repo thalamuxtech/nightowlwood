@@ -18,12 +18,12 @@ export function SocialShowcase() {
     <section className="bg-night-900 py-20 lg:py-28">
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 sm:px-8 lg:grid-cols-2">
         <Reveal>
-          <div className="relative overflow-hidden rounded-3xl border border-night-700/70 shadow-card">
+          <div className="relative mx-auto max-w-[300px] overflow-hidden rounded-3xl border border-night-700/70 shadow-card sm:max-w-xs">
             <Image
               src="/images/social-showcase.jpg"
               alt="Nightowl Woodworks production videos and projects on social media"
-              width={900}
-              height={1200}
+              width={600}
+              height={800}
               className="h-auto w-full object-contain"
             />
           </div>

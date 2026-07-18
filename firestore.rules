@@ -7,7 +7,7 @@ service cloud.firestore {
     // session alone is NOT proof of staff. Only these exact accounts are staff.
     function isAdmin() {
       return request.auth != null
-        && request.auth.token.email in ['admin@nighowl.com.ng'];
+        && request.auth.token.email in ['admin@nightowl.com.ng'];
     }
 
     function validSubmission(required) {

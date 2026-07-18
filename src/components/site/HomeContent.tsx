@@ -502,7 +502,7 @@ function ComplianceStrip() {
 
 function CtaBand() {
   return (
-    <section className="bg-woodgrain relative overflow-hidden py-24 lg:py-32">
+    <section className="bg-woodgrain relative overflow-hidden py-14 lg:py-16">
       <div className="absolute inset-0 -z-10">
         <Image
           src="/images/cutting.jpg"
@@ -522,7 +522,7 @@ function CtaBand() {
       >
         Precision
       </span>
-      <div className="mx-auto max-w-3xl px-5 py-10 text-center sm:px-8">
+      <div className="mx-auto max-w-3xl px-5 py-4 text-center sm:px-8">
         <Reveal>
           <h2 className="text-title text-cream-50">
             Your next project deserves <span className="text-brass-400">precision</span>.

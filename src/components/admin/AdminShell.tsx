@@ -223,7 +223,9 @@ function LoginScreen() {
         className="w-full max-w-sm"
       >
         <div className="flex flex-col items-center text-brass-400">
-          <OwlMark size={80} />
+          <Link href="/" aria-label="Back to the Nightowl Woodworks website" className="transition-opacity hover:opacity-80">
+            <OwlMark size={80} />
+          </Link>
           <h1 className="mt-4 font-display text-2xl text-cream-100">Nightowl Admin</h1>
           <p className="mt-1 text-sm text-cream-500">Staff sign-in</p>
         </div>
