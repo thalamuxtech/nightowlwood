@@ -8,7 +8,7 @@ import { GrainDivider } from "./GrainDivider";
 
 export function Footer() {
   return (
-    <footer className="relative bg-night-900">
+    <footer className="bg-woodgrain relative bg-night-900">
       <GrainDivider />
       <div className="mx-auto grid max-w-7xl gap-12 px-5 pb-10 pt-14 sm:px-8 md:grid-cols-3">
         <div>

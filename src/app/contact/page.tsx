@@ -28,7 +28,7 @@ export default function ContactPage() {
 
         <aside className="space-y-6">
           <Reveal delay={0.15}>
-            <div className="rounded-2xl border border-night-700/70 bg-night-800/50 p-8">
+            <div className="glass rounded-3xl p-8">
               <h2 className="font-display text-xl text-cream-50">Prefer to chat?</h2>
               <p className="mt-3 text-sm leading-relaxed text-cream-400">
                 Reach out for inquiries, collaborations, or project discussions —
@@ -53,7 +53,7 @@ export default function ContactPage() {
           </Reveal>
 
           <Reveal delay={0.25}>
-            <div className="rounded-2xl border border-night-700/70 bg-night-800/50 p-8">
+            <div className="glass rounded-3xl p-8">
               <h2 className="font-display text-xl text-cream-50">Follow the shop</h2>
               <p className="mt-3 text-sm leading-relaxed text-cream-400">
                 Live production videos, finished projects, and behind-the-scenes.

@@ -80,7 +80,7 @@ export function InternshipForm() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       onSubmit={onSubmit}
-      className="rounded-2xl border border-night-700/70 bg-night-800/40 p-7 sm:p-10"
+      className="glass rounded-3xl p-7 sm:p-10"
       noValidate
     >
       <div className="grid gap-6 sm:grid-cols-2">

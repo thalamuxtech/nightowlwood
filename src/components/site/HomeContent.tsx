@@ -144,14 +144,16 @@ function Hero() {
 
 function StatsBand() {
   return (
-    <section className="bg-woodgrain relative bg-night-900 py-16 sm:py-20">
-      <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 px-5 sm:grid-cols-3 sm:px-8">
+    <section className="bg-woodplanks relative py-16 sm:py-20">
+      <div className="mx-auto grid max-w-5xl grid-cols-1 gap-6 px-5 sm:grid-cols-3 sm:px-8">
         {STATS.map((stat, i) => (
-          <Reveal key={stat.label} delay={i * 0.12} className="text-center">
-            <p className="font-display text-5xl text-brass-400 sm:text-6xl">
-              <Counter value={stat.value} suffix={stat.suffix} />
-            </p>
-            <p className="mt-3 text-sm uppercase tracking-[0.2em] text-cream-400">{stat.label}</p>
+          <Reveal key={stat.label} delay={i * 0.12}>
+            <div className="glass rounded-3xl px-6 py-8 text-center">
+              <p className="font-display text-5xl text-brass-400 sm:text-6xl">
+                <Counter value={stat.value} suffix={stat.suffix} />
+              </p>
+              <p className="mt-3 text-sm uppercase tracking-[0.2em] text-cream-300">{stat.label}</p>
+            </div>
           </Reveal>
         ))}
       </div>
@@ -218,7 +220,7 @@ function ServicesGrid() {
           {SERVICES.map((service) => (
             <m.div key={service.key} variants={staggerItem} className="h-full">
               <Tilt3D className="h-full">
-                <article className="group relative h-full overflow-hidden rounded-2xl border border-night-700/70 bg-night-800/60 p-8 transition-colors duration-400 hover:border-brass-500/50 hover:shadow-glow">
+                <article className="glass group relative h-full overflow-hidden rounded-3xl p-8 transition-all duration-400 hover:shadow-glow">
                   <span className="inline-block text-brass-400 transition-transform duration-500 group-hover:scale-110">
                     <ServiceIcon name={service.key} />
                   </span>
@@ -410,7 +412,7 @@ function Testimonials() {
             <m.blockquote
               key={t.author}
               variants={staggerItem}
-              className="flex flex-col rounded-2xl border border-night-700/70 bg-night-800/40 p-8"
+              className="glass flex flex-col rounded-3xl p-8"
             >
               <Quote size={28} className="text-brass-500/70" aria-hidden />
               <p className="mt-4 flex-1 leading-relaxed text-cream-200">“{t.quote}”</p>
@@ -513,6 +515,13 @@ function CtaBand() {
         <div className="absolute inset-0 bg-gradient-to-b from-night-950 via-night-950/80 to-night-950" />
       </div>
       <GrainDivider />
+      <span
+        aria-hidden
+        className="text-carved pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 select-none whitespace-nowrap font-display font-semibold uppercase tracking-[0.08em]"
+        style={{ fontSize: "clamp(4rem, 16vw, 13rem)" }}
+      >
+        Precision
+      </span>
       <div className="mx-auto max-w-3xl px-5 py-10 text-center sm:px-8">
         <Reveal>
           <h2 className="text-title text-cream-50">
