@@ -209,45 +209,44 @@ const smallDarkR = darkRegions.filter((r) => !isPupil(r) && r.area <= 10000);
 const mainBrowR = lightRegions.filter((r) => r.area > 2000);
 const smallBrowR = lightRegions.filter((r) => r.area <= 2000);
 
-// For the OUTLINE style, strip interior hole subpaths that fall inside an
-// eye (the eye rings + lash slivers) from the head path — otherwise stroking
-// them draws hollow ovals. The eyes, pupils, and lashes are drawn separately.
+// For the OUTLINE style, separate the head silhouette from its interior
+// subpaths. The eye-ring crescents (authentic inner-upper cut) are KEPT as
+// their own stroked shapes; the tiny lash slivers are dropped (we redraw
+// lashes as clean centrelines); the beak is kept on the head.
+const eyeRingPaths = [];
 function stripEyeHoles(d) {
   const subs = subpathsOf(d);
   const outerBBArea = (s) => {
     const b = bbox(pointsOf(s));
     return (b.maxX - b.minX) * (b.maxY - b.minY);
   };
-  // Keep the largest subpath (the head silhouette) always; drop any other
-  // subpath whose centre lies within an eye's outer radius.
   let maxIdx = 0, maxA = -1;
   subs.forEach((s, i) => {
     const a = outerBBArea(s);
     if (a > maxA) { maxA = a; maxIdx = i; }
   });
-  // Drop every non-silhouette subpath in the eye band (eye rings, lash
-  // slivers, beak notch duplicates). The head silhouette is huge; interior
-  // details are small closed slivers we redraw cleanly elsewhere.
   const eyeMaxY = Math.max(...eyes.map((e) => e.maxY));
-  return subs
-    .filter((s, i) => {
-      if (i === maxIdx) return true;
-      const b = bbox(pointsOf(s));
-      const c = centroid(pointsOf(s));
-      // Protect the beak: a narrow shape centred between the eyes, extending
-      // below the eye line.
-      const midX = (eyes[0].cx + eyes[1].cx) / 2;
-      const isBeak = Math.abs(c[0] - midX) < 30 && b.maxY > eyeMaxY - 10;
-      if (isBeak) return true;
-      // Drop eye rings and lash slivers: closed subpaths in the eye band.
-      const near = eyes.some((e) => {
-        const half = (e.maxX - e.minX) / 2;
-        return c[0] > e.cx - half * 2.0 && c[0] < e.cx + half * 2.0 &&
-               c[1] > e.cy - half * 1.6 && c[1] < e.cy + half * 1.6;
-      });
-      return !near;
-    })
-    .join(" ");
+  const kept = [];
+  subs.forEach((s, i) => {
+    if (i === maxIdx) { kept.push(s); return; }
+    const b = bbox(pointsOf(s));
+    const c = centroid(pointsOf(s));
+    const w = b.maxX - b.minX, h = b.maxY - b.minY;
+    // Beak: narrow shape centred between the eyes, below the eye line.
+    const midX = (eyes[0].cx + eyes[1].cx) / 2;
+    if (Math.abs(c[0] - midX) < 30 && b.maxY > eyeMaxY - 10) { kept.push(s); return; }
+    // Eye ring crescent: a big-ish subpath centred on an eye.
+    const onEye = eyes.find((e) => Math.hypot(c[0] - e.cx, c[1] - e.cy) < e.pupilR + 8);
+    if (onEye && w > 40 && h > 40) { eyeRingPaths.push(s); return; }
+    // Everything else in the eye band (lash slivers) is dropped.
+    const inBand = eyes.some((e) => {
+      const half = (e.maxX - e.minX) / 2;
+      return c[0] > e.cx - half * 2.0 && c[0] < e.cx + half * 2.0 &&
+             c[1] > e.cy - half * 1.6 && c[1] < e.cy + half * 1.6;
+    });
+    if (!inBand) kept.push(s);
+  });
+  return kept.join(" ");
 }
 const mainDarkR = darkRegions
   .filter((r) => !isPupil(r) && r.area > 10000)
@@ -288,7 +287,7 @@ export const OWL_BROW: string[] = ${JSON.stringify(lightRegions.map((p) => p.d))
 export const OWL_PUPILS: string[] = ${JSON.stringify(pupils.map((p) => p.d))};
 export const OWL_PUPIL_CENTERS: { cx: number; cy: number }[] = ${JSON.stringify(pupils.map((p) => ({ cx: Math.round(p.center[0]), cy: Math.round(p.center[1]) })))};
 export const OWL_MAIN_DARK: string[] = ${JSON.stringify(mainDarkR.map((p) => p.dOutline))};
-export const OWL_EYE_RINGS: { cx: number; cy: number; r: number }[] = ${JSON.stringify(eyes.map((e) => ({ cx: Math.round(e.cx), cy: Math.round(e.cy), r: Math.round((e.maxX - e.minX) / 2) })))};
+export const OWL_EYE_RINGS: string[] = ${JSON.stringify(eyeRingPaths)};
 export const OWL_SMALL_DARK: string[] = ${JSON.stringify(smallDarkR.map((p) => p.d))};
 export const OWL_MAIN_BROW: string[] = ${JSON.stringify(mainBrowR.map((p) => p.d))};
 export const OWL_SMALL_BROW: string[] = ${JSON.stringify(smallBrowLines.map((p) => p.d))};
@@ -366,14 +365,21 @@ function outline(strokeColor, browColor) {
       50% { transform: translateY(-3px); }
     }
     .lash { animation: owl-lash 2.6s ease-in-out infinite; }
-    @media (prefers-reduced-motion: reduce) { .pupils, .lid, .lash { animation: none; } }
+    @keyframes owl-brow {
+      0%, 70%, 100% { transform: translateY(0); }
+      80%, 88% { transform: translateY(-5px); }
+    }
+    .brow { animation: owl-brow 5s ease-in-out infinite; transform-origin: center; }
+    @media (prefers-reduced-motion: reduce) { .pupils, .lid, .lash, .brow { animation: none; } }
   </style>
   <defs>
 ${eyes.map((e, i) => `    <clipPath id="oeye${i}"><circle cx="${Math.round(e.cx)}" cy="${Math.round(e.cy)}" r="${eyeR[i]}"/></clipPath>`).join("\n")}
   </defs>
 ${mainDarkR.map((r) => stroked(r.dOutline, strokeColor)).join("\n")}
+${eyeRingPaths.map((d) => stroked(d, strokeColor)).join("\n")}
+  <g class="brow">
 ${mainBrowR.map((r) => stroked(r.d, browColor)).join("\n")}
-${eyes.map((e) => `  <circle cx="${Math.round(e.cx)}" cy="${Math.round(e.cy)}" r="${Math.round((e.maxX - e.minX) / 2)}" fill="none" stroke="${strokeColor}" stroke-width="2.6"/>`).join("\n")}
+  </g>
 ${smallDarkR.map((r) => thin(r.d, strokeColor)).join("\n")}
   <g class="lash">
 ${lashL.map((r) => thin(r.d, strokeColor)).join("\n")}

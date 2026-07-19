@@ -3,6 +3,7 @@
 import { useId } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
+  OWL_EYE_RINGS,
   OWL_EYES,
   OWL_MAIN_BROW,
   OWL_MAIN_DARK,
@@ -71,18 +72,32 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
         ))}
       </defs>
 
-      {/* Stroked head + brow */}
+      {/* Stroked head */}
       {OWL_MAIN_DARK.map((d, i) => (
         <path key={`md${i}`} d={d} {...strokeProps} />
       ))}
-      {OWL_MAIN_BROW.map((d, i) => (
-        <path key={`mb${i}`} d={d} {...strokeProps} stroke="#ecc98f" />
+
+      {/* Eye rings — the authentic crescent shape (cut at the inner-upper
+          side by the brow), traced from the logo */}
+      {OWL_EYE_RINGS.map((d, i) => (
+        <path key={`ring${i}`} d={d} {...strokeProps} />
       ))}
 
-      {/* Clean eye rings (the traced rings were merged into the head path) */}
-      {OWL_EYES.map((e, i) => (
-        <circle key={`ring${i}`} cx={e.cx} cy={e.cy} r={e.r} {...strokeProps} />
-      ))}
+      {/* V-shaped brow, gently raising now and then */}
+      <motion.g
+        animate={reduce ? undefined : { y: [0, 0, -5, -5, 0] }}
+        transition={{
+          duration: 5,
+          times: [0, 0.7, 0.8, 0.88, 1],
+          repeat: Infinity,
+          ease: "easeInOut",
+          delay: entrance ? 1.4 : 0.4,
+        }}
+      >
+        {OWL_MAIN_BROW.map((d, i) => (
+          <path key={`mb${i}`} d={d} {...strokeProps} stroke="#ecc98f" />
+        ))}
+      </motion.g>
 
       {/* Small dark flare marks (ear/wing tips) */}
       {OWL_SMALL_DARK.map((d, i) => (
