@@ -7,13 +7,13 @@
       49%, 68% { transform: translate(14px, 7px); }
       76%, 100% { transform: translate(0, 0); }
     }
-    .pupils { animation: owl-glance 5.5s ease-in-out infinite; }
+    .pupils { animation: owl-glance 7.5s ease-in-out infinite; }
     @keyframes owl-blink {
       0%, 88% { transform: translateY(-104px); }
       92% { transform: translateY(0); }
       96%, 100% { transform: translateY(-104px); }
     }
-    .lid { animation: owl-blink 4.4s ease-in-out infinite; }
+    .lid { animation: owl-blink 6.5s ease-in-out infinite; }
     @media (prefers-reduced-motion: reduce) { .pupils, .lid { animation: none; } }
   </style>
   <defs>

@@ -238,13 +238,13 @@ function standalone(bodyFill, browFill, browOpacity) {
       49%, 68% { transform: translate(${travel}px, ${Math.ceil(travel / 2)}px); }
       76%, 100% { transform: translate(0, 0); }
     }
-    .pupils { animation: owl-glance 5.5s ease-in-out infinite; }
+    .pupils { animation: owl-glance 7.5s ease-in-out infinite; }
     @keyframes owl-blink {
       0%, 88% { transform: translateY(-${lidHide}px); }
       92% { transform: translateY(0); }
       96%, 100% { transform: translateY(-${lidHide}px); }
     }
-    .lid { animation: owl-blink 4.4s ease-in-out infinite; }
+    .lid { animation: owl-blink 6.5s ease-in-out infinite; }
     @media (prefers-reduced-motion: reduce) { .pupils, .lid { animation: none; } }
   </style>
   <defs>
@@ -269,6 +269,8 @@ function outline(strokeColor, browColor) {
   const stroked = (d, c) =>
     `  <path fill="none" stroke="${c}" stroke-width="4" stroke-linejoin="round" d="${d}"/>`;
   const solid = (d, c) => `  <path fill="${c}" fill-rule="evenodd" d="${d}"/>`;
+  const eyeR = eyes.map((e) => Math.round((e.maxX - e.minX) / 2 + 2));
+  const lidHide = Math.max(...eyeR) * 2 + 10;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="516" height="349">
   <style>
     @keyframes owl-glance {
@@ -278,9 +280,18 @@ function outline(strokeColor, browColor) {
       49%, 68% { transform: translate(${travel}px, ${Math.ceil(travel / 2)}px); }
       76%, 100% { transform: translate(0, 0); }
     }
-    .pupils { animation: owl-glance 5.5s ease-in-out infinite; }
-    @media (prefers-reduced-motion: reduce) { .pupils { animation: none; } }
+    .pupils { animation: owl-glance 7.5s ease-in-out infinite; }
+    @keyframes owl-blink {
+      0%, 88% { transform: translateY(-${lidHide}px); }
+      92% { transform: translateY(0); }
+      96%, 100% { transform: translateY(-${lidHide}px); }
+    }
+    .lid { animation: owl-blink 6.5s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { .pupils, .lid { animation: none; } }
   </style>
+  <defs>
+${eyes.map((e, i) => `    <clipPath id="oeye${i}"><circle cx="${Math.round(e.cx)}" cy="${Math.round(e.cy)}" r="${eyeR[i]}"/></clipPath>`).join("\n")}
+  </defs>
 ${mainDark.map((r) => stroked(r.d, strokeColor)).join("\n")}
 ${mainBrow.map((r) => stroked(r.d, browColor)).join("\n")}
 ${smallDark.map((r) => solid(r.d, strokeColor)).join("\n")}
@@ -288,6 +299,7 @@ ${smallBrow.map((r) => solid(r.d, browColor)).join("\n")}
   <g class="pupils">
 ${pupils.map((x) => solid(x.d, strokeColor)).join("\n")}
   </g>
+${eyes.map((e, i) => `  <g clip-path="url(#oeye${i})"><rect class="lid" x="${Math.round(e.cx) - eyeR[i] - 2}" y="${Math.round(e.cy) - eyeR[i] - 2}" width="${eyeR[i] * 2 + 4}" height="${eyeR[i] * 2 + 4}" fill="${strokeColor}"/></g>`).join("\n")}
 </svg>
 `;
 }

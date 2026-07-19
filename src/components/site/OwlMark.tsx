@@ -61,7 +61,7 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
               }
         }
         transition={{
-          duration: 5.5,
+          duration: 7.5,
           times: [0, 0.09, 0.28, 0.37, 0.46, 0.65, 0.74, 1],
           repeat: Infinity,
           ease: "easeInOut",
@@ -88,8 +88,8 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
                 initial={{ y: -lid }}
                 animate={{ y: [-lid, -lid, 0, -lid, -lid] }}
                 transition={{
-                  duration: 4.4,
-                  times: [0, 0.88, 0.92, 0.96, 1],
+                  duration: 6.5,
+                  times: [0, 0.9, 0.935, 0.97, 1],
                   repeat: Infinity,
                   ease: "easeInOut",
                   delay: entrance ? 1.6 : 0.8,
