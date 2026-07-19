@@ -46,7 +46,7 @@ export function Header() {
             onClick={() => setOpen(false)}
           >
             <span className="text-brass-400">
-              <OwlMark size={60} />
+              <OwlMark size={84} />
             </span>
             <span className="hidden flex-col leading-tight sm:flex">
               <span className="font-display text-lg tracking-wide">Nightowl</span>

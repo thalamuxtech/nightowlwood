@@ -7,7 +7,7 @@ export default function NotFound() {
     <SiteShell>
       <section className="flex min-h-svh flex-col items-center justify-center px-5 text-center">
         <span className="text-brass-400">
-          <OwlMark size={120} />
+          <OwlMark size={160} />
         </span>
         <h1 className="text-title mt-8 text-cream-50">This page flew off</h1>
         <p className="mt-4 max-w-md text-cream-400">

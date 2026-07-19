@@ -38,7 +38,7 @@ export function SplashScreen() {
           aria-hidden
         >
           <span className="text-brass-400">
-            <OwlMark size={140} />
+            <OwlMark size={200} />
           </span>
           <motion.p
             initial={{ opacity: 0, y: 12 }}

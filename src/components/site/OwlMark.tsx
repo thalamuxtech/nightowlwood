@@ -31,7 +31,7 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
     stroke: "currentColor",
     strokeLinejoin: "round" as const,
     vectorEffect: "non-scaling-stroke" as const,
-    strokeWidth: 1.6,
+    strokeWidth: 2.2,
   };
 
   return (
