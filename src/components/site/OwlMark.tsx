@@ -10,12 +10,14 @@ import {
   OWL_PUPILS,
   OWL_RATIO,
   OWL_SMALL_BROW,
+  OWL_SMALL_BROW_CENTERS,
   OWL_SMALL_DARK,
   OWL_TRAVEL,
   OWL_VIEWBOX,
 } from "./owl-paths";
 
 const PUPIL_SCALE = 0.85;
+const OWL_MID_X = 258; // viewBox is 0..516 wide
 
 /**
  * The Nightowl Woodworks owl mark in the outline (line-art) style,
@@ -34,8 +36,21 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
     stroke: "currentColor",
     strokeLinejoin: "round" as const,
     vectorEffect: "non-scaling-stroke" as const,
-    strokeWidth: 2.2,
+    strokeWidth: 1.6,
   };
+  const lashProps = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    vectorEffect: "non-scaling-stroke" as const,
+    strokeWidth: 1.3,
+  };
+
+  // Eyelash dashes, split left/right for opposing up-down motion.
+  const lashes = OWL_SMALL_BROW.map((d, i) => ({ d, ...OWL_SMALL_BROW_CENTERS[i] }));
+  const lashLeft = lashes.filter((l) => l.cx < OWL_MID_X);
+  const lashRight = lashes.filter((l) => l.cx >= OWL_MID_X);
 
   return (
     <motion.svg
@@ -64,13 +79,33 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
         <path key={`mb${i}`} d={d} {...strokeProps} stroke="#ecc98f" />
       ))}
 
-      {/* Eye flare dashes: thin strokes, matching the beak line weight */}
+      {/* Small dark flare marks (ear/wing tips) */}
       {OWL_SMALL_DARK.map((d, i) => (
-        <path key={`sd${i}`} d={d} {...strokeProps} />
+        <path key={`sd${i}`} d={d} {...lashProps} />
       ))}
-      {OWL_SMALL_BROW.map((d, i) => (
-        <path key={`sb${i}`} d={d} {...strokeProps} stroke="#ecc98f" />
-      ))}
+      {/* Eyelash dashes: same colour as the outline, gently flicking up and down */}
+      {!reduce ? (
+        <>
+          <motion.g
+            animate={{ y: [0, -3, 0] }}
+            transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+          >
+            {lashLeft.map((l, i) => (
+              <path key={`ll${i}`} d={l.d} {...lashProps} />
+            ))}
+          </motion.g>
+          <motion.g
+            animate={{ y: [0, -3, 0] }}
+            transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut", delay: 1.3 }}
+          >
+            {lashRight.map((l, i) => (
+              <path key={`lr${i}`} d={l.d} {...lashProps} />
+            ))}
+          </motion.g>
+        </>
+      ) : (
+        OWL_SMALL_BROW.map((d, i) => <path key={`sb${i}`} d={d} {...lashProps} />)
+      )}
 
       {/* Pupils: darting glance (left, hold, right, recentre) */}
       <motion.g

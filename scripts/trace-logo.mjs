@@ -232,6 +232,7 @@ export const OWL_MAIN_DARK: string[] = ${JSON.stringify(mainDarkR.map((p) => p.d
 export const OWL_SMALL_DARK: string[] = ${JSON.stringify(smallDarkR.map((p) => p.d))};
 export const OWL_MAIN_BROW: string[] = ${JSON.stringify(mainBrowR.map((p) => p.d))};
 export const OWL_SMALL_BROW: string[] = ${JSON.stringify(smallBrowR.map((p) => p.d))};
+export const OWL_SMALL_BROW_CENTERS: { cx: number; cy: number }[] = ${JSON.stringify(smallBrowR.map((p) => ({ cx: Math.round(p.center[0]), cy: Math.round(p.center[1]) })))};
 `
 );
 
@@ -274,10 +275,16 @@ ${eyes.map((e, i) => `  <g clip-path="url(#eye${i})"><rect class="lid" x="${Math
 // Outline (line-art) variant: big shapes stroked, small marks + pupils solid.
 function outline(strokeColor, browColor) {
   const stroked = (d, c) =>
-    `  <path fill="none" stroke="${c}" stroke-width="4" stroke-linejoin="round" d="${d}"/>`;
+    `  <path fill="none" stroke="${c}" stroke-width="2.6" stroke-linejoin="round" d="${d}"/>`;
+  const thin = (d, c) =>
+    `  <path fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="${d}"/>`;
   const solid = (d, c) => `  <path fill="${c}" fill-rule="evenodd" d="${d}"/>`;
   const eyeR = eyes.map((e) => Math.round((e.maxX - e.minX) / 2 + 2));
   const lidHide = Math.max(...eyeR) * 2 + 10;
+  // Eyelash dashes: split into left/right by centre-x for opposing motion
+  const cxMid = width / 2;
+  const lashL = smallBrowR.filter((r) => r.center[0] < cxMid);
+  const lashR = smallBrowR.filter((r) => r.center[0] >= cxMid);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="516" height="349">
   <style>
     @keyframes owl-glance {
@@ -294,15 +301,25 @@ function outline(strokeColor, browColor) {
       96%, 100% { transform: translateY(0); }
     }
     .lid { animation: owl-blink 6.5s ease-in-out infinite; }
-    @media (prefers-reduced-motion: reduce) { .pupils, .lid { animation: none; } }
+    @keyframes owl-lash {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+    .lash { animation: owl-lash 2.6s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { .pupils, .lid, .lash { animation: none; } }
   </style>
   <defs>
 ${eyes.map((e, i) => `    <clipPath id="oeye${i}"><circle cx="${Math.round(e.cx)}" cy="${Math.round(e.cy)}" r="${eyeR[i]}"/></clipPath>`).join("\n")}
   </defs>
 ${mainDarkR.map((r) => stroked(r.d, strokeColor)).join("\n")}
 ${mainBrowR.map((r) => stroked(r.d, browColor)).join("\n")}
-${smallDarkR.map((r) => stroked(r.d, strokeColor)).join("\n")}
-${smallBrowR.map((r) => stroked(r.d, browColor)).join("\n")}
+${smallDarkR.map((r) => thin(r.d, strokeColor)).join("\n")}
+  <g class="lash">
+${lashL.map((r) => thin(r.d, strokeColor)).join("\n")}
+  </g>
+  <g class="lash" style="animation-delay:-1.3s">
+${lashR.map((r) => thin(r.d, strokeColor)).join("\n")}
+  </g>
   <g class="pupils">
 ${pupils.map((x) => `  <g transform="translate(${Math.round(x.center[0])} ${Math.round(x.center[1])}) scale(0.85) translate(${-Math.round(x.center[0])} ${-Math.round(x.center[1])})">\n${solid(x.d, strokeColor)}\n  </g>`).join("\n")}
   </g>
