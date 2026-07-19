@@ -6,6 +6,7 @@ import {
   OWL_EYES,
   OWL_MAIN_BROW,
   OWL_MAIN_DARK,
+  OWL_PUPIL_CENTERS,
   OWL_PUPILS,
   OWL_RATIO,
   OWL_SMALL_BROW,
@@ -13,6 +14,8 @@ import {
   OWL_TRAVEL,
   OWL_VIEWBOX,
 } from "./owl-paths";
+
+const PUPIL_SCALE = 0.85;
 
 /**
  * The Nightowl Woodworks owl mark in the outline (line-art) style,
@@ -61,12 +64,12 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
         <path key={`mb${i}`} d={d} {...strokeProps} stroke="#ecc98f" />
       ))}
 
-      {/* Solid flare marks */}
+      {/* Eye flare dashes: thin strokes, matching the beak line weight */}
       {OWL_SMALL_DARK.map((d, i) => (
-        <path key={`sd${i}`} d={d} fill="currentColor" fillRule="evenodd" />
+        <path key={`sd${i}`} d={d} {...strokeProps} />
       ))}
       {OWL_SMALL_BROW.map((d, i) => (
-        <path key={`sb${i}`} d={d} fill="#ecc98f" fillRule="evenodd" />
+        <path key={`sb${i}`} d={d} {...strokeProps} stroke="#ecc98f" />
       ))}
 
       {/* Pupils: darting glance (left, hold, right, recentre) */}
@@ -87,9 +90,17 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
           delay: entrance ? 1.2 : 0.5,
         }}
       >
-        {OWL_PUPILS.map((d, i) => (
-          <path key={`p${i}`} d={d} fill="currentColor" fillRule="evenodd" />
-        ))}
+        {OWL_PUPILS.map((d, i) => {
+          const c = OWL_PUPIL_CENTERS[i];
+          return (
+            <g
+              key={`p${i}`}
+              transform={`translate(${c.cx} ${c.cy}) scale(${PUPIL_SCALE}) translate(${-c.cx} ${-c.cy})`}
+            >
+              <path d={d} fill="currentColor" fillRule="evenodd" />
+            </g>
+          );
+        })}
       </motion.g>
 
       {/* Full blink: lids drop inside the clipped eye circles */}

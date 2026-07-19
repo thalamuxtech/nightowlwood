@@ -9,9 +9,9 @@
     }
     .pupils { animation: owl-glance 7.5s ease-in-out infinite; }
     @keyframes owl-blink {
-      0%, 88% { transform: translateY(-104px); }
-      92% { transform: translateY(0); }
-      96%, 100% { transform: translateY(-104px); }
+      0%, 88% { transform: translateY(0); }
+      92% { transform: translateY(104px); }
+      96%, 100% { transform: translateY(0); }
     }
     .lid { animation: owl-blink 6.5s ease-in-out infinite; }
     @media (prefers-reduced-motion: reduce) { .pupils, .lid { animation: none; } }
@@ -48,6 +48,6 @@
   <path fill="#f5efe2" fill-rule="evenodd" d="M 176.5 195 L 186.5 195 L 187.5 196 L 190.5 196 Q 191 197.5 193.5 197 L 199.5 200 L 209 209.5 L 210 211.5 Q 208 212.5 210 213.5 L 211 215.5 L 211 217.5 L 212 218.5 L 212 226.5 L 211 227.5 L 211 230.5 L 210 231.5 L 210 233.5 L 208 237.5 L 201.5 245 L 189.5 251 Q 185.5 250 184.5 252 L 178.5 252 L 177.5 251 L 173.5 251 Q 173 249.5 170.5 250 L 164.5 247 L 158 241.5 L 158 240.5 L 155 237.5 L 153 233.5 L 153 231.5 L 152 230.5 Q 152.8 227.3 151 226.5 L 151 218.5 L 152 217.5 L 152 214.5 L 153 213.5 L 153 211.5 L 154 209.5 L 163.5 200 L 169.5 197 Q 172 197.5 172.5 196 L 175.5 196 L 176.5 195 Z M 194 205 L 194 207 L 191 211 L 191 214 L 192 216 L 195 218 L 201 218 L 204 215 L 204 209 Q 202 210 202 208 L 200 208 L 196 205 L 194 205 Z"/>
   <path fill="#f5efe2" fill-rule="evenodd" d="M 325.5 197 L 339.5 197 Q 340.3 198.8 343.5 198 L 349.5 201 L 356 206.5 L 362 216.5 L 362 229.5 L 358 238.5 L 349.5 247 L 340.5 251 Q 336.5 250 335.5 252 L 329.5 252 L 328.5 251 L 324.5 251 Q 324 249.5 321.5 250 L 315.5 247 L 311.5 243 L 310 243 L 310 241.5 L 307 238.5 L 303 229.5 L 303 216.5 L 306 210.5 L 310.5 205 L 311.5 205 L 315.5 201 L 321.5 198 Q 324.8 198.8 325.5 197 Z"/>
   </g>
-  <g clip-path="url(#eye0)"><rect class="lid" x="132" y="178" width="98" height="98" fill="#f5efe2"/></g>
-  <g clip-path="url(#eye1)"><rect class="lid" x="284" y="180" width="96" height="96" fill="#f5efe2"/></g>
+  <g clip-path="url(#eye0)"><rect class="lid" x="132" y="74" width="98" height="98" fill="#f5efe2"/></g>
+  <g clip-path="url(#eye1)"><rect class="lid" x="284" y="76" width="96" height="96" fill="#f5efe2"/></g>
 </svg>
