@@ -204,6 +204,12 @@ const isPupil = (r) =>
 const pupils = darkRegions.filter(isPupil);
 const body = darkRegions.filter((r) => !isPupil(r)).map((r) => r.d).concat(patches);
 
+// Splits for the outline (line-art) rendering style
+const mainDarkR = darkRegions.filter((r) => !isPupil(r) && r.area > 10000);
+const smallDarkR = darkRegions.filter((r) => !isPupil(r) && r.area <= 10000);
+const mainBrowR = lightRegions.filter((r) => r.area > 2000);
+const smallBrowR = lightRegions.filter((r) => r.area <= 2000);
+
 console.log(`dark regions=${darkRegions.length}, pupils=${pupils.length} (expect 2), brow regions=${lightRegions.length}`);
 pupils.forEach((p) => console.log(`  pupil bbox x[${Math.round(p.bb.minX)}-${Math.round(p.bb.maxX)}] y[${Math.round(p.bb.minY)}-${Math.round(p.bb.maxY)}]`));
 
@@ -221,6 +227,10 @@ export const OWL_EYES: { cx: number; cy: number; r: number }[] = ${JSON.stringif
 export const OWL_BODY: string[] = ${JSON.stringify(body)};
 export const OWL_BROW: string[] = ${JSON.stringify(lightRegions.map((p) => p.d))};
 export const OWL_PUPILS: string[] = ${JSON.stringify(pupils.map((p) => p.d))};
+export const OWL_MAIN_DARK: string[] = ${JSON.stringify(mainDarkR.map((p) => p.d))};
+export const OWL_SMALL_DARK: string[] = ${JSON.stringify(smallDarkR.map((p) => p.d))};
+export const OWL_MAIN_BROW: string[] = ${JSON.stringify(mainBrowR.map((p) => p.d))};
+export const OWL_SMALL_BROW: string[] = ${JSON.stringify(smallBrowR.map((p) => p.d))};
 `
 );
 
@@ -262,10 +272,6 @@ ${eyes.map((e, i) => `  <g clip-path="url(#eye${i})"><rect class="lid" x="${Math
 
 // Outline (line-art) variant: big shapes stroked, small marks + pupils solid.
 function outline(strokeColor, browColor) {
-  const mainDark = darkRegions.filter((r) => !isPupil(r) && r.area > 10000);
-  const smallDark = darkRegions.filter((r) => !isPupil(r) && r.area <= 10000);
-  const mainBrow = lightRegions.filter((r) => r.area > 2000);
-  const smallBrow = lightRegions.filter((r) => r.area <= 2000);
   const stroked = (d, c) =>
     `  <path fill="none" stroke="${c}" stroke-width="4" stroke-linejoin="round" d="${d}"/>`;
   const solid = (d, c) => `  <path fill="${c}" fill-rule="evenodd" d="${d}"/>`;
@@ -292,10 +298,10 @@ function outline(strokeColor, browColor) {
   <defs>
 ${eyes.map((e, i) => `    <clipPath id="oeye${i}"><circle cx="${Math.round(e.cx)}" cy="${Math.round(e.cy)}" r="${eyeR[i]}"/></clipPath>`).join("\n")}
   </defs>
-${mainDark.map((r) => stroked(r.d, strokeColor)).join("\n")}
-${mainBrow.map((r) => stroked(r.d, browColor)).join("\n")}
-${smallDark.map((r) => solid(r.d, strokeColor)).join("\n")}
-${smallBrow.map((r) => solid(r.d, browColor)).join("\n")}
+${mainDarkR.map((r) => stroked(r.d, strokeColor)).join("\n")}
+${mainBrowR.map((r) => stroked(r.d, browColor)).join("\n")}
+${smallDarkR.map((r) => solid(r.d, strokeColor)).join("\n")}
+${smallBrowR.map((r) => solid(r.d, browColor)).join("\n")}
   <g class="pupils">
 ${pupils.map((x) => solid(x.d, strokeColor)).join("\n")}
   </g>

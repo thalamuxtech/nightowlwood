@@ -3,26 +3,36 @@
 import { useId } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
-  OWL_BODY,
-  OWL_BROW,
   OWL_EYES,
+  OWL_MAIN_BROW,
+  OWL_MAIN_DARK,
   OWL_PUPILS,
   OWL_RATIO,
+  OWL_SMALL_BROW,
+  OWL_SMALL_DARK,
   OWL_TRAVEL,
   OWL_VIEWBOX,
 } from "./owl-paths";
 
 /**
- * The Nightowl Woodworks owl mark, vector-traced 1:1 from the brand logo.
- * Body and pupils render in currentColor; the brow uses the lighter brand
- * tone. The pupils dart side to side and the owl blinks via body-coloured
- * eyelids sliding inside clip-masked eye circles.
+ * The Nightowl Woodworks owl mark in the outline (line-art) style,
+ * vector-traced 1:1 from the brand logo. Head and brow are stroked,
+ * pupils and flare marks are solid. The pupils glance side to side
+ * and the owl blinks via lids sliding inside clip-masked eye circles.
  */
 export function OwlMark({ size = 44, animate = true }: { size?: number; animate?: boolean }) {
   const reduce = useReducedMotion();
   const uid = useId();
   const entrance = animate && !reduce;
   const t = OWL_TRAVEL;
+
+  const strokeProps = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeLinejoin: "round" as const,
+    vectorEffect: "non-scaling-stroke" as const,
+    strokeWidth: 1.6,
+  };
 
   return (
     <motion.svg
@@ -43,14 +53,23 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
         ))}
       </defs>
 
-      {OWL_BODY.map((d, i) => (
-        <path key={`b${i}`} d={d} fill="currentColor" fillRule="evenodd" />
+      {/* Stroked head + brow */}
+      {OWL_MAIN_DARK.map((d, i) => (
+        <path key={`md${i}`} d={d} {...strokeProps} />
       ))}
-      {OWL_BROW.map((d, i) => (
-        <path key={`w${i}`} d={d} fill="#ecc98f" fillRule="evenodd" />
+      {OWL_MAIN_BROW.map((d, i) => (
+        <path key={`mb${i}`} d={d} {...strokeProps} stroke="#ecc98f" />
       ))}
 
-      {/* Pupils: wide darting glance (left, hold, right, recentre) */}
+      {/* Solid flare marks */}
+      {OWL_SMALL_DARK.map((d, i) => (
+        <path key={`sd${i}`} d={d} fill="currentColor" fillRule="evenodd" />
+      ))}
+      {OWL_SMALL_BROW.map((d, i) => (
+        <path key={`sb${i}`} d={d} fill="#ecc98f" fillRule="evenodd" />
+      ))}
+
+      {/* Pupils: darting glance (left, hold, right, recentre) */}
       <motion.g
         animate={
           reduce
@@ -73,7 +92,7 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
         ))}
       </motion.g>
 
-      {/* Full blink: eyelids drop inside the clipped eye circles */}
+      {/* Full blink: lids drop inside the clipped eye circles */}
       {!reduce &&
         OWL_EYES.map((e, i) => {
           const lid = e.r * 2 + 6;
