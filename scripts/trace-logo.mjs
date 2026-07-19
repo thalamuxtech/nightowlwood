@@ -260,8 +260,42 @@ ${eyes.map((e, i) => `  <g clip-path="url(#eye${i})"><rect class="lid" x="${Math
 `;
 }
 
+// Outline (line-art) variant: big shapes stroked, small marks + pupils solid.
+function outline(strokeColor, browColor) {
+  const mainDark = darkRegions.filter((r) => !isPupil(r) && r.area > 10000);
+  const smallDark = darkRegions.filter((r) => !isPupil(r) && r.area <= 10000);
+  const mainBrow = lightRegions.filter((r) => r.area > 2000);
+  const smallBrow = lightRegions.filter((r) => r.area <= 2000);
+  const stroked = (d, c) =>
+    `  <path fill="none" stroke="${c}" stroke-width="4" stroke-linejoin="round" d="${d}"/>`;
+  const solid = (d, c) => `  <path fill="${c}" fill-rule="evenodd" d="${d}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="516" height="349">
+  <style>
+    @keyframes owl-glance {
+      0%, 6% { transform: translate(0, 0); }
+      11%, 30% { transform: translate(-${travel}px, ${Math.ceil(travel / 2)}px); }
+      37%, 42% { transform: translate(0, 0); }
+      49%, 68% { transform: translate(${travel}px, ${Math.ceil(travel / 2)}px); }
+      76%, 100% { transform: translate(0, 0); }
+    }
+    .pupils { animation: owl-glance 5.5s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { .pupils { animation: none; } }
+  </style>
+${mainDark.map((r) => stroked(r.d, strokeColor)).join("\n")}
+${mainBrow.map((r) => stroked(r.d, browColor)).join("\n")}
+${smallDark.map((r) => solid(r.d, strokeColor)).join("\n")}
+${smallBrow.map((r) => solid(r.d, browColor)).join("\n")}
+  <g class="pupils">
+${pupils.map((x) => solid(x.d, strokeColor)).join("\n")}
+  </g>
+</svg>
+`;
+}
+
 writeFileSync("../planning/brand/nightowl-header-mark-brass.svg", standalone("#c98f43", "#ecc98f"));
 writeFileSync("../planning/brand/nightowl-header-mark-cream.svg", standalone("#f5efe2", "#f5efe2", "0.72"));
+writeFileSync("../planning/brand/nightowl-header-mark-outline.svg", outline("#dba95f", "#ecc98f"));
 writeFileSync("public/brand/nightowl-header-mark-brass.svg", standalone("#c98f43", "#ecc98f"));
 writeFileSync("public/brand/nightowl-header-mark-cream.svg", standalone("#f5efe2", "#f5efe2", "0.72"));
-console.log("wrote standalone SVGs (planning + public)");
+writeFileSync("public/brand/nightowl-header-mark-outline.svg", outline("#dba95f", "#ecc98f"));
+console.log("wrote standalone SVGs incl. outline variant (planning + public)");
