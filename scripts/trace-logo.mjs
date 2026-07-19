@@ -208,7 +208,7 @@ console.log(`dark regions=${darkRegions.length}, pupils=${pupils.length} (expect
 pupils.forEach((p) => console.log(`  pupil bbox x[${Math.round(p.bb.minX)}-${Math.round(p.bb.maxX)}] y[${Math.round(p.bb.minY)}-${Math.round(p.bb.maxY)}]`));
 
 // Safe pupil travel: stay under the cut arc
-const travel = Math.max(2, Math.round(Math.min(...eyes.map((e) => e.pupilR)) * 0.25));
+const travel = Math.max(2, Math.round(Math.min(...eyes.map((e) => e.pupilR)) * 0.45));
 console.log("pupil travel px:", travel);
 
 writeFileSync(
@@ -217,6 +217,7 @@ writeFileSync(
 export const OWL_VIEWBOX = "0 0 ${width} ${height}";
 export const OWL_RATIO = ${(height / width).toFixed(4)};
 export const OWL_TRAVEL = ${travel};
+export const OWL_EYES: { cx: number; cy: number; r: number }[] = ${JSON.stringify(eyes.map((e) => ({ cx: Math.round(e.cx), cy: Math.round(e.cy), r: Math.round((e.maxX - e.minX) / 2 + 2) })))};
 export const OWL_BODY: string[] = ${JSON.stringify(body)};
 export const OWL_BROW: string[] = ${JSON.stringify(lightRegions.map((p) => p.d))};
 export const OWL_PUPILS: string[] = ${JSON.stringify(pupils.map((p) => p.d))};
@@ -226,23 +227,35 @@ export const OWL_PUPILS: string[] = ${JSON.stringify(pupils.map((p) => p.d))};
 function standalone(bodyFill, browFill, browOpacity) {
   const p = (d, fill, extra = "") =>
     `  <path fill="${fill}"${extra} fill-rule="evenodd" d="${d}"/>`;
+  const eyeR = eyes.map((e) => Math.round((e.maxX - e.minX) / 2 + 2));
+  const lidHide = Math.max(...eyeR) * 2 + 10;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="516" height="349">
   <style>
     @keyframes owl-glance {
-      0%, 8% { transform: translate(0, 0); }
-      14%, 32% { transform: translate(-${travel}px, ${Math.ceil(travel / 2)}px); }
-      40%, 44% { transform: translate(0, 0); }
-      52%, 72% { transform: translate(${travel}px, ${Math.ceil(travel / 2)}px); }
-      80%, 100% { transform: translate(0, 0); }
+      0%, 6% { transform: translate(0, 0); }
+      11%, 30% { transform: translate(-${travel}px, ${Math.ceil(travel / 2)}px); }
+      37%, 42% { transform: translate(0, 0); }
+      49%, 68% { transform: translate(${travel}px, ${Math.ceil(travel / 2)}px); }
+      76%, 100% { transform: translate(0, 0); }
     }
-    .pupils { animation: owl-glance 6s ease-in-out infinite; }
-    @media (prefers-reduced-motion: reduce) { .pupils { animation: none; } }
+    .pupils { animation: owl-glance 5.5s ease-in-out infinite; }
+    @keyframes owl-blink {
+      0%, 88% { transform: translateY(-${lidHide}px); }
+      92% { transform: translateY(0); }
+      96%, 100% { transform: translateY(-${lidHide}px); }
+    }
+    .lid { animation: owl-blink 4.4s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { .pupils, .lid { animation: none; } }
   </style>
+  <defs>
+${eyes.map((e, i) => `    <clipPath id="eye${i}"><circle cx="${Math.round(e.cx)}" cy="${Math.round(e.cy)}" r="${eyeR[i]}"/></clipPath>`).join("\n")}
+  </defs>
 ${body.map((d) => p(d, bodyFill)).join("\n")}
 ${lightRegions.map((x) => p(x.d, browFill, browOpacity ? ` opacity="${browOpacity}"` : "")).join("\n")}
   <g class="pupils">
 ${pupils.map((x) => p(x.d, bodyFill)).join("\n")}
   </g>
+${eyes.map((e, i) => `  <g clip-path="url(#eye${i})"><rect class="lid" x="${Math.round(e.cx) - eyeR[i] - 2}" y="${Math.round(e.cy) - eyeR[i] - 2}" width="${eyeR[i] * 2 + 4}" height="${eyeR[i] * 2 + 4}" fill="${bodyFill}"/></g>`).join("\n")}
 </svg>
 `;
 }
