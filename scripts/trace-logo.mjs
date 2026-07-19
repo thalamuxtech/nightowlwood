@@ -210,6 +210,22 @@ const smallDarkR = darkRegions.filter((r) => !isPupil(r) && r.area <= 10000);
 const mainBrowR = lightRegions.filter((r) => r.area > 2000);
 const smallBrowR = lightRegions.filter((r) => r.area <= 2000);
 
+// Reduce a filled dash outline to a single centreline stroke: take the two
+// farthest-apart vertices (the dash's length axis) and draw a line between.
+function centreLine(d) {
+  const pts = pointsOf(d);
+  let a = pts[0], b = pts[0], best = -1;
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      const dx = pts[i][0] - pts[j][0], dy = pts[i][1] - pts[j][1];
+      const dd = dx * dx + dy * dy;
+      if (dd > best) { best = dd; a = pts[i]; b = pts[j]; }
+    }
+  }
+  return `M ${a[0].toFixed(1)} ${a[1].toFixed(1)} L ${b[0].toFixed(1)} ${b[1].toFixed(1)}`;
+}
+const smallBrowLines = smallBrowR.map((r) => ({ d: centreLine(r.d), center: r.center }));
+
 console.log(`dark regions=${darkRegions.length}, pupils=${pupils.length} (expect 2), brow regions=${lightRegions.length}`);
 pupils.forEach((p) => console.log(`  pupil bbox x[${Math.round(p.bb.minX)}-${Math.round(p.bb.maxX)}] y[${Math.round(p.bb.minY)}-${Math.round(p.bb.maxY)}]`));
 
@@ -231,8 +247,8 @@ export const OWL_PUPIL_CENTERS: { cx: number; cy: number }[] = ${JSON.stringify(
 export const OWL_MAIN_DARK: string[] = ${JSON.stringify(mainDarkR.map((p) => p.d))};
 export const OWL_SMALL_DARK: string[] = ${JSON.stringify(smallDarkR.map((p) => p.d))};
 export const OWL_MAIN_BROW: string[] = ${JSON.stringify(mainBrowR.map((p) => p.d))};
-export const OWL_SMALL_BROW: string[] = ${JSON.stringify(smallBrowR.map((p) => p.d))};
-export const OWL_SMALL_BROW_CENTERS: { cx: number; cy: number }[] = ${JSON.stringify(smallBrowR.map((p) => ({ cx: Math.round(p.center[0]), cy: Math.round(p.center[1]) })))};
+export const OWL_SMALL_BROW: string[] = ${JSON.stringify(smallBrowLines.map((p) => p.d))};
+export const OWL_SMALL_BROW_CENTERS: { cx: number; cy: number }[] = ${JSON.stringify(smallBrowLines.map((p) => ({ cx: Math.round(p.center[0]), cy: Math.round(p.center[1]) })))};
 `
 );
 
@@ -281,10 +297,10 @@ function outline(strokeColor, browColor) {
   const solid = (d, c) => `  <path fill="${c}" fill-rule="evenodd" d="${d}"/>`;
   const eyeR = eyes.map((e) => Math.round((e.maxX - e.minX) / 2 + 2));
   const lidHide = Math.max(...eyeR) * 2 + 10;
-  // Eyelash dashes: split into left/right by centre-x for opposing motion
+  // Eyelash dashes (centrelines): split into left/right by centre-x
   const cxMid = width / 2;
-  const lashL = smallBrowR.filter((r) => r.center[0] < cxMid);
-  const lashR = smallBrowR.filter((r) => r.center[0] >= cxMid);
+  const lashL = smallBrowLines.filter((r) => r.center[0] < cxMid);
+  const lashR = smallBrowLines.filter((r) => r.center[0] >= cxMid);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="516" height="349">
   <style>
     @keyframes owl-glance {

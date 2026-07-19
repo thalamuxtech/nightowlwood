@@ -38,18 +38,18 @@
   <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 43.5 144 L 47.5 146 L 49.5 148 L 61 153.5 L 59.5 154 L 49.5 149 L 47.5 147 L 44.5 146 Q 42 145 43.5 144 Z"/>
   <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 454.5 152 L 456 152.5 L 449.5 156 L 447.5 156 L 445.5 157 L 445.5 156 L 447.5 155 L 449.5 155 L 454.5 152 Z"/>
   <g class="lash">
-  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 108 188 Q 109.8 187.5 110.5 189 L 117.5 189 L 118.5 190 L 120.5 190 L 122.5 191 L 125 193.5 L 123.5 195 L 117.5 195 L 114.5 193 L 112.5 193 L 108 189.5 L 108 188 Z"/>
-  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 102.5 208 L 111.5 208 Q 112.5 210 116.5 209 L 118 210.5 Q 116.8 214.3 110.5 213 L 109.5 212 L 107.5 212 L 103.5 210 Q 101 209 102.5 208 Z"/>
-  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 111.5 224 Q 115.3 222.8 114 226.5 L 107.5 231 Q 105 230.5 104.5 232 L 98.5 232 L 98 231.5 L 100.5 229 L 111.5 224 Z"/>
-  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 118.5 238 L 122 238 L 122 239.5 L 116.5 245 L 110.5 248 L 109 248 L 109 246.5 L 115.5 240 L 116.5 240 L 118.5 238 Z"/>
-  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 128.5 253 L 130 254.5 L 125.5 259 Q 122 259.5 120.5 262 L 119 262 L 119 260.5 L 124.5 255 L 128.5 253 Z"/>
+  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 108.0 188.0 L 125.0 193.5"/>
+  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 118.0 210.5 L 101.0 209.0"/>
+  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 115.3 222.8 L 98.0 231.5"/>
+  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 122.0 238.0 L 109.0 248.0"/>
+  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 130.0 254.5 L 119.0 262.0"/>
   </g>
   <g class="lash" style="animation-delay:-1.3s">
-  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 402.5 188 Q 404.8 187.3 404 189.5 L 402.5 191 L 398.5 193 L 396.5 193 L 393.5 195 L 388 195 L 388 191 L 390.5 191 L 394.5 189 L 401.5 189 L 402.5 188 Z"/>
-  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 405.5 207 Q 408.5 206.5 409 208.5 L 405.5 211 Q 403 210.5 402.5 212 L 399.5 212 L 398.5 213 L 395.5 213 L 394 210.5 L 395.5 209 L 399.5 209 L 400.5 208 Q 404.5 209 405.5 207 Z"/>
-  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 397.5 224 L 400.5 224 L 410.5 229 L 413 231.5 L 412.5 232 L 406.5 232 L 405.5 231 L 403.5 231 L 401.5 230 L 396 225.5 L 397.5 224 Z"/>
-  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 388 238 L 391.5 238 L 393.5 239 L 401 245.5 L 399.5 248 L 391.5 243 L 388 239.5 L 388 238 Z"/>
-  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 381 253 L 384.5 254 L 389.5 259 L 391 259 Q 390.5 260.8 392 261.5 L 389.5 262 L 381 255.5 L 381 253 Z"/>
+  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 404.8 187.3 L 388.0 195.0"/>
+  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 409.0 208.5 L 394.0 210.5"/>
+  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 413.0 231.5 L 396.0 225.5"/>
+  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 388.0 238.0 L 399.5 248.0"/>
+  <path fill="none" stroke="#dba95f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M 381.0 253.0 L 392.0 261.5"/>
   </g>
   <g class="pupils">
   <g transform="translate(181 222) scale(0.85) translate(-181 -222)">
