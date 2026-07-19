@@ -1,101 +1,65 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
+import {
+  OWL_BODY,
+  OWL_BROW,
+  OWL_PUPILS,
+  OWL_RATIO,
+  OWL_TRAVEL,
+  OWL_VIEWBOX,
+} from "./owl-paths";
 
 /**
- * Nightowl Woodworks peeking-owl mark, redrawn as a theme-aware SVG
- * (echoes the brand logo's owl with heavy brows peeking over the wordmark).
- * Renders in currentColor and supports a stroke "draw-on" animation.
+ * The Nightowl Woodworks owl mark, vector-traced 1:1 from the brand logo
+ * (planning/brand/logomini.png). Body and pupils render in currentColor;
+ * the brow uses the lighter brand tone. The pupils glance side to side
+ * in a constant loop.
  */
 export function OwlMark({ size = 44, animate = true }: { size?: number; animate?: boolean }) {
   const reduce = useReducedMotion();
-  const draw = animate && !reduce;
-
-  const stroke = {
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 3,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-  };
-
-  const path = (d: string, delay: number, key: string, extra?: object) =>
-    draw ? (
-      <motion.path
-        key={key}
-        d={d}
-        {...stroke}
-        {...extra}
-        initial={{ pathLength: 0, opacity: 0 }}
-        animate={{ pathLength: 1, opacity: 1 }}
-        transition={{ duration: 1.0, delay, ease: "easeInOut" }}
-      />
-    ) : (
-      <path key={key} d={d} {...stroke} {...extra} />
-    );
+  const entrance = animate && !reduce;
+  const t = OWL_TRAVEL;
 
   return (
-    <svg
+    <motion.svg
       width={size}
-      height={size * 0.75}
-      viewBox="0 0 120 90"
+      height={Math.round(size * OWL_RATIO)}
+      viewBox={OWL_VIEWBOX}
       role="img"
       aria-label="Nightowl Woodworks owl mark"
+      initial={entrance ? { opacity: 0, scale: 0.82 } : undefined}
+      animate={entrance ? { opacity: 1, scale: 1 } : undefined}
+      transition={{ type: "spring", stiffness: 170, damping: 17 }}
     >
-      {/* Head dome peeking over a ledge */}
-      {path("M 14 82 Q 16 44 38 28 Q 50 20 60 20 Q 70 20 82 28 Q 104 44 106 82", 0, "dome")}
-      {/* Ear tufts */}
-      {path("M 52 22 L 56 12 L 60 20 L 64 12 L 68 22", 0.5, "tufts")}
-      {/* Heavy brow sweeping across */}
-      {path("M 18 46 Q 40 30 58 40 Q 62 42 66 40 Q 84 30 104 46 Q 84 40 66 46 Q 62 48 58 46 Q 40 40 18 46 Z", 0.7, "brow")}
-      {/* Eyes */}
-      {/* Eyes: glancing pupils + periodic blink so the owl visibly lives */}
+      {OWL_BODY.map((d, i) => (
+        <path key={`b${i}`} d={d} fill="currentColor" fillRule="evenodd" />
+      ))}
+      {OWL_BROW.map((d, i) => (
+        <path key={`w${i}`} d={d} fill="#ecc98f" fillRule="evenodd" />
+      ))}
+      {/* Pupils: constant glancing loop (left, hold, right, recentre) */}
       <motion.g
-        style={{ transformBox: "fill-box", transformOrigin: "center" }}
-        animate={reduce ? undefined : { scaleY: [1, 1, 0.12, 1, 1] }}
+        animate={
+          reduce
+            ? undefined
+            : {
+                x: [0, -t, -t, t, t, 0],
+                y: [0, t / 2, t / 2, t / 2, t / 2, 0],
+              }
+        }
         transition={{
-          duration: 4.6,
-          times: [0, 0.86, 0.92, 0.97, 1],
+          duration: 6,
+          times: [0, 0.14, 0.32, 0.52, 0.72, 0.86],
           repeat: Infinity,
-          delay: draw ? 2.2 : 1,
+          ease: "easeInOut",
+          delay: entrance ? 1.2 : 0.6,
         }}
       >
-        {path("M 42 58 A 9 9 0 1 0 42.01 58", 1.1, "eyeL")}
-        {path("M 78 58 A 9 9 0 1 0 78.01 58", 1.2, "eyeR")}
-        <motion.g
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: draw ? 1.35 : 0 }}
-        >
-          <motion.g
-            animate={
-              reduce
-                ? undefined
-                : {
-                    x: [0, -4.2, -4.2, 4.2, 4.2, 0],
-                    y: [0, 1.5, 1.5, 1.5, 1.5, 0],
-                  }
-            }
-            transition={{
-              duration: 5,
-              times: [0, 0.14, 0.34, 0.52, 0.74, 0.9],
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: draw ? 2 : 0.6,
-            }}
-          >
-            <circle cx="42" cy="58" r="3" fill="currentColor" />
-            <circle cx="78" cy="58" r="3" fill="currentColor" />
-          </motion.g>
-        </motion.g>
+        {OWL_PUPILS.map((d, i) => (
+          <path key={`p${i}`} d={d} fill="currentColor" fillRule="evenodd" />
+        ))}
       </motion.g>
-      {/* Beak */}
-      {path("M 60 60 L 56 70 Q 60 74 64 70 Z", 1.5, "beak")}
-      {/* Eye flare lines */}
-      {path("M 26 54 L 31 56 M 27 62 L 32 62", 1.55, "flareL")}
-      {path("M 94 54 L 89 56 M 93 62 L 88 62", 1.6, "flareR")}
-      {/* Ledge */}
-      {path("M 8 82 L 112 82", 1.7, "ledge")}
-    </svg>
+    </motion.svg>
   );
 }
