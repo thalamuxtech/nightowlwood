@@ -79,6 +79,11 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
         <path key={`mb${i}`} d={d} {...strokeProps} stroke="#ecc98f" />
       ))}
 
+      {/* Clean eye rings (the traced rings were merged into the head path) */}
+      {OWL_EYES.map((e, i) => (
+        <circle key={`ring${i}`} cx={e.cx} cy={e.cy} r={e.r} {...strokeProps} />
+      ))}
+
       {/* Small dark flare marks (ear/wing tips) */}
       {OWL_SMALL_DARK.map((d, i) => (
         <path key={`sd${i}`} d={d} {...lashProps} />

@@ -205,10 +205,53 @@ const pupils = darkRegions.filter(isPupil);
 const body = darkRegions.filter((r) => !isPupil(r)).map((r) => r.d).concat(patches);
 
 // Splits for the outline (line-art) rendering style
-const mainDarkR = darkRegions.filter((r) => !isPupil(r) && r.area > 10000);
 const smallDarkR = darkRegions.filter((r) => !isPupil(r) && r.area <= 10000);
 const mainBrowR = lightRegions.filter((r) => r.area > 2000);
 const smallBrowR = lightRegions.filter((r) => r.area <= 2000);
+
+// For the OUTLINE style, strip interior hole subpaths that fall inside an
+// eye (the eye rings + lash slivers) from the head path — otherwise stroking
+// them draws hollow ovals. The eyes, pupils, and lashes are drawn separately.
+function stripEyeHoles(d) {
+  const subs = subpathsOf(d);
+  const outerBBArea = (s) => {
+    const b = bbox(pointsOf(s));
+    return (b.maxX - b.minX) * (b.maxY - b.minY);
+  };
+  // Keep the largest subpath (the head silhouette) always; drop any other
+  // subpath whose centre lies within an eye's outer radius.
+  let maxIdx = 0, maxA = -1;
+  subs.forEach((s, i) => {
+    const a = outerBBArea(s);
+    if (a > maxA) { maxA = a; maxIdx = i; }
+  });
+  // Drop every non-silhouette subpath in the eye band (eye rings, lash
+  // slivers, beak notch duplicates). The head silhouette is huge; interior
+  // details are small closed slivers we redraw cleanly elsewhere.
+  const eyeMaxY = Math.max(...eyes.map((e) => e.maxY));
+  return subs
+    .filter((s, i) => {
+      if (i === maxIdx) return true;
+      const b = bbox(pointsOf(s));
+      const c = centroid(pointsOf(s));
+      // Protect the beak: a narrow shape centred between the eyes, extending
+      // below the eye line.
+      const midX = (eyes[0].cx + eyes[1].cx) / 2;
+      const isBeak = Math.abs(c[0] - midX) < 30 && b.maxY > eyeMaxY - 10;
+      if (isBeak) return true;
+      // Drop eye rings and lash slivers: closed subpaths in the eye band.
+      const near = eyes.some((e) => {
+        const half = (e.maxX - e.minX) / 2;
+        return c[0] > e.cx - half * 2.0 && c[0] < e.cx + half * 2.0 &&
+               c[1] > e.cy - half * 1.6 && c[1] < e.cy + half * 1.6;
+      });
+      return !near;
+    })
+    .join(" ");
+}
+const mainDarkR = darkRegions
+  .filter((r) => !isPupil(r) && r.area > 10000)
+  .map((r) => ({ ...r, dOutline: stripEyeHoles(r.d) }));
 
 // Reduce a filled dash outline to a single centreline stroke: take the two
 // farthest-apart vertices (the dash's length axis) and draw a line between.
@@ -244,7 +287,8 @@ export const OWL_BODY: string[] = ${JSON.stringify(body)};
 export const OWL_BROW: string[] = ${JSON.stringify(lightRegions.map((p) => p.d))};
 export const OWL_PUPILS: string[] = ${JSON.stringify(pupils.map((p) => p.d))};
 export const OWL_PUPIL_CENTERS: { cx: number; cy: number }[] = ${JSON.stringify(pupils.map((p) => ({ cx: Math.round(p.center[0]), cy: Math.round(p.center[1]) })))};
-export const OWL_MAIN_DARK: string[] = ${JSON.stringify(mainDarkR.map((p) => p.d))};
+export const OWL_MAIN_DARK: string[] = ${JSON.stringify(mainDarkR.map((p) => p.dOutline))};
+export const OWL_EYE_RINGS: { cx: number; cy: number; r: number }[] = ${JSON.stringify(eyes.map((e) => ({ cx: Math.round(e.cx), cy: Math.round(e.cy), r: Math.round((e.maxX - e.minX) / 2) })))};
 export const OWL_SMALL_DARK: string[] = ${JSON.stringify(smallDarkR.map((p) => p.d))};
 export const OWL_MAIN_BROW: string[] = ${JSON.stringify(mainBrowR.map((p) => p.d))};
 export const OWL_SMALL_BROW: string[] = ${JSON.stringify(smallBrowLines.map((p) => p.d))};
@@ -327,8 +371,9 @@ function outline(strokeColor, browColor) {
   <defs>
 ${eyes.map((e, i) => `    <clipPath id="oeye${i}"><circle cx="${Math.round(e.cx)}" cy="${Math.round(e.cy)}" r="${eyeR[i]}"/></clipPath>`).join("\n")}
   </defs>
-${mainDarkR.map((r) => stroked(r.d, strokeColor)).join("\n")}
+${mainDarkR.map((r) => stroked(r.dOutline, strokeColor)).join("\n")}
 ${mainBrowR.map((r) => stroked(r.d, browColor)).join("\n")}
+${eyes.map((e) => `  <circle cx="${Math.round(e.cx)}" cy="${Math.round(e.cy)}" r="${Math.round((e.maxX - e.minX) / 2)}" fill="none" stroke="${strokeColor}" stroke-width="2.6"/>`).join("\n")}
 ${smallDarkR.map((r) => thin(r.d, strokeColor)).join("\n")}
   <g class="lash">
 ${lashL.map((r) => thin(r.d, strokeColor)).join("\n")}
