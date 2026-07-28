@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { CheckCircle2, Loader2, Save } from "lucide-react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
+import { EmailTester } from "@/components/admin/EmailTester";
 import type { SiteSettings } from "@/lib/types";
 
 const DEFAULTS: SiteSettings = {
@@ -55,7 +56,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-3xl text-cream-50">Settings</h1>
       <p className="mt-1 text-sm text-cream-500">
         Contact details and site-wide options stored in Firestore.
@@ -104,6 +105,10 @@ export default function SettingsPage() {
           </div>
         </form>
       )}
+
+      <div className="mt-8">
+        <EmailTester />
+      </div>
     </div>
   );
 }
