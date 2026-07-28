@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ClipboardList,
   Eye,
   EyeOff,
   GalleryHorizontalEnd,
@@ -46,6 +47,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: "/admin/", label: "Overview", icon: LayoutDashboard },
+  { href: "/admin/jobs/", label: "Service Jobs", icon: ClipboardList, capability: "job.view" },
   { href: "/admin/inquiries/", label: "Quotes", icon: Inbox, capability: "customer.view" },
   { href: "/admin/blog/", label: "Blog", icon: Newspaper, capability: "customer.edit" },
   {
