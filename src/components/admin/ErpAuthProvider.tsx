@@ -53,6 +53,22 @@ const EMPTY: ErpSession = {
   canAny: () => false,
 };
 
+/**
+ * Emails that get admin access before a `users/{uid}` document exists.
+ *
+ * Must stay in sync with `bootstrapEmails()` in firestore.rules. Without this
+ * the client is a chicken-and-egg trap: the rules would let these accounts
+ * write their own user document, but the nav that leads to that screen is
+ * filtered by a role read from the very document that doesn't exist yet.
+ *
+ * Remove both lists once real admin documents are in place.
+ */
+const BOOTSTRAP_ADMIN_EMAILS = ["admin@nightowl.com.ng", "info@nightowl.com.ng"];
+
+function isBootstrapAdmin(email: string | null | undefined): boolean {
+  return Boolean(email && BOOTSTRAP_ADMIN_EMAILS.includes(email.toLowerCase()));
+}
+
 const ErpAuthContext = createContext<ErpSession>(EMPTY);
 
 export function useErpSession(): ErpSession {
@@ -92,24 +108,32 @@ export function ErpAuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return;
 
+    const fallbackRole: Role | null = isBootstrapAdmin(user.email) ? "admin" : null;
+
     const ref = doc(getDb(), COL.users, user.uid);
     return onSnapshot(
       ref,
       (snap) => {
         const data = snap.data();
         if (!snap.exists() || data?.active === false) {
-          setRole(null);
+          // Bootstrap accounts keep admin so they can create the missing
+          // document; everyone else genuinely has no access.
+          setRole(fallbackRole);
           setStaffId(null);
         } else {
-          setRole((data?.role as Role) ?? null);
+          // `active` written as the string "true" by hand in the console would
+          // otherwise read as truthy here but fail the rules' `== true` check,
+          // so treat only a real boolean false as deactivation.
+          setRole((data?.role as Role) ?? fallbackRole);
           setStaffId((data?.staffId as string) ?? null);
           setProfileName((data?.name as string) ?? "");
         }
         setProfileReady(true);
       },
       () => {
-        // Rules denied the read, which itself means "not staff".
-        setRole(null);
+        // Rules denied the read. For a bootstrap account that still means admin;
+        // otherwise it means "not staff".
+        setRole(fallbackRole);
         setStaffId(null);
         setProfileReady(true);
       }

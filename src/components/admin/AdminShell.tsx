@@ -99,10 +99,54 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-svh bg-night-950">
         <Sidebar email={user.email ?? ""} />
         <main className="min-w-0 flex-1 px-5 pb-16 pt-24 sm:px-8 lg:pt-10">
+          <NoRoleNotice email={user.email ?? ""} />
           {children}
         </main>
       </div>
     </AdminUserContext.Provider>
+  );
+}
+
+/**
+ * Explains a bare sidebar.
+ *
+ * Without this, a missing or misshapen `users/{uid}` document just looks like a
+ * broken dashboard — the nav silently filters down to the one unrestricted link
+ * and nothing says why.
+ */
+function NoRoleNotice({ email }: { email: string }) {
+  const { ready, role, user } = useErpSession();
+  if (!ready || role) return null;
+
+  return (
+    <div
+      role="alert"
+      className="mb-8 rounded-2xl border border-amber-500/40 bg-amber-500/5 p-5 text-sm"
+    >
+      <p className="flex items-center gap-2 font-medium text-amber-300">
+        <ShieldAlert size={16} /> No staff role found for this account
+      </p>
+      <p className="mt-2 leading-relaxed text-cream-400">
+        Signing in proves who you are; a <code className="text-brass-300">users</code>{" "}
+        document is what grants access. Create one in Firestore with the document
+        ID set to this account&rsquo;s UID:
+      </p>
+      <dl className="mt-3 space-y-1 text-xs text-cream-300">
+        <div>
+          <dt className="inline text-cream-500">Email: </dt>
+          <dd className="inline">{email}</dd>
+        </div>
+        <div>
+          <dt className="inline text-cream-500">UID: </dt>
+          <dd className="inline break-all font-mono text-brass-300">{user?.uid}</dd>
+        </div>
+      </dl>
+      <p className="mt-3 text-xs leading-relaxed text-cream-500">
+        Fields: <code>role</code> = &ldquo;admin&rdquo; (lowercase),{" "}
+        <code>active</code> = true (boolean, not the text &ldquo;true&rdquo;),{" "}
+        <code>email</code>, <code>name</code>.
+      </p>
+    </div>
   );
 }
 
