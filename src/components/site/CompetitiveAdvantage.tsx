@@ -28,11 +28,12 @@ export function CompetitiveAdvantage() {
       <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
         <SectionHeading
           eyebrow="Competitive advantage"
-          title="Why specifiers keep coming back?"
-          intro="Precision board processing is a supply-chain decision, not just a purchase. These are the four things that decide whether your joinery package lands on time and installs cleanly."
-          // Fraunces is variable, so 700 is available; the stock .text-title
-          // weight of 500 reads too light for this section's headline.
-          titleClassName="!font-bold tracking-tight text-white"
+          title="Why clients come back"
+          intro="Where you get your boards cut decides whether the job runs smoothly or costs you time on site. These four things are why contractors, developers and designers keep sending us work."
+          // Fraunces is variable, so 800 is available. The stock .text-title
+          // weight of 500 reads too light for a headline this short, and the
+          // shorter copy leaves room to size it up a step.
+          titleClassName="!font-extrabold !text-[clamp(2.3rem,1.4rem+3.2vw,4.2rem)] tracking-[-0.03em] text-white"
         />
 
         <Stagger className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4" stagger={0.1}>
