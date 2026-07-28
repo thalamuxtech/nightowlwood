@@ -28,7 +28,7 @@ export function CompetitiveAdvantage() {
       <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
         <SectionHeading
           eyebrow="Competitive advantage"
-          title="Why specifiers keep coming back"
+          title="Why specifiers keep coming back?"
           intro="Precision board processing is a supply-chain decision, not just a purchase. These are the four things that decide whether your joinery package lands on time and installs cleanly."
           // Fraunces is variable, so 700 is available; the stock .text-title
           // weight of 500 reads too light for this section's headline.
