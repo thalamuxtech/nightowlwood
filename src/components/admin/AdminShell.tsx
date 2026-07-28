@@ -19,24 +19,56 @@ import {
   PanelLeftOpen,
   Settings,
   ShieldAlert,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
 import { getFirebaseAuth } from "@/lib/firebase";
 import { OwlMark } from "@/components/site/OwlMark";
+import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import type { Capability } from "@/lib/erp/permissions";
+import { ROLE_LABELS } from "@/lib/erp/enums";
 
 const AdminUserContext = createContext<User | null>(null);
 export const useAdminUser = () => useContext(AdminUserContext);
 
-const NAV = [
+/**
+ * Nav entries. `capability` hides a link from roles that cannot use the screen;
+ * entries without one are visible to any signed-in staff member. This is
+ * presentation only — the screens and Firestore rules enforce access.
+ */
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  capability?: Capability;
+}
+
+const NAV: NavItem[] = [
   { href: "/admin/", label: "Overview", icon: LayoutDashboard },
-  { href: "/admin/inquiries/", label: "Quotes", icon: Inbox },
-  { href: "/admin/blog/", label: "Blog", icon: Newspaper },
-  { href: "/admin/internships/", label: "Internships", icon: GraduationCap },
-  { href: "/admin/contacts/", label: "Messages", icon: MailOpen },
-  { href: "/admin/subscribers/", label: "Subscribers", icon: Users },
-  { href: "/admin/work/", label: "Work Items", icon: GalleryHorizontalEnd },
-  { href: "/admin/settings/", label: "Settings", icon: Settings },
+  { href: "/admin/inquiries/", label: "Quotes", icon: Inbox, capability: "customer.view" },
+  { href: "/admin/blog/", label: "Blog", icon: Newspaper, capability: "customer.edit" },
+  {
+    href: "/admin/internships/",
+    label: "Internships",
+    icon: GraduationCap,
+    capability: "customer.view",
+  },
+  { href: "/admin/contacts/", label: "Messages", icon: MailOpen, capability: "customer.view" },
+  {
+    href: "/admin/subscribers/",
+    label: "Subscribers",
+    icon: Users,
+    capability: "customer.view",
+  },
+  {
+    href: "/admin/work/",
+    label: "Work Items",
+    icon: GalleryHorizontalEnd,
+    capability: "customer.edit",
+  },
+  { href: "/admin/users/", label: "Users & Roles", icon: ShieldCheck, capability: "user.manage" },
+  { href: "/admin/settings/", label: "Settings", icon: Settings, capability: "settings.change" },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {
@@ -75,6 +107,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
 function Sidebar({ email }: { email: string }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const { role, can, ready } = useErpSession();
+
+  // Until the role resolves, show only the unrestricted entries rather than
+  // flashing the full nav and then removing links.
+  const visibleNav = NAV.filter((item) => !item.capability || (ready && can(item.capability)));
 
   useEffect(() => {
     setCollapsed(localStorage.getItem("admin-sidebar-collapsed") === "1");
@@ -96,7 +133,7 @@ function Sidebar({ email }: { email: string }) {
           <span className="font-display text-cream-100">Admin</span>
         </span>
         <nav className="flex max-w-[70vw] gap-1 overflow-x-auto" aria-label="Admin">
-          {NAV.map(({ href, label, icon: Icon }) => (
+          {visibleNav.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
@@ -154,7 +191,7 @@ function Sidebar({ email }: { email: string }) {
         </button>
 
         <nav className="mt-4 flex flex-1 flex-col gap-1.5" aria-label="Admin">
-          {NAV.map(({ href, label, icon: Icon }) => (
+          {visibleNav.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
@@ -174,7 +211,16 @@ function Sidebar({ email }: { email: string }) {
           ))}
         </nav>
         <div className="border-t border-night-700/60 pt-4">
-          {!collapsed && <p className="truncate text-xs text-cream-500">{email}</p>}
+          {!collapsed && (
+            <>
+              <p className="truncate text-xs text-cream-500">{email}</p>
+              {role && (
+                <p className="mt-1 text-[0.65rem] uppercase tracking-[0.2em] text-brass-400">
+                  {ROLE_LABELS[role]}
+                </p>
+              )}
+            </>
+          )}
           <button
             onClick={() => signOut(getFirebaseAuth())}
             title={collapsed ? "Sign out" : undefined}

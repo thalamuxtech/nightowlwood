@@ -56,6 +56,7 @@ export const CAPABILITIES = [
   "staff.view",
   "staff.edit",
   "user.manage",
+  "settings.change",
 
   // Money — finance-sensitive
   "invoice.view",
@@ -173,5 +174,6 @@ export const ADMIN_ONLY_CAPABILITIES: Capability[] = [
   "estimate.approve",
   "staff.edit",
   "user.manage",
+  "settings.change",
   "record.delete",
 ];
