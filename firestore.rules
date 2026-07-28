@@ -3,12 +3,69 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Staff allowlist — public signup is enabled on this project, so a signed-in
-    // session alone is NOT proof of staff. Only these exact accounts are staff.
-    function isAdmin() {
-      return request.auth != null
-        && request.auth.token.email in ['admin@nightowl.com.ng'];
+    // =====================================================================
+    // Identity & roles
+    // =====================================================================
+    //
+    // Public signup is enabled on this project, so a signed-in session is NOT
+    // proof of staff. Authority comes from `users/{uid}`: the document must
+    // exist, be active, and carry a role. `bootstrapAdmin()` covers the very
+    // first sign-in, before any user document exists.
+    //
+    // Capability names mirror src/lib/erp/permissions.ts. The UI hides what a
+    // role can't do; these rules are what actually enforce it.
+
+    function bootstrapEmails() {
+      return ['admin@nightowl.com.ng', 'info@nightowl.com.ng'];
     }
+
+    function bootstrapAdmin() {
+      return request.auth != null && request.auth.token.email in bootstrapEmails();
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isStaff() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc().data.active == true;
+    }
+
+    function roleIs(r) {
+      return isStaff() && userDoc().data.role == r;
+    }
+
+    function isAdmin() {
+      return roleIs('admin') || bootstrapAdmin();
+    }
+
+    function isManager() {
+      return roleIs('manager');
+    }
+
+    function isOperator() {
+      return roleIs('operator');
+    }
+
+    /** Admin or manager — day-to-day operations. */
+    function isOps() {
+      return isAdmin() || isManager();
+    }
+
+    /** The staff record linked to the caller, or '' when unlinked. */
+    function myStaffId() {
+      return isStaff() && 'staffId' in userDoc().data ? userDoc().data.staffId : '';
+    }
+
+    // =====================================================================
+    // Validation helpers
+    // =====================================================================
 
     function validSubmission(required) {
       return request.resource.data.keys().hasAll(required.concat(['status', 'createdAt']))
@@ -24,51 +81,342 @@ service cloud.firestore {
         && request.resource.data.message.size() < 5000;
     }
 
-    // Quote requests
+    /** True when the update leaves every field in `locked` untouched. */
+    function fieldsUnchanged(locked) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(locked);
+    }
+
+    // =====================================================================
+    // Public website collections (unchanged behaviour)
+    // =====================================================================
+
     match /inquiries/{id} {
       allow create: if validSubmission(['name', 'email', 'message']);
-      allow read, update, delete: if isAdmin();
+      allow read, update: if isOps();
+      allow delete: if isAdmin();
     }
 
-    // Internship applications
     match /internApplications/{id} {
       allow create: if validSubmission(['name', 'email', 'message', 'area']);
-      allow read, update, delete: if isAdmin();
+      allow read, update: if isOps();
+      allow delete: if isAdmin();
     }
 
-    // General contact messages
     match /contacts/{id} {
       allow create: if validSubmission(['name', 'email', 'message']);
-      allow read, update, delete: if isAdmin();
+      allow read, update: if isOps();
+      allow delete: if isAdmin();
     }
 
-    // Newsletter subscribers — create-only (no overwrite), staff manage.
     match /subscribers/{id} {
       allow create: if request.resource.data.keys().hasAll(['email', 'createdAt'])
         && request.resource.data.email is string
         && request.resource.data.email.size() > 3
         && request.resource.data.email.size() < 320;
-      allow read, update, delete: if isAdmin();
+      allow read, update: if isOps();
+      allow delete: if isAdmin();
     }
 
-    // Blog posts — public may read published; staff write.
     match /posts/{id} {
-      allow read: if resource.data.published == true || isAdmin();
-      allow create, update, delete: if isAdmin();
+      allow read: if resource.data.published == true || isOps();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
     }
 
-    // Gallery items managed from the dashboard; public may read published ones.
     match /workItems/{id} {
-      allow read: if resource.data.published == true || isAdmin();
-      allow create, update, delete: if isAdmin();
+      allow read: if resource.data.published == true || isOps();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
     }
 
-    // Site settings: public read, staff write.
-    match /settings/{id} {
+    // =====================================================================
+    // Settings
+    // =====================================================================
+    //
+    // Previously world-readable. It now also holds wage rates and the service
+    // rate card, so only `public` stays open; everything else is staff-only and
+    // admin-writable.
+
+    match /settings/public {
       allow read: if true;
       allow write: if isAdmin();
     }
 
+    match /settings/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // =====================================================================
+    // People
+    // =====================================================================
+
+    match /users/{uid} {
+      // Anyone signed in may read their own document — that is how the client
+      // discovers its role. Ops may read the staff directory.
+      allow read: if signedIn() && (request.auth.uid == uid || isOps());
+
+      // Role and active status are the security boundary: admin only.
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (request.auth.uid == uid
+            && fieldsUnchanged(['role', 'active', 'staffId']));
+    }
+
+    match /staff/{id} {
+      allow read: if isStaff();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /customers/{id} {
+      allow read: if isStaff();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+    }
+
+    // =====================================================================
+    // Services pipeline
+    // =====================================================================
+
+    match /serviceJobs/{jobId} {
+      allow read: if isStaff();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+
+      match /lines/{lineId} {
+        allow read: if isStaff();
+        allow write: if isOps();
+      }
+
+      // Payments are financial history: recording is fine for ops, but editing
+      // or removing a recorded payment is admin-only.
+      match /payments/{paymentId} {
+        allow read: if isStaff();
+        allow create: if isOps();
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    match /workLogs/{id} {
+      // Operators see only their own logs; ops see all.
+      allow read: if isOps()
+        || (isOperator() && resource.data.staffId == myStaffId());
+
+      // An operator may log their own work but cannot attribute it to someone
+      // else, which would move wages between people.
+      allow create: if isOps()
+        || (isOperator() && request.resource.data.staffId == myStaffId());
+
+      allow update: if isOps();
+      allow delete: if isAdmin();
+    }
+
+    // =====================================================================
+    // Products pipeline
+    // =====================================================================
+
+    match /projects/{projectId} {
+      allow read: if isStaff();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+
+      match /components/{componentId} {
+        allow read: if isStaff();
+        allow write: if isOps();
+
+        match /features/{featureId} {
+          allow read: if isStaff();
+          allow write: if isOps();
+        }
+      }
+    }
+
+    match /estimates/{estimateId} {
+      allow read: if isStaff();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+
+      // Reviewer edits arrive through a Cloud Function using the Admin SDK,
+      // which bypasses these rules; external reviewers never hold a Firebase
+      // session, so no client path is opened here.
+      match /lines/{lineId} {
+        allow read: if isStaff();
+        allow write: if isOps();
+      }
+    }
+
+    match /estimateTemplates/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // =====================================================================
+    // Money
+    // =====================================================================
+
+    match /invoices/{id} {
+      allow read: if isOps();
+      allow create: if isOps();
+
+      // Managers may edit a draft, but the paid state and its audit fields are
+      // admin-only and set by Cloud Function. Marking an invoice paid is the
+      // single most abusable action in the system.
+      allow update: if isAdmin()
+        || (isManager()
+            && fieldsUnchanged(['status', 'paidAt', 'paidBy', 'amountPaidKobo', 'balanceKobo']));
+
+      allow delete: if isAdmin();
+    }
+
+    match /expenses/{id} {
+      allow read, create: if isOps();
+      allow update, delete: if isAdmin();
+    }
+
+    match /meterReadings/{id} {
+      allow read: if isOps();
+      allow create: if isOps();
+      allow update, delete: if isAdmin();
+    }
+
+    // =====================================================================
+    // Payroll — admin only throughout
+    // =====================================================================
+
+    match /wageRates/{id} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /wageRuns/{runId} {
+      allow read, write: if isAdmin();
+
+      match /lines/{lineId} {
+        allow read, write: if isAdmin();
+      }
+    }
+
+    match /loans/{loanId} {
+      // A staff member may see their own loans; approval is admin-only.
+      allow read: if isAdmin()
+        || (isStaff() && resource.data.staffId == myStaffId());
+
+      // Anyone on staff may request; the request must be for themselves and
+      // must start in the `requested` state.
+      allow create: if isAdmin()
+        || (isStaff()
+            && request.resource.data.staffId == myStaffId()
+            && request.resource.data.status == 'requested');
+
+      allow update, delete: if isAdmin();
+
+      match /repayments/{repaymentId} {
+        allow read: if isAdmin();
+        allow write: if isAdmin();
+      }
+    }
+
+    // =====================================================================
+    // Inventory
+    // =====================================================================
+
+    match /inventoryService/{id} {
+      allow read: if isStaff();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+    }
+
+    match /inventoryCompany/{itemId} {
+      allow read: if isStaff();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+
+      // Movements are an append-only ledger: never edited, never deleted.
+      match /movements/{movementId} {
+        allow read: if isStaff();
+        allow create: if isOps();
+        allow update, delete: if false;
+      }
+    }
+
+    match /inventoryProduct/{id} {
+      allow read: if isStaff();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+    }
+
+    match /consumableCycles/{id} {
+      allow read: if isStaff();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+    }
+
+    // =====================================================================
+    // Procurement
+    // =====================================================================
+
+    match /suppliers/{id} {
+      allow read: if isStaff();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+    }
+
+    match /consumableBrands/{id} {
+      allow read: if isStaff();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+    }
+
+    match /purchases/{purchaseId} {
+      allow read: if isOps();
+      allow create, update: if isOps();
+      allow delete: if isAdmin();
+
+      match /lines/{lineId} {
+        allow read: if isOps();
+        allow write: if isOps();
+      }
+    }
+
+    // =====================================================================
+    // Tools
+    // =====================================================================
+
+    match /toolRequests/{requestId} {
+      // Operators may see and raise their own requests; issuing is ops.
+      allow read: if isOps()
+        || (isStaff() && resource.data.requestedByStaffId == myStaffId());
+
+      allow create: if isOps()
+        || (isStaff() && request.resource.data.requestedByStaffId == myStaffId());
+
+      allow update: if isOps();
+      allow delete: if isAdmin();
+
+      match /items/{itemId} {
+        allow read: if isStaff();
+        allow write: if isOps();
+      }
+    }
+
+    // =====================================================================
+    // System
+    // =====================================================================
+
+    // Append-only. No client may update or delete an audit entry — not even an
+    // admin — so the trail cannot be rewritten after the fact.
+    match /auditLog/{id} {
+      allow read: if isAdmin();
+      allow create: if isStaff();
+      allow update, delete: if false;
+    }
+
+    // Document-number sequences, allocated in a client transaction.
+    match /counters/{name} {
+      allow read, write: if isOps();
+    }
+
+    // Deny everything not matched above.
     match /{document=**} {
       allow read, write: if false;
     }
