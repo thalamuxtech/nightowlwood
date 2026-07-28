@@ -30,6 +30,9 @@ export function CompetitiveAdvantage() {
           eyebrow="Competitive advantage"
           title="Why specifiers keep coming back"
           intro="Precision board processing is a supply-chain decision, not just a purchase. These are the four things that decide whether your joinery package lands on time and installs cleanly."
+          // Fraunces is variable, so 700 is available; the stock .text-title
+          // weight of 500 reads too light for this section's headline.
+          titleClassName="!font-bold tracking-tight text-white"
         />
 
         <Stagger className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4" stagger={0.1}>
