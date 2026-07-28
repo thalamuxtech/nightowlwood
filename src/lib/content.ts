@@ -231,7 +231,66 @@ export const INDUSTRIES = [
   },
 ];
 
+/** Short labels, kept for the compact chip row on the homepage. */
 export const ADVANTAGES = ["Skilled Team", "Modern Machines", "Fast Delivery", "Quality Focus"];
+
+export interface Advantage {
+  key: string;
+  /** Icon name from ServiceIcon. */
+  icon: string;
+  label: string;
+  /** The claim itself, stated plainly. */
+  title: string;
+  /** Why it matters to the client, not to us. */
+  description: string;
+  /** Concrete evidence — the reason to believe the claim. */
+  proof: string;
+}
+
+/**
+ * The four differentiators, expanded from bare labels into claims a buyer can
+ * actually evaluate. Each one answers "so what?" and carries a verifiable
+ * proof point drawn from real capability (machines, throughput, delivery
+ * record) rather than adjectives.
+ */
+export const ADVANTAGE_DETAILS: Advantage[] = [
+  {
+    key: "team",
+    icon: "advisory",
+    label: "Skilled Team",
+    title: "Operators who read your drawings",
+    description:
+      "Machine operators, technicians, and craftsmen who work to stated tolerances and flag a problem in the drawing before it becomes a problem on site.",
+    proof: "Senior-led supervision on every job",
+  },
+  {
+    key: "machines",
+    icon: "cutting",
+    label: "Modern Machines",
+    title: "Industrial plant, not workshop tools",
+    description:
+      "A sliding table saw and automated edge bander give square cuts and sealed edges at volume — the difference between a panel that installs and one that needs rework.",
+    proof: "150+ boards processed daily",
+  },
+  {
+    key: "delivery",
+    icon: "delivery",
+    label: "Fast Delivery",
+    title: "Schedules that hold",
+    description:
+      "Production-ready components delivered to your programme, so joinery is not the trade that delays handover. You get a date, and changes are communicated early.",
+    proof: "1,000+ projects delivered",
+  },
+  {
+    key: "quality",
+    icon: "fabrication",
+    label: "Quality Focus",
+    title: "Checked before it leaves us",
+    description:
+      "Every component is inspected against the spec before dispatch — dimensions, edge finish, and consistency across the batch — so what arrives is what you can install.",
+    proof: "100% client satisfaction across 1,000+ deliveries",
+  },
+];
 
 export const MACHINES = [
   {

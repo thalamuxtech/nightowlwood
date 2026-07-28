@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteShell } from "@/components/site/SiteShell";
 import { PageHero } from "@/components/site/PageHero";
 import { WorkGallery } from "@/components/site/WorkGallery";
+import { CompetitiveAdvantage } from "@/components/site/CompetitiveAdvantage";
 import { SocialShowcase } from "@/components/site/SocialShowcase";
 
 export const metadata: Metadata = {
@@ -22,6 +23,7 @@ export default function WorkPage() {
         imageAlt="Custom fitted kitchen produced by Nightowl Woodworks"
       />
       <WorkGallery />
+      <CompetitiveAdvantage />
       <SocialShowcase />
     </SiteShell>
   );
