@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { formatNaira } from "@/lib/erp/money";
+import { SHEET, sheetCss } from "@/components/admin/print/sheetStyles";
 
 /**
  * Printable payslips, one per staff member.
@@ -58,58 +59,58 @@ export function PayslipSheet({
       <div className="payslips">
         {perStaff.map((s, i) => (
           <article key={s.staffId} className={`ps ${i % 2 === 1 ? "ps-second" : ""}`}>
-            <header className="ps-head">
-              <div className="ps-brand">
+            <header className="sh-band">
+              <div className="sh-brand">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={LOGO} alt="" width={40} height={27} />
                 <div>
-                  <div className="ps-co">Nightowl Woodworks Ltd</div>
-                  <div className="ps-tag">Precision in Every Cut</div>
+                  <div className="sh-co">Nightowl Woodworks Ltd</div>
+                  <div className="sh-tag">Precision in Every Cut</div>
                 </div>
               </div>
-              <div className="ps-doc">
-                <div className="ps-title">Payslip</div>
-                <div className="ps-period">{period}</div>
+              <div className="sh-doc">
+                <div className="sh-kind">Payslip</div>
+                <div className="sh-ref">{period}</div>
               </div>
             </header>
 
             <div className="ps-name">{s.staffName}</div>
 
-            <table className="ps-table">
+            <table className="sh-table ps-table">
               <tbody>
                 <tr>
                   <td>Operator work</td>
-                  <td className="ps-num">{formatNaira(s.operatorKobo)}</td>
+                  <td className="sh-num">{formatNaira(s.operatorKobo)}</td>
                 </tr>
                 <tr>
                   <td>Assistant work</td>
-                  <td className="ps-num">{formatNaira(s.assistantKobo)}</td>
+                  <td className="sh-num">{formatNaira(s.assistantKobo)}</td>
                 </tr>
                 <tr className="ps-sub">
                   <td>Gross</td>
-                  <td className="ps-num">{formatNaira(s.totalKobo)}</td>
+                  <td className="sh-num">{formatNaira(s.totalKobo)}</td>
                 </tr>
                 {s.deductionKobo > 0 && (
                   <tr className="ps-deduct">
                     <td>Loan / advance repayment</td>
-                    <td className="ps-num">-{formatNaira(s.deductionKobo)}</td>
+                    <td className="sh-num">-{formatNaira(s.deductionKobo)}</td>
                   </tr>
                 )}
                 <tr className="ps-net">
                   <td>Net pay</td>
-                  <td className="ps-num">{formatNaira(s.netKobo)}</td>
+                  <td className="sh-num">{formatNaira(s.netKobo)}</td>
                 </tr>
               </tbody>
             </table>
 
-            <div className="ps-signs">
-              <div className="ps-sign">
+            <div className="sh-cols ps-signs">
+              <div className="sh-sign">
                 <span>Received by</span>
-                <span className="ps-rule" />
+                <span className="sh-rule" />
               </div>
-              <div className="ps-sign">
+              <div className="sh-sign">
                 <span>Date</span>
-                <span className="ps-rule" />
+                <span className="sh-rule" />
               </div>
             </div>
 
@@ -131,145 +132,37 @@ function fmt(ms: number | null): string {
   });
 }
 
-const PRINT_CSS = `
-.payslips { display: none; }
-
-@media print {
-  body > * { display: none !important; }
-  body { background: #fff !important; }
-  .payslips, .payslips * { display: revert; }
-  .payslips {
-    display: block !important;
-    position: absolute;
-    inset: 0;
-    background: #fff;
-    color: #1c1917;
-    /* Stack chosen for U+20A6: the naira sign is absent from several common
-       printer fonts and renders as a blank box without a fallback. */
-    font-family: "DejaVu Sans", "Segoe UI", Tahoma, Helvetica, Arial, sans-serif;
-  }
-
-  @page { size: A4; margin: 12mm; }
-
-  /* Two slips per sheet: break after every second one. */
-  .ps {
-    break-inside: avoid;
-    padding: 6mm 0 4mm;
-  }
+const PRINT_CSS = sheetCss({
+  root: ".payslips",
+  page: "A4",
+  fontSize: 9.5,
+  own: `
+  /* Two slips per sheet: a weekly workforce would otherwise waste half a page
+     each. The second breaks to a new page so pairs stay together. */
+  .ps { break-inside: avoid; padding: 4mm 0 3mm; }
   .ps-second { break-after: page; }
-
-  .ps-head {
-    display: flex; align-items: flex-start; justify-content: space-between;
-    border-bottom: 1.5pt solid #6b4a2b; padding-bottom: 5pt;
-  }
-  .ps-brand { display: flex; align-items: center; gap: 7pt; }
-  .ps-co {
-    font-size: 10.5pt; font-weight: bold; color: #6b4a2b;
-    text-transform: uppercase; letter-spacing: 0.5pt;
-  }
-  .ps-tag {
-    font-size: 6pt; letter-spacing: 1.4pt; color: #6b6560;
-    text-transform: uppercase; margin-top: 1pt;
-  }
-  .ps-doc { text-align: right; }
-  .ps-title {
-    font-size: 8pt; letter-spacing: 2pt; text-transform: uppercase; color: #6b6560;
-  }
-  .ps-period { font-size: 9.5pt; font-weight: bold; color: #1c1917; }
 
   .ps-name {
-    margin-top: 8pt; font-size: 14pt; font-weight: bold; color: #1c1917;
+    margin-top: 9pt; font-size: 15pt; font-weight: bold; color: ${SHEET.ink};
+    letter-spacing: -0.2pt;
   }
 
-  .ps-table {
-    width: 100%; border-collapse: collapse; margin-top: 7pt; font-size: 9.5pt;
-  }
-  .ps-table td { padding: 4pt 6pt; border-bottom: 0.5pt solid #e6ddd0; }
-  .ps-num { text-align: right; font-weight: 600; width: 34%; }
-  .ps-sub td { border-top: 0.5pt solid #cfc4b4; font-weight: bold; }
-  .ps-deduct td { color: #8a5a2b; }
+  /* A payslip is a two-column statement, so the label column carries no rules
+     and the figures sit against a hairline. */
+  .ps-table { margin-top: 8pt; }
+  .ps-table td { padding: 4.5pt 6pt; border-bottom: 0.5pt solid ${SHEET.borderSoft}; }
+  .ps-table tbody tr:nth-child(even) td { background: transparent; }
+  .ps-table .sh-num { width: 36%; font-weight: 600; }
+  .ps-sub td { border-top: 0.5pt solid ${SHEET.border}; font-weight: bold; }
+  .ps-deduct td { color: ${SHEET.brownLight}; }
   .ps-net td {
-    background: #f0e6d6; color: #6b4a2b; font-size: 12pt;
-    font-weight: bold; border-top: 1pt solid #dba95f;
+    background: ${SHEET.brassPale}; color: ${SHEET.brown}; font-size: 12.5pt;
+    font-weight: bold; border-top: 1pt solid ${SHEET.brass}; border-bottom: none;
   }
 
-  .ps-signs { display: flex; gap: 18pt; margin-top: 12pt; }
-  .ps-sign { flex: 1; display: flex; align-items: flex-end; gap: 5pt; font-size: 8.5pt; }
-  .ps-sign > span:first-child { color: #6b6560; min-width: 48pt; }
-  .ps-rule { flex: 1; border-bottom: 0.5pt solid #8a8079; height: 11pt; }
+  .ps-signs { margin-top: 13pt; gap: 18pt; }
 
-  .ps-cut {
-    margin-top: 8mm; border-top: 0.5pt dashed #b5aca2;
-  }
-}
-
-/* Screen copy for the on-screen preview, scoped so it cannot affect the
-   dashboard. Generated from the print rules above: if those change, regenerate
-   rather than editing this by hand. */
-
-  body { background: #fff !important; }
-  .payslips, .payslips * { display: revert; }
-  .print-preview.payslips {
-    display: block;
-    position: static;
-    
-    background: #fff;
-    color: #1c1917;
-    /* Stack chosen for U+20A6: the naira sign is absent from several common
-       printer fonts and renders as a blank box without a fallback. */
-    font-family: "DejaVu Sans", "Segoe UI", Tahoma, Helvetica, Arial, sans-serif;
-  }
-
-
-  /* Two slips per sheet: break after every second one. */
-  .print-preview .ps {
-    break-inside: avoid;
-    padding: 6mm 0 4mm;
-  }
-  .ps-second { break-after: page; }
-
-  .print-preview .ps-head {
-    display: flex; align-items: flex-start; justify-content: space-between;
-    border-bottom: 1.5pt solid #6b4a2b; padding-bottom: 5pt;
-  }
-  .ps-brand { display: flex; align-items: center; gap: 7pt; }
-  .print-preview .ps-co {
-    font-size: 10.5pt; font-weight: bold; color: #6b4a2b;
-    text-transform: uppercase; letter-spacing: 0.5pt;
-  }
-  .print-preview .ps-tag {
-    font-size: 6pt; letter-spacing: 1.4pt; color: #6b6560;
-    text-transform: uppercase; margin-top: 1pt;
-  }
-  .ps-doc { text-align: right; }
-  .print-preview .ps-title {
-    font-size: 8pt; letter-spacing: 2pt; text-transform: uppercase; color: #6b6560;
-  }
-  .ps-period { font-size: 9.5pt; font-weight: bold; color: #1c1917; }
-
-  .print-preview .ps-name {
-    margin-top: 8pt; font-size: 14pt; font-weight: bold; color: #1c1917;
-  }
-
-  .print-preview .ps-table {
-    width: 100%; border-collapse: collapse; margin-top: 7pt; font-size: 9.5pt;
-  }
-  .ps-table td { padding: 4pt 6pt; border-bottom: 0.5pt solid #e6ddd0; }
-  .ps-num { text-align: right; font-weight: 600; width: 34%; }
-  .ps-sub td { border-top: 0.5pt solid #cfc4b4; font-weight: bold; }
-  .ps-deduct td { color: #8a5a2b; }
-  .print-preview .ps-net td {
-    background: #f0e6d6; color: #6b4a2b; font-size: 12pt;
-    font-weight: bold; border-top: 1pt solid #dba95f;
-  }
-
-  .ps-signs { display: flex; gap: 18pt; margin-top: 12pt; }
-  .ps-sign { flex: 1; display: flex; align-items: flex-end; gap: 5pt; font-size: 8.5pt; }
-  .ps-sign > span:first-child { color: #6b6560; min-width: 48pt; }
-  .ps-rule { flex: 1; border-bottom: 0.5pt solid #8a8079; height: 11pt; }
-
-  .print-preview .ps-cut {
-    margin-top: 8mm; border-top: 0.5pt dashed #b5aca2;
-  }
-
-`;
+  /* Cut line between the pair on a sheet. */
+  .ps-cut { margin-top: 7mm; border-top: 0.5pt dashed #b8afa4; }
+`,
+});

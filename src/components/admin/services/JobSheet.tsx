@@ -13,24 +13,17 @@ import {
 } from "@/lib/erp/enums";
 import { formatNaira } from "@/lib/erp/money";
 import type { BoardBreakdown } from "@/lib/erp/types";
+import { SHEET, sheetCss } from "@/components/admin/print/sheetStyles";
 
 /**
- * Printable job sheet, A4.
+ * Printable job order, A4.
  *
- * A deliberate reworking of the paper Job Order Tracker rather than a copy of
- * it. What the original lacked and this adds:
- *
- *  - a job number, so a sheet can be matched to a record;
- *  - the priced work itself, which the paper form never captured;
- *  - totals, paid and balance, so the customer sees what is owed at handover;
- *  - room to write, since the paper version crammed fields onto one line.
- *
- * What it drops: the decorative corner swooshes. They consumed roughly a fifth
- * of an A4 sheet and cost ink on every print for no information.
- *
- * Layout uses absolute mm units and avoids CSS the print engines mishandle:
- * no flex gap in table cells, no CSS grid for the tabular sections, and
- * `break-inside: avoid` on each block so a section is never split across pages.
+ * A reworking of the paper Job Order Tracker rather than a copy. What the
+ * original lacked and this adds: a job number so a sheet can be matched to a
+ * record, the priced work itself, totals and balance so the customer sees what is
+ * owed at handover, and room to write where the paper crammed fields onto one
+ * line. What it drops: the decorative corner swooshes, which consumed roughly a
+ * fifth of an A4 sheet in ink and carried no information.
  */
 
 interface JobLike {
@@ -71,7 +64,7 @@ interface PaymentLike {
 const LOGO = "/brand/owl-mark-email.png";
 
 /** Blank rows keep the table a consistent height and leave space to write. */
-const MIN_PAYMENT_ROWS = 6;
+const MIN_PAYMENT_ROWS = 5;
 
 export function JobSheet({
   job,
@@ -87,8 +80,6 @@ export function JobSheet({
   /** False when embedded in the preview, which prints on demand. */
   autoPrint?: boolean;
 }) {
-  // Print once mounted, then hand control back so the dialog can't reopen on
-  // every re-render.
   useEffect(() => {
     if (!autoPrint) return;
     const t = setTimeout(() => {
@@ -103,6 +94,7 @@ export function JobSheet({
   ) as Array<[string, number]>;
 
   const blankPayments = Math.max(0, MIN_PAYMENT_ROWS - payments.length);
+  const settled = job.balanceKobo <= 0 && job.totalKobo > 0;
 
   const received = job.receivedAtMs
     ? new Date(job.receivedAtMs).toLocaleDateString("en-GB", {
@@ -114,35 +106,33 @@ export function JobSheet({
 
   return (
     <>
-      <style>{PRINT_CSS}</style>
+      <style>{CSS}</style>
       <div className="job-sheet">
-        {/* Header */}
-        <header className="js-head">
-          <div className="js-brand">
+        <header className="sh-band">
+          <div className="sh-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={LOGO} alt="" width={54} height={36} />
+            <img src={LOGO} alt="" width={52} height={35} />
             <div>
-              <div className="js-name">Nightowl Woodworks Ltd</div>
-              <div className="js-tag">Precision in Every Cut</div>
+              <div className="sh-co">Nightowl Woodworks Ltd</div>
+              <div className="sh-tag">Precision in Every Cut</div>
             </div>
           </div>
-          <div className="js-doc">
-            <div className="js-doctitle">Job Order</div>
-            <div className="js-jobno">{job.jobNumber}</div>
-            <div className="js-status">{JOB_STATUS_LABELS[job.status]}</div>
+          <div className="sh-doc">
+            <div className="sh-kind">Job Order</div>
+            <div className="sh-ref">{job.jobNumber}</div>
+            <div className="sh-chip">{JOB_STATUS_LABELS[job.status]}</div>
           </div>
         </header>
 
-        {/* Parties */}
-        <section className="js-block js-cols">
+        <section className="sh-block sh-cols">
           <div>
-            <h2 className="js-h2">Customer</h2>
+            <h2 className="sh-h2">Customer</h2>
             <Row label="Name" value={job.customerName} />
             <Row label="Phone" value={job.customerPhone} />
-            <Row label="Customer ID" value={job.customerId.slice(0, 8).toUpperCase()} />
+            <Row label="Reference" value={job.customerId.slice(0, 8).toUpperCase()} />
           </div>
           <div>
-            <h2 className="js-h2">Received</h2>
+            <h2 className="sh-h2">Received</h2>
             <Row label="Date" value={received} />
             <Row label="By" value={job.staffName} />
             <Row label="Client / rep" value={job.repName} />
@@ -150,11 +140,10 @@ export function JobSheet({
           </div>
         </section>
 
-        {/* Materials */}
-        <section className="js-block">
-          <h2 className="js-h2">Materials received</h2>
+        <section className="sh-block">
+          <h2 className="sh-h2">Materials received</h2>
           {boards.length > 0 ? (
-            <table className="js-table js-boards">
+            <table className="sh-table js-boards">
               <thead>
                 <tr>
                   {boards.map(([k]) => (
@@ -165,7 +154,7 @@ export function JobSheet({
               <tbody>
                 <tr>
                   {boards.map(([k, v]) => (
-                    <td key={k} className="js-num">
+                    <td key={k} className="sh-num">
                       {v}
                     </td>
                   ))}
@@ -173,27 +162,26 @@ export function JobSheet({
               </tbody>
             </table>
           ) : (
-            <p className="js-empty">None recorded.</p>
+            <p className="sh-empty">None recorded.</p>
           )}
           {job.accessories && <Row label="Accessories" value={job.accessories} />}
         </section>
 
-        {/* Work, the section the paper form was missing entirely */}
-        <section className="js-block">
-          <h2 className="js-h2">Work carried out</h2>
-          <table className="js-table">
+        <section className="sh-block">
+          <h2 className="sh-h2">Work carried out</h2>
+          <table className="sh-table">
             <thead>
               <tr>
-                <th style={{ width: "8%" }}>#</th>
+                <th style={{ width: "7%" }}>#</th>
                 <th>Service</th>
-                <th style={{ width: "16%" }}>Board</th>
-                <th style={{ width: "10%" }} className="js-num">
+                <th style={{ width: "15%" }}>Board</th>
+                <th style={{ width: "10%" }} className="sh-num">
                   Qty
                 </th>
-                <th style={{ width: "16%" }} className="js-num">
+                <th style={{ width: "16%" }} className="sh-num">
                   Unit
                 </th>
-                <th style={{ width: "18%" }} className="js-num">
+                <th style={{ width: "18%" }} className="sh-num">
                   Amount
                 </th>
               </tr>
@@ -204,14 +192,14 @@ export function JobSheet({
                   <td>{i + 1}</td>
                   <td>{SERVICE_TYPE_LABELS[l.serviceType]}</td>
                   <td>{l.boardType ? BOARD_TYPE_LABELS[l.boardType] : ""}</td>
-                  <td className="js-num">{l.quantity}</td>
-                  <td className="js-num">{formatNaira(l.unitPriceKobo)}</td>
-                  <td className="js-num">{formatNaira(l.amountKobo)}</td>
+                  <td className="sh-num">{l.quantity}</td>
+                  <td className="sh-num">{formatNaira(l.unitPriceKobo)}</td>
+                  <td className="sh-num">{formatNaira(l.amountKobo)}</td>
                 </tr>
               ))}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="js-empty">
+                  <td colSpan={6} className="sh-empty">
                     No work lines recorded.
                   </td>
                 </tr>
@@ -219,35 +207,34 @@ export function JobSheet({
             </tbody>
           </table>
 
-          <table className="js-totals">
+          <table className="sh-totals">
             <tbody>
               <tr>
                 <td>Total</td>
-                <td className="js-num">{formatNaira(job.totalKobo)}</td>
+                <td>{formatNaira(job.totalKobo)}</td>
               </tr>
               <tr>
                 <td>Paid</td>
-                <td className="js-num">{formatNaira(job.paidKobo)}</td>
+                <td>{formatNaira(job.paidKobo)}</td>
               </tr>
-              <tr className="js-balance">
-                <td>Balance due</td>
-                <td className="js-num">{formatNaira(job.balanceKobo)}</td>
+              <tr className="sh-grand">
+                <td>{settled ? "Settled in full" : "Balance due"}</td>
+                <td>{formatNaira(job.balanceKobo)}</td>
               </tr>
             </tbody>
           </table>
         </section>
 
-        {/* Payments */}
-        <section className="js-block">
-          <h2 className="js-h2">Payment history</h2>
-          <table className="js-table">
+        <section className="sh-block">
+          <h2 className="sh-h2">Payment history</h2>
+          <table className="sh-table">
             <thead>
               <tr>
-                <th style={{ width: "8%" }}>#</th>
-                <th style={{ width: "20%" }}>Date</th>
+                <th style={{ width: "7%" }}>#</th>
+                <th style={{ width: "18%" }}>Date</th>
                 <th>Description</th>
                 <th style={{ width: "16%" }}>Method</th>
-                <th style={{ width: "18%" }} className="js-num">
+                <th style={{ width: "18%" }} className="sh-num">
                   Amount
                 </th>
               </tr>
@@ -259,12 +246,12 @@ export function JobSheet({
                   <td>{p.dateMs ? new Date(p.dateMs).toLocaleDateString("en-GB") : ""}</td>
                   <td>{p.description}</td>
                   <td>{PAYMENT_METHOD_LABELS[p.method]}</td>
-                  <td className="js-num">{formatNaira(p.amountKobo)}</td>
+                  <td className="sh-num">{formatNaira(p.amountKobo)}</td>
                 </tr>
               ))}
               {/* Blank rows so further payments can be written on the sheet */}
               {Array.from({ length: blankPayments }, (_, i) => (
-                <tr key={`blank-${i}`} className="js-blank">
+                <tr key={`blank-${i}`} className="sh-blank">
                   <td>{payments.length + i + 1}</td>
                   <td />
                   <td />
@@ -276,10 +263,9 @@ export function JobSheet({
           </table>
         </section>
 
-        {/* Quality control and handover */}
-        <section className="js-block js-cols">
+        <section className="sh-block sh-cols">
           <div>
-            <h2 className="js-h2">Quality control</h2>
+            <h2 className="sh-h2">Quality control</h2>
             <div className="js-check">
               <span>Quantity check</span>
               <span className="js-yn">YES &nbsp;/&nbsp; NO</span>
@@ -288,26 +274,41 @@ export function JobSheet({
               <span>Quality check</span>
               <span className="js-yn">YES &nbsp;/&nbsp; NO</span>
             </div>
-            <SignLine label="Q.O signature" />
+            <div className="sh-sign">
+              <span>Q.O signature</span>
+              <span className="sh-rule" />
+            </div>
           </div>
           <div>
-            <h2 className="js-h2">Collected by</h2>
-            <SignLine label="Name" />
-            <SignLine label="Phone" />
-            <SignLine label="Signature" />
-            <SignLine label="Date" />
+            <h2 className="sh-h2">Collected by</h2>
+            <div className="sh-sign">
+              <span>Name</span>
+              <span className="sh-rule" />
+            </div>
+            <div className="sh-sign">
+              <span>Phone</span>
+              <span className="sh-rule" />
+            </div>
+            <div className="sh-sign">
+              <span>Signature</span>
+              <span className="sh-rule" />
+            </div>
+            <div className="sh-sign">
+              <span>Date</span>
+              <span className="sh-rule" />
+            </div>
           </div>
         </section>
 
         {job.notes && (
-          <section className="js-block">
-            <h2 className="js-h2">Notes</h2>
+          <section className="sh-block">
+            <h2 className="sh-h2">Notes</h2>
             <p className="js-notes">{job.notes}</p>
           </section>
         )}
 
-        <footer className="js-foot">
-          <span>Nightowl Woodworks Ltd &nbsp;·&nbsp; info@nightowl.com.ng</span>
+        <footer className="sh-foot">
+          <span>Nightowl Woodworks Ltd &nbsp;&middot;&nbsp; info@nightowl.com.ng</span>
           <span>{job.jobNumber}</span>
         </footer>
       </div>
@@ -317,246 +318,30 @@ export function JobSheet({
 
 function Row({ label, value }: { label: string; value?: string }) {
   return (
-    <div className="js-row">
-      <span className="js-label">{label}</span>
-      <span className="js-value">{value || ""}</span>
+    <div className="sh-row">
+      <span className="sh-label">{label}</span>
+      <span className="sh-value">{value || ""}</span>
     </div>
   );
 }
 
-/** Ruled line for a wet signature. */
-function SignLine({ label }: { label: string }) {
-  return (
-    <div className="js-sign">
-      <span className="js-label">{label}</span>
-      <span className="js-rule" />
-    </div>
-  );
-}
-
-const PRINT_CSS = `
-.job-sheet { display: none; }
-
-@media print {
-  /* Hide the app chrome and show only the sheet. */
-  body > * { display: none !important; }
-  body { background: #fff !important; }
-  .job-sheet,
-  .job-sheet * { display: revert; }
-  .job-sheet {
-    display: block !important;
-    position: absolute;
-    inset: 0;
-    background: #fff;
-    color: #1c1917;
-    /* Stack chosen for U+20A6: the naira sign is absent from several common
-       printer fonts and renders as a blank box without a fallback. */
-    font-family: "DejaVu Sans", "Segoe UI", Tahoma, Helvetica, Arial, sans-serif;
-    font-size: 9.5pt;
-    line-height: 1.45;
-    padding: 0;
-  }
-
-  @page { size: A4; margin: 14mm 13mm; }
-
-  .js-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    border-bottom: 2.5pt solid #6b4a2b;
-    padding-bottom: 7pt;
-  }
-  .js-brand { display: flex; align-items: center; gap: 9pt; }
-  .js-name {
-    font-size: 13pt; font-weight: bold; color: #6b4a2b;
-    letter-spacing: 0.6pt; text-transform: uppercase;
-  }
-  .js-tag {
-    font-size: 6.5pt; letter-spacing: 1.6pt; color: #6b6560;
-    text-transform: uppercase; margin-top: 1pt;
-  }
-  .js-doc { text-align: right; }
-  .js-doctitle {
-    font-size: 7.5pt; letter-spacing: 2pt; text-transform: uppercase; color: #6b6560;
-  }
-  .js-jobno {
-    font-size: 16pt; font-weight: bold; color: #1c1917; letter-spacing: 0.4pt;
-  }
-  .js-status {
-    display: inline-block; margin-top: 2pt; padding: 1.5pt 6pt;
-    border: 0.75pt solid #dba95f; border-radius: 8pt;
-    font-size: 7pt; text-transform: uppercase; letter-spacing: 0.8pt; color: #6b4a2b;
-  }
-
-  /* Never split a section across a page break. */
-  .js-block { margin-top: 11pt; break-inside: avoid; }
-  .js-cols { display: flex; gap: 16pt; }
-  .js-cols > div { flex: 1; }
-
-  .js-h2 {
-    font-size: 7.5pt; font-weight: bold; letter-spacing: 1.4pt;
-    text-transform: uppercase; color: #6b4a2b;
-    border-bottom: 0.5pt solid #e6ddd0; padding-bottom: 2.5pt; margin-bottom: 5pt;
-  }
-
-  .js-row { display: flex; gap: 6pt; padding: 1.5pt 0; }
-  .js-label { color: #6b6560; min-width: 62pt; font-size: 8.5pt; }
-  .js-value { color: #1c1917; font-weight: 600; }
-
-  .js-table { width: 100%; border-collapse: collapse; margin-top: 3pt; }
-  .js-table th {
-    background: #f0e6d6; color: #6b4a2b; font-size: 7.5pt;
-    text-transform: uppercase; letter-spacing: 0.7pt; text-align: left;
-    padding: 4pt 5pt; border: 0.5pt solid #dcd0bd;
-  }
-  .js-table td {
-    padding: 4.5pt 5pt; border: 0.5pt solid #e6ddd0; font-size: 9pt;
-  }
-  .js-num { text-align: right; }
-  .js-boards td { font-weight: bold; }
-  .js-blank td { height: 15pt; }
-  .js-empty { color: #9a938c; font-style: italic; text-align: center; padding: 6pt; }
-
-  .js-totals {
-    margin-left: auto; margin-top: 6pt; border-collapse: collapse; min-width: 190pt;
-  }
-  .js-totals td { padding: 3.5pt 8pt; font-size: 9.5pt; }
-  .js-totals td:last-child { text-align: right; font-weight: bold; min-width: 80pt; }
-  .js-totals .js-balance td {
-    background: #f0e6d6; color: #6b4a2b; font-size: 11pt;
-    font-weight: bold; border-top: 1pt solid #dba95f;
-  }
+const CSS = sheetCss({
+  root: ".job-sheet",
+  page: "A4",
+  fontSize: 9,
+  own: `
+  /* Board counts read as figures, so they carry the emphasis. */
+  .js-boards td { font-weight: bold; font-size: 10pt; }
 
   .js-check {
     display: flex; justify-content: space-between;
-    padding: 3pt 0; border-bottom: 0.5pt dotted #cfc4b4; font-size: 9pt;
+    padding: 3.5pt 0; border-bottom: 0.5pt dotted ${SHEET.border}; font-size: 8.5pt;
   }
-  .js-yn { letter-spacing: 0.5pt; color: #6b4a2b; font-weight: bold; }
-
-  .js-sign { display: flex; align-items: flex-end; gap: 5pt; margin-top: 9pt; }
-  .js-sign .js-label { min-width: 48pt; }
-  .js-rule { flex: 1; border-bottom: 0.5pt solid #8a8079; height: 11pt; }
+  .js-yn { letter-spacing: 0.6pt; color: ${SHEET.brown}; font-weight: bold; }
 
   .js-notes {
-    border: 0.5pt solid #e6ddd0; padding: 6pt; min-height: 26pt; font-size: 9pt;
+    border: 0.5pt solid ${SHEET.border}; background: ${SHEET.panel};
+    padding: 7pt; min-height: 26pt; font-size: 8.5pt; margin: 0;
   }
-
-  .js-foot {
-    display: flex; justify-content: space-between;
-    margin-top: 14pt; padding-top: 5pt; border-top: 0.5pt solid #e6ddd0;
-    font-size: 7.5pt; color: #9a938c;
-  }
-}
-
-/* Screen copy for the on-screen preview, scoped so it cannot affect the
-   dashboard. Generated from the print rules above: if those change, regenerate
-   rather than editing this by hand. */
-
-  /* Hide the app chrome and show only the sheet. */
-  body { background: #fff !important; }
-  .job-sheet,
-  .job-sheet * { display: revert; }
-  .print-preview.job-sheet {
-    display: block;
-    position: static;
-    
-    background: #fff;
-    color: #1c1917;
-    /* Stack chosen for U+20A6: the naira sign is absent from several common
-       printer fonts and renders as a blank box without a fallback. */
-    font-family: "DejaVu Sans", "Segoe UI", Tahoma, Helvetica, Arial, sans-serif;
-    font-size: 9.5pt;
-    line-height: 1.45;
-    padding: 0;
-  }
-
-
-  .print-preview .js-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    border-bottom: 2.5pt solid #6b4a2b;
-    padding-bottom: 7pt;
-  }
-  .js-brand { display: flex; align-items: center; gap: 9pt; }
-  .print-preview .js-name {
-    font-size: 13pt; font-weight: bold; color: #6b4a2b;
-    letter-spacing: 0.6pt; text-transform: uppercase;
-  }
-  .print-preview .js-tag {
-    font-size: 6.5pt; letter-spacing: 1.6pt; color: #6b6560;
-    text-transform: uppercase; margin-top: 1pt;
-  }
-  .js-doc { text-align: right; }
-  .print-preview .js-doctitle {
-    font-size: 7.5pt; letter-spacing: 2pt; text-transform: uppercase; color: #6b6560;
-  }
-  .print-preview .js-jobno {
-    font-size: 16pt; font-weight: bold; color: #1c1917; letter-spacing: 0.4pt;
-  }
-  .print-preview .js-status {
-    display: inline-block; margin-top: 2pt; padding: 1.5pt 6pt;
-    border: 0.75pt solid #dba95f; border-radius: 8pt;
-    font-size: 7pt; text-transform: uppercase; letter-spacing: 0.8pt; color: #6b4a2b;
-  }
-
-  /* Never split a section across a page break. */
-  .js-block { margin-top: 11pt; break-inside: avoid; }
-  .js-cols { display: flex; gap: 16pt; }
-  .js-cols > div { flex: 1; }
-
-  .print-preview .js-h2 {
-    font-size: 7.5pt; font-weight: bold; letter-spacing: 1.4pt;
-    text-transform: uppercase; color: #6b4a2b;
-    border-bottom: 0.5pt solid #e6ddd0; padding-bottom: 2.5pt; margin-bottom: 5pt;
-  }
-
-  .js-row { display: flex; gap: 6pt; padding: 1.5pt 0; }
-  .js-label { color: #6b6560; min-width: 62pt; font-size: 8.5pt; }
-  .js-value { color: #1c1917; font-weight: 600; }
-
-  .js-table { width: 100%; border-collapse: collapse; margin-top: 3pt; }
-  .print-preview .js-table th {
-    background: #f0e6d6; color: #6b4a2b; font-size: 7.5pt;
-    text-transform: uppercase; letter-spacing: 0.7pt; text-align: left;
-    padding: 4pt 5pt; border: 0.5pt solid #dcd0bd;
-  }
-  .print-preview .js-table td {
-    padding: 4.5pt 5pt; border: 0.5pt solid #e6ddd0; font-size: 9pt;
-  }
-  .js-num { text-align: right; }
-  .js-boards td { font-weight: bold; }
-  .js-blank td { height: 15pt; }
-  .js-empty { color: #9a938c; font-style: italic; text-align: center; padding: 6pt; }
-
-  .print-preview .js-totals {
-    margin-left: auto; margin-top: 6pt; border-collapse: collapse; min-width: 190pt;
-  }
-  .js-totals td { padding: 3.5pt 8pt; font-size: 9.5pt; }
-  .js-totals td:last-child { text-align: right; font-weight: bold; min-width: 80pt; }
-  .print-preview .js-totals .js-balance td {
-    background: #f0e6d6; color: #6b4a2b; font-size: 11pt;
-    font-weight: bold; border-top: 1pt solid #dba95f;
-  }
-
-  .print-preview .js-check {
-    display: flex; justify-content: space-between;
-    padding: 3pt 0; border-bottom: 0.5pt dotted #cfc4b4; font-size: 9pt;
-  }
-  .js-yn { letter-spacing: 0.5pt; color: #6b4a2b; font-weight: bold; }
-
-  .js-sign { display: flex; align-items: flex-end; gap: 5pt; margin-top: 9pt; }
-  .js-sign .js-label { min-width: 48pt; }
-  .js-rule { flex: 1; border-bottom: 0.5pt solid #8a8079; height: 11pt; }
-
-  .print-preview .js-notes {
-    border: 0.5pt solid #e6ddd0; padding: 6pt; min-height: 26pt; font-size: 9pt;
-  }
-
-  .print-preview .js-foot {
-    display: flex; justify-content: space-between;
-    margin-top: 14pt; padding-top: 5pt; border-top: 0.5pt solid #e6ddd0;
-    font-size: 7.5pt; color: #9a938c;
-  }
-
-`;
+`,
+});

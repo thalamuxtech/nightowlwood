@@ -168,6 +168,12 @@ export const SHEET_BASE_CSS = `
  * declarations that share a line with a brace.
  */
 function scopeCss(css: string, root: string): string {
+  // Comments are stripped first. Left in, a comment sitting above a rule becomes
+  // part of the pending selector, so it gets prefixed and any comma inside it
+  // splits into bogus selectors. The print copy keeps the comments; the scoped
+  // copy is generated output that nobody reads.
+  const source = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
   let out = "";
   let buffer = "";
   let depth = 0;
@@ -186,7 +192,7 @@ function scopeCss(css: string, root: string): string {
     return `${parts.join(", ")} {`;
   };
 
-  for (const ch of css) {
+  for (const ch of source) {
     if (ch === "{") {
       if (depth === 0) {
         out += flushSelector();
