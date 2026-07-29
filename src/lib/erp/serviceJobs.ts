@@ -35,8 +35,8 @@ export interface NewJobInput {
   staffName?: string;
   boards: BoardBreakdown;
   accessories?: string;
-  driverName?: string;
-  driverPhone?: string;
+  repName?: string;
+  repPhone?: string;
   notes?: string;
   /** Optional opening lines, priced from the rate card. */
   lines?: Array<Omit<ServiceJobLine, "id" | "amountKobo">>;
@@ -79,8 +79,8 @@ export async function createServiceJob(
     staffName: input.staffName ?? null,
     boards: input.boards ?? {},
     accessories: input.accessories ?? null,
-    driverName: input.driverName ?? null,
-    driverPhone: input.driverPhone ?? null,
+    repName: input.repName ?? null,
+    repPhone: input.repPhone ?? null,
     status: "received" satisfies JobStatus,
     receivedAt: serverTimestamp(),
     totalKobo,

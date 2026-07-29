@@ -41,8 +41,8 @@ interface JobLike {
   staffName?: string;
   boards: BoardBreakdown;
   accessories?: string;
-  driverName?: string;
-  driverPhone?: string;
+  repName?: string;
+  repPhone?: string;
   status: JobStatus;
   totalKobo: number;
   paidKobo: number;
@@ -141,8 +141,8 @@ export function JobSheet({
             <h2 className="js-h2">Received</h2>
             <Row label="Date" value={received} />
             <Row label="By" value={job.staffName} />
-            <Row label="Driver" value={job.driverName} />
-            <Row label="Driver phone" value={job.driverPhone} />
+            <Row label="Client / rep" value={job.repName} />
+            <Row label="Rep phone" value={job.repPhone} />
           </div>
         </section>
 

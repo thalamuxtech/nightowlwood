@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   BadgeCheck,
   Loader2,
+  PenLine,
   Plus,
   Printer,
   ShieldAlert,
@@ -47,6 +48,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { JobSheet } from "./JobSheet";
+import { JobDetailsEditor } from "./JobDetailsEditor";
 
 interface JobDoc {
   jobNumber: string;
@@ -56,8 +58,8 @@ interface JobDoc {
   staffName?: string;
   boards: BoardBreakdown;
   accessories?: string;
-  driverName?: string;
-  driverPhone?: string;
+  repName?: string;
+  repPhone?: string;
   status: JobStatus;
   quantityCheck?: boolean;
   qualityCheck?: boolean;
@@ -131,8 +133,8 @@ export function JobDetail() {
             staffName: d.staffName ?? undefined,
             boards: (d.boards as BoardBreakdown) ?? {},
             accessories: d.accessories ?? undefined,
-            driverName: d.driverName ?? undefined,
-            driverPhone: d.driverPhone ?? undefined,
+            repName: d.repName ?? undefined,
+            repPhone: d.repPhone ?? undefined,
             status: (d.status as JobStatus) ?? "received",
             quantityCheck: d.quantityCheck ?? undefined,
             qualityCheck: d.qualityCheck ?? undefined,
@@ -317,7 +319,13 @@ export function JobDetail() {
           </section>
         )}
 
-        <JobDetailsCard job={job} />
+        <JobDetailsCard
+          job={job}
+          jobId={jobId}
+          actor={actor}
+          canEdit={canEdit}
+          onError={setError}
+        />
 
         <LinesSection
           jobId={jobId}
@@ -360,14 +368,39 @@ function Tile({
   );
 }
 
-function JobDetailsCard({ job }: { job: JobDoc }) {
+function JobDetailsCard({
+  job,
+  jobId,
+  actor,
+  canEdit,
+  onError,
+}: {
+  job: JobDoc;
+  jobId: string;
+  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  canEdit: boolean;
+  onError: (m: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
   const boards = Object.entries(job.boards).filter(
     ([, v]) => typeof v === "number" && v > 0
   ) as Array<[string, number]>;
 
   return (
     <section className="mt-6 rounded-3xl border border-night-700/60 bg-night-900/30 p-6">
-      <h2 className="font-display text-lg text-cream-100">Job details</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-display text-lg text-cream-100">Job details</h2>
+        {canEdit && !editing && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="flex cursor-pointer items-center gap-2 text-sm text-brass-300 transition-colors hover:text-brass-200"
+          >
+            <PenLine size={15} /> Edit details
+          </button>
+        )}
+      </div>
       <dl className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <Detail label="Customer" value={job.customerName} />
         <Detail label="Phone" value={job.customerPhone} />
@@ -384,10 +417,10 @@ function JobDetailsCard({ job }: { job: JobDoc }) {
         />
         <Detail label="Accessories" value={job.accessories} />
         <Detail
-          label="Driver"
+          label="Client / rep"
           value={
-            job.driverName
-              ? `${job.driverName}${job.driverPhone ? ` (${job.driverPhone})` : ""}`
+            job.repName
+              ? `${job.repName}${job.repPhone ? ` (${job.repPhone})` : ""}`
               : undefined
           }
         />
@@ -399,6 +432,16 @@ function JobDetailsCard({ job }: { job: JobDoc }) {
         )}
         {job.notes && <Detail label="Notes" value={job.notes} wide />}
       </dl>
+
+      {editing && (
+        <JobDetailsEditor
+          jobId={jobId}
+          job={job}
+          actor={actor}
+          onClose={() => setEditing(false)}
+          onError={onError}
+        />
+      )}
     </section>
   );
 }

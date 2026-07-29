@@ -108,8 +108,8 @@ export interface ServiceJob extends AuditFields {
   staffSignature?: string;
   boards: BoardBreakdown;
   accessories?: string;
-  driverName?: string;
-  driverPhone?: string;
+  repName?: string;
+  repPhone?: string;
   status: JobStatus;
   /** Q.O checks from the bottom of the tracker form. */
   quantityCheck?: boolean;

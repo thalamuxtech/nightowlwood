@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { Loader2, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
@@ -23,6 +23,7 @@ import {
 } from "@/lib/erp/settings";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { CustomerPicker, type PickedCustomer } from "./CustomerPicker";
+import { StaffPicker, type PickedStaff } from "./StaffPicker";
 import {
   Button,
   NumberField,
@@ -58,17 +59,12 @@ const newLine = (): DraftLine => ({
   unitPriceNaira: "",
 });
 
-interface StaffOption {
-  id: string;
-  name: string;
-}
-
 /**
  * Job intake, the digital Job Order Tracker.
  *
  * Field order deliberately follows the paper form so staff transcribing from it
  * read top-to-bottom without hunting: customer, staff, boards, accessories,
- * driver, then priced work.
+ * client/rep, then priced work.
  */
 export function JobIntakeForm() {
   const router = useRouter();
@@ -76,29 +72,18 @@ export function JobIntakeForm() {
   const canCreate = session.can("job.create");
 
   const [customer, setCustomer] = useState<PickedCustomer | null>(null);
-  const [staff, setStaff] = useState<StaffOption[]>([]);
-  const [staffId, setStaffId] = useState("");
+  const [staff, setStaff] = useState<PickedStaff | null>(null);
   const [boards, setBoards] = useState<Record<string, string>>({});
   const [colour, setColour] = useState("");
   const [otherBoard, setOtherBoard] = useState("");
   const [accessories, setAccessories] = useState("");
-  const [driverName, setDriverName] = useState("");
-  const [driverPhone, setDriverPhone] = useState("");
+  const [repName, setRepName] = useState("");
+  const [repPhone, setRepPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([newLine()]);
   const [rateCard, setRateCard] = useState<ServiceRateCardSettings>(DEFAULT_SERVICE_RATE_CARD);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    const q = query(collection(getDb(), COL.staff), where("active", "==", true));
-    return onSnapshot(
-      q,
-      (snap) =>
-        setStaff(snap.docs.map((d) => ({ id: d.id, name: (d.data().name as string) ?? "" }))),
-      () => {}
-    );
-  }, []);
 
   // Rate card is optional; the seeded defaults stand in until an admin saves one.
   useEffect(() => {
@@ -185,12 +170,12 @@ export function JobIntakeForm() {
         customerId: customer.id,
         customerName: customer.name,
         customerPhone: customer.phone,
-        staffId: staffId || undefined,
-        staffName: staff.find((s) => s.id === staffId)?.name,
+        staffId: staff?.id,
+        staffName: staff?.name,
         boards: boardCounts,
         accessories: accessories.trim() || undefined,
-        driverName: driverName.trim() || undefined,
-        driverPhone: driverPhone.trim() || undefined,
+        repName: repName.trim() || undefined,
+        repPhone: repPhone.trim() || undefined,
         notes: notes.trim() || undefined,
         lines: ready.map((l) => ({
           serviceType: l.serviceType as ServiceType,
@@ -270,13 +255,10 @@ export function JobIntakeForm() {
             onChange={setCustomer}
             createdBy={session.user?.uid ?? ""}
           />
-          <SelectField
-            id="staff"
-            label="Received by"
-            value={staffId}
-            onChange={setStaffId}
-            placeholder={staff.length ? "Select staff…" : "No staff records yet"}
-            options={staff.map((s) => ({ value: s.id, label: s.name }))}
+          <StaffPicker
+            value={staff}
+            onChange={setStaff}
+            createdBy={session.user?.uid ?? ""}
           />
         </div>
       </Section>
@@ -395,7 +377,7 @@ export function JobIntakeForm() {
       </Section>
 
       {/* Handover */}
-      <Section title="Accessories & driver">
+      <Section title="Accessories & client / rep">
         <TextAreaField
           id="accessories"
           label="Accessories"
@@ -406,16 +388,16 @@ export function JobIntakeForm() {
         />
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <TextField
-            id="driver-name"
-            label="Driver's name"
-            value={driverName}
-            onChange={setDriverName}
+            id="rep-name"
+            label="Client / rep name"
+            value={repName}
+            onChange={setRepName}
           />
           <TextField
-            id="driver-phone"
-            label="Driver's phone"
-            value={driverPhone}
-            onChange={setDriverPhone}
+            id="rep-phone"
+            label="Client / rep phone"
+            value={repPhone}
+            onChange={setRepPhone}
           />
         </div>
         <div className="mt-4">
