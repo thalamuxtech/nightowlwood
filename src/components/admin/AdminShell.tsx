@@ -29,6 +29,8 @@ import { OwlMark } from "@/components/site/OwlMark";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import type { Capability } from "@/lib/erp/permissions";
 import { ROLE_LABELS } from "@/lib/erp/enums";
+import { AdminClock } from "@/components/admin/ui/AdminClock";
+import { DemoDataButton } from "@/components/admin/DemoDataButton";
 
 const AdminUserContext = createContext<User | null>(null);
 export const useAdminUser = () => useContext(AdminUserContext);
@@ -88,7 +90,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
     <AdminUserContext.Provider value={user}>
       <div className="flex min-h-svh bg-night-950">
         <Sidebar email={user.email ?? ""} />
-        <main className="min-w-0 flex-1 px-5 pb-16 pt-24 sm:px-8 lg:pt-10">
+        <main className="min-w-0 flex-1 px-5 pb-16 pt-24 sm:px-8 lg:pt-6">
+          <div className="mb-6 flex items-center justify-end gap-2.5 print:hidden">
+            <AdminClock />
+            <DemoDataButton />
+          </div>
           <NoRoleNotice email={user.email ?? ""} />
           {children}
         </main>
