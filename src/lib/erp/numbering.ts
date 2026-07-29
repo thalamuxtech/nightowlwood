@@ -21,7 +21,7 @@ function pad(sequence: number, width = 4): string {
   return String(sequence).padStart(width, "0");
 }
 
-/** Formats a number without touching Firestore — for previews and tests. */
+/** Formats a number without touching Firestore, for previews and tests. */
 export function formatDocNumber(name: CounterName, year: number, sequence: number): string {
   return `${NUMBER_PREFIX[name]}-${year}-${pad(sequence)}`;
 }
@@ -30,7 +30,7 @@ export function formatDocNumber(name: CounterName, year: number, sequence: numbe
  * Atomically allocates the next number for `name`.
  *
  * The counter document holds one field per year (`y2026: 142`). Reading and
- * incrementing inside the transaction is what makes this safe — `increment()`
+ * incrementing inside the transaction is what makes this safe, `increment()`
  * alone would be atomic but wouldn't tell us the resulting value to format.
  */
 export async function allocateDocNumber(

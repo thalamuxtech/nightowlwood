@@ -26,7 +26,7 @@ export function toNaira(kobo: number): number {
 /**
  * Formats kobo as Nigerian naira.
  * `decimals: false` (the default) drops the kobo part, which is how these
- * amounts appear on the paper forms — ₦57,450 not ₦57,450.00.
+ * amounts appear on the paper forms, ₦57,450 not ₦57,450.00.
  */
 export function formatNaira(kobo: number, opts: { decimals?: boolean } = {}): string {
   const { decimals = false } = opts;
@@ -50,8 +50,8 @@ export function formatNairaCompact(kobo: number): string {
 /**
  * quantity × unit price, in kobo.
  *
- * Quantity may legitimately be fractional — the legacy Inventory sheet records
- * `2.5` rolls of S/Tape — so the product is rounded once, at the end, rather
+ * Quantity may legitimately be fractional, the legacy Inventory sheet records
+ * `2.5` rolls of S/Tape, so the product is rounded once, at the end, rather
  * than truncating the inputs.
  */
 export function lineAmountKobo(quantity: number, unitPriceKobo: number): number {

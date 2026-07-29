@@ -11,7 +11,7 @@ type FormState = "idle" | "sending" | "sent" | "error";
 const inputCls =
   "w-full rounded-xl border border-night-600 bg-night-800/60 px-5 py-3.5 text-cream-100 placeholder:text-cream-500 transition-colors duration-300 focus:border-brass-500 focus:outline-none";
 
-/** General message form — writes to the `contacts` collection. */
+/** General message form, writes to the `contacts` collection. */
 export function GeneralContactForm() {
   const [state, setState] = useState<FormState>("idle");
   const [error, setError] = useState("");

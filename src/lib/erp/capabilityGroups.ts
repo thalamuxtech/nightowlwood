@@ -5,7 +5,7 @@ import type { Capability } from "./permissions";
  *
  * The raw capability list is flat and dotted (`invoice.markPaid`), which is
  * right for code but unreadable as a settings screen. These groups and labels
- * exist only for presentation — `permissions.ts` remains the source of truth
+ * exist only for presentation, `permissions.ts` remains the source of truth
  * for what a capability *is*.
  */
 

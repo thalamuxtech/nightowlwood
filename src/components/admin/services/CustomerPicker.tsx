@@ -23,7 +23,7 @@ interface CustomerOption extends PickedCustomer {
  * Intake happens at a counter with a customer waiting, so the flow has to work
  * without leaving the form: type a name, pick a match, or create the record
  * inline. The legacy sheet let staff type a name freehand every time, which is
- * why the history contains 326 "customers" including date strings — this widget
+ * why the history contains 326 "customers" including date strings, this widget
  * exists to force a real reference.
  */
 export function CustomerPicker({
@@ -244,7 +244,7 @@ export function CustomerPicker({
 
           {matches.length === 0 && !term.trim() && (
             <p className="px-4 py-6 text-center text-sm text-cream-500">
-              No customers yet — type a name to create the first one.
+              No customers yet, type a name to create the first one.
             </p>
           )}
         </div>

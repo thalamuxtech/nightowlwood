@@ -12,7 +12,7 @@ type FormState = "idle" | "sending" | "sent" | "error";
 const inputCls =
   "w-full rounded-xl border border-night-600 bg-night-800/60 px-5 py-3.5 text-cream-100 placeholder:text-cream-500 transition-colors duration-300 focus:border-brass-500 focus:outline-none";
 
-/** Internship application — writes to the `internApplications` collection. */
+/** Internship application, writes to the `internApplications` collection. */
 export function InternshipForm() {
   const [state, setState] = useState<FormState>("idle");
   const [error, setError] = useState("");

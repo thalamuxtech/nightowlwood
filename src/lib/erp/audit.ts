@@ -8,7 +8,7 @@ import type { Role } from "./enums";
  * The legacy spreadsheets had no record of who entered or changed anything,
  * which makes a payroll or invoice dispute unresolvable. Every mutation to
  * money, payroll, stock or status writes an entry here. Firestore rules allow
- * create but never update or delete, so the trail cannot be rewritten — not
+ * create but never update or delete, so the trail cannot be rewritten, not
  * even by an admin.
  */
 

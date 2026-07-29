@@ -4,7 +4,7 @@ import type { Role } from "./enums";
  * Capability-based permissions.
  *
  * The UI, the Firestore rules and the Cloud Functions all derive from this one
- * matrix. Hiding a button is not access control — anything listed here as
+ * matrix. Hiding a button is not access control, anything listed here as
  * admin-only is *also* enforced server-side. This file is the human-readable
  * copy of that contract.
  */
@@ -47,7 +47,7 @@ export const CAPABILITIES = [
   "purchase.view",
   "purchase.create",
   "purchase.receive",
-  /** Supplier/brand scorecards — includes spend, so admin-only. */
+  /** Supplier/brand scorecards, includes spend, so admin-only. */
   "procurement.viewPerformance",
 
   // People
@@ -58,7 +58,7 @@ export const CAPABILITIES = [
   "user.manage",
   "settings.change",
 
-  // Money — finance-sensitive
+  // Money, finance-sensitive
   "invoice.view",
   "invoice.create",
   "invoice.markPaid",
@@ -151,7 +151,7 @@ export function canAny(role: Role | null | undefined, capabilities: Capability[]
   return capabilities.some((c) => can(role, c));
 }
 
-/** Full capability list for a role — used by the settings screen. */
+/** Full capability list for a role, used by the settings screen. */
 export function capabilitiesFor(role: Role): readonly Capability[] {
   return ROLE_CAPABILITIES[role];
 }

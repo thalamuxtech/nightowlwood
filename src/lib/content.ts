@@ -243,7 +243,7 @@ export interface Advantage {
   title: string;
   /** Why it matters to the client, not to us. */
   description: string;
-  /** Concrete evidence — the reason to believe the claim. */
+  /** Concrete evidence, the reason to believe the claim. */
   proof: string;
 }
 
@@ -269,7 +269,7 @@ export const ADVANTAGE_DETAILS: Advantage[] = [
     label: "Modern Machines",
     title: "Industrial plant, not workshop tools",
     description:
-      "A sliding table saw and automated edge bander give square cuts and sealed edges at volume — the difference between a panel that installs and one that needs rework.",
+      "A sliding table saw and automated edge bander give square cuts and sealed edges at volume, the difference between a panel that installs and one that needs rework.",
     proof: "150+ boards processed daily",
   },
   {
@@ -287,7 +287,7 @@ export const ADVANTAGE_DETAILS: Advantage[] = [
     label: "Quality Focus",
     title: "Checked before it leaves us",
     description:
-      "Every component is inspected against the spec before dispatch — dimensions, edge finish, and consistency across the batch — so what arrives is what you can install.",
+      "Every component is inspected against the spec before dispatch, dimensions, edge finish, and consistency across the batch, so what arrives is what you can install.",
     proof: "100% client satisfaction across 1,000+ deliveries",
   },
 ];

@@ -37,7 +37,7 @@ export const COL = {
   inventoryProduct: "inventoryProduct",
   consumableCycles: "consumableCycles",
 
-  // Procurement — who we buy from and how well it performs
+  // Procurement, who we buy from and how well it performs
   suppliers: "suppliers",
   purchases: "purchases",
   consumableBrands: "consumableBrands",

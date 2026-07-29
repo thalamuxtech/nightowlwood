@@ -8,7 +8,7 @@ import type { WageRate, WorkLog } from "./types";
  * Two rules drive everything here, both confirmed against the legacy sheets:
  *
  * 1. **Operators** are paid per unit of work they personally completed.
- * 2. **Assistants** are paid *per the work they actually assisted on* — NOT an
+ * 2. **Assistants** are paid *per the work they actually assisted on*, NOT an
  *    even split of a pooled total. The old `Wage payment` sheet computed one
  *    "Total/Person" and multiplied it by the number of assistants, which
  *    silently pays an assistant who worked one day the same as one who worked
@@ -20,7 +20,7 @@ import type { WageRate, WorkLog } from "./types";
  */
 
 // ---------------------------------------------------------------------------
-// Default rates — seeds only
+// Default rates, seeds only
 // ---------------------------------------------------------------------------
 
 /**
@@ -29,7 +29,7 @@ import type { WageRate, WorkLog } from "./types";
  * thereafter; nothing in the engine reads these constants at runtime.
  *
  * Rates marked ESTIMATED had no rate row in the source sheet and need
- * confirming — they are flagged in the UI until an admin saves them.
+ * confirming, they are flagged in the UI until an admin saves them.
  */
 export const DEFAULT_WAGE_RATES: Array<{
   workType: WageWorkType;
@@ -60,7 +60,7 @@ export const DEFAULT_WAGE_RATES: Array<{
     workType: "grooving",
     operatorRateNaira: 0.25,
     assistantRateNaira: 0,
-    note: "Per millimetre of groove run — units in the source sheet reach 5,000, consistent with mm not pieces.",
+    note: "Per millimetre of groove run, units in the source sheet reach 5,000, consistent with mm not pieces.",
   },
   { workType: "glass", operatorRateNaira: 0.25, assistantRateNaira: 0 },
   { workType: "gyara", operatorRateNaira: 0.25, assistantRateNaira: 0 },
@@ -100,7 +100,7 @@ export interface ResolvedRate {
  *
  * A rate applies when `effectiveFrom <= atMs` and it has either no
  * `effectiveTo` or one after `atMs`. Where several match, the latest
- * `effectiveFrom` wins — so superseding a rate is an insert, not an overwrite,
+ * `effectiveFrom` wins, so superseding a rate is an insert, not an overwrite,
  * and history stays intact.
  */
 export function resolveRates(rates: WageRate[], atMs: number): Map<WageWorkType, ResolvedRate> {
@@ -179,7 +179,7 @@ const key = (staffId: string, workType: WageWorkType, role: string): Key =>
  * Assistants are credited from each log's `assistantIds`, so a log with three
  * named assistants pays each of them the assistant rate on that log's units.
  * `assistantCount` is used only as a fallback for legacy logs that recorded a
- * head count without names — those cannot be attributed per person, so they are
+ * head count without names, those cannot be attributed per person, so they are
  * reported in `unattributedAssistantKobo` rather than silently divided.
  */
 export function computeWageRun(
@@ -315,7 +315,7 @@ export interface AppliedDeduction {
 /**
  * Applies loan/advance deductions against each staff member's gross.
  *
- * A deduction never exceeds the gross earned, so net pay cannot go negative —
+ * A deduction never exceeds the gross earned, so net pay cannot go negative -
  * the unpaid balance simply carries to the next run.
  */
 export function applyDeductions(

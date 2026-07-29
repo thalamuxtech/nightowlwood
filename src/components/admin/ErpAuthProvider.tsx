@@ -21,7 +21,7 @@ import { ADMIN_ONLY_CAPABILITIES, can, type Capability } from "@/lib/erp/permiss
  *
  * The role lives in `users/{uid}.role` and is watched live, so revoking access
  * takes effect without the user re-authenticating. A signed-in session on its
- * own proves nothing — this project has public signup enabled, so a user
+ * own proves nothing, this project has public signup enabled, so a user
  * document with `active: true` is what makes someone staff.
  *
  * Capability checks here drive the UI only. Every gate is enforced again in
@@ -36,7 +36,7 @@ export interface ErpSession {
   displayName: string;
   /** True once the user doc lookup has settled, successfully or not. */
   ready: boolean;
-  /** Signed in but with no active user document — not staff. */
+  /** Signed in but with no active user document, not staff. */
   unauthorised: boolean;
   can: (capability: Capability) => boolean;
   canAny: (capabilities: Capability[]) => boolean;
@@ -178,7 +178,7 @@ export function ErpAuthProvider({ children }: { children: ReactNode }) {
       if (!custom) return can(role, capability);
 
       // Admin-only capabilities are never grantable to another role, whatever
-      // the saved list says — the Firestore rules deny them regardless, so
+      // the saved list says, the Firestore rules deny them regardless, so
       // honouring one here would only produce a button that fails on click.
       if (ADMIN_ONLY_CAPABILITIES.includes(capability)) return false;
 

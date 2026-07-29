@@ -5,7 +5,7 @@ import { toKobo } from "./money";
  *
  * Everything here was a hardcoded or back-computed constant in the legacy
  * spreadsheets. Each value is seeded from the observed data, stored in
- * `settings/{id}`, and editable by an admin — nothing in the app reads these
+ * `settings/{id}`, and editable by an admin, nothing in the app reads these
  * defaults once a document exists.
  */
 
@@ -70,7 +70,7 @@ export interface ServiceRateCardSettings {
 
 /**
  * Seeded from the modal (most frequent) prices in the `C & E` sheet, with the
- * observed spread kept for context — C/E ran ₦2,000 / ₦2,300 / ₦3,000 across
+ * observed spread kept for context, C/E ran ₦2,000 / ₦2,300 / ₦3,000 across
  * 363 jobs, so a single "correct" price doesn't exist and the card is a
  * starting point, not a rule.
  */
@@ -109,14 +109,14 @@ export const DEFAULT_SERVICE_RATE_CARD: ServiceRateCardSettings = {
       serviceType: "grooving",
       defaultPriceKobo: toKobo(5000),
       observedRange: { minKobo: toKobo(1000), maxKobo: toKobo(8000) },
-      note: "Wide spread — depends on run length.",
+      note: "Wide spread, depends on run length.",
     },
     {
       serviceType: "glass",
       defaultPriceKobo: toKobo(3000),
       observedRange: { minKobo: toKobo(3000), maxKobo: toKobo(5000) },
     },
-    { serviceType: "gyara", defaultPriceKobo: 0, note: "Rework — priced case by case." },
+    { serviceType: "gyara", defaultPriceKobo: 0, note: "Rework, priced case by case." },
     { serviceType: "special_board", defaultPriceKobo: toKobo(4000) },
     { serviceType: "mortise", defaultPriceKobo: toKobo(2000) },
   ],

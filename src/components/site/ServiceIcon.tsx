@@ -57,7 +57,7 @@ export function ServiceIcon({ name, size = 40 }: { name: string; size?: number }
         <path d="M16 34h13M8 34H4v-4" {...stroke} />
       </>
     ),
-    // Advisory — compass over blueprint
+    // Advisory, compass over blueprint
     advisory: (
       <>
         <path d="M24 6v6M24 12l-10 26M24 12l10 26" {...stroke} />

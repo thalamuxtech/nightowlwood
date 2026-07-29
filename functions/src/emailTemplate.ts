@@ -1,4 +1,4 @@
-import { OWL_MARK_PNG_DATA_URI, OWL_MARK_WIDTH, OWL_MARK_HEIGHT } from "./emailLogo";
+import { OWL_MARK_URL, OWL_MARK_WIDTH, OWL_MARK_HEIGHT } from "./emailLogo";
 
 /**
  * Branded email shell.
@@ -8,9 +8,8 @@ import { OWL_MARK_PNG_DATA_URI, OWL_MARK_WIDTH, OWL_MARK_HEIGHT } from "./emailL
  * palette follows the Job Order Tracker: brown/brass on cream, "PRECISION IN
  * EVERY CUT" under the wordmark.
  *
- * Email clients strip external CSS, so every rule is on the element. They also
- * block remote images by default, so the owl mark is an inlined data URI — see
- * emailLogo.ts for why that beats both SVG and a hosted file here.
+ * Email clients strip external CSS, so every rule is on the element. The owl
+ * mark is a hosted PNG; see emailLogo.ts for why SVG and data URIs both fail.
  */
 
 const BRASS = "#dba95f";
@@ -27,7 +26,7 @@ const BORDER = "#e6ddd0";
  * Outlook, and explicit width/height stop the layout jumping before the image
  * decodes. Width is halved from the asset's native size for retina sharpness.
  */
-const OWL_IMG = `<img src="${OWL_MARK_PNG_DATA_URI}" width="${OWL_MARK_WIDTH / 2}" height="${Math.round(OWL_MARK_HEIGHT / 2)}" alt="" style="display:block;border:0;outline:none;text-decoration:none;">`;
+const OWL_IMG = `<img src="${OWL_MARK_URL}" width="${OWL_MARK_WIDTH / 2}" height="${Math.round(OWL_MARK_HEIGHT / 2)}" alt="Nightowl Woodworks" style="display:block;border:0;outline:none;text-decoration:none;">`;
 
 export interface CompanyDetails {
   name: string;
@@ -43,7 +42,7 @@ export interface EmailShellInput {
   /** Small label above the heading, e.g. "Invoice" or "Estimate review". */
   eyebrow?: string;
   heading: string;
-  /** Body HTML — use the helpers below rather than raw markup. */
+  /** Body HTML, use the helpers below rather than raw markup. */
   body: string;
   cta?: { label: string; url: string };
   footerNote?: string;
@@ -144,7 +143,7 @@ export function paragraph(text: string): string {
   return `<p style="margin:0 0 14px;">${escapeHtml(text)}</p>`;
 }
 
-/** Label/value rows — used for invoice and job summaries. */
+/** Label/value rows, used for invoice and job summaries. */
 export function detailTable(rows: Array<[string, string]>): string {
   const body = rows
     .map(

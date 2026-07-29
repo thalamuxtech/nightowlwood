@@ -24,7 +24,7 @@ type Overrides = Partial<Record<Role, Capability[]>>;
 /**
  * Role permissions.
  *
- * Admin is shown as a fixed summary and cannot be edited — a system where the
+ * Admin is shown as a fixed summary and cannot be edited, a system where the
  * top role can have capabilities removed is one lockout away from being
  * unadministrable.
  *
@@ -134,17 +134,17 @@ export function RolePermissionsEditor() {
     <section className="mt-12">
       <h2 className="font-display text-lg text-cream-100">What each role can do</h2>
       <p className="mt-2 max-w-2xl text-sm text-cream-400">
-        Admin access is fixed. Manager and Operator can be tailored — except for
+        Admin access is fixed. Manager and Operator can be tailored, except for
         the finance and system controls marked with a lock, which stay
         administrator-only and are enforced by the database, not just this screen.
       </p>
 
-      {/* Admin — read-only summary */}
+      {/* Admin, read-only summary */}
       <div className="mt-6 rounded-3xl border border-night-700/60 bg-night-900/40 p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <StatusPill tone={ROLE_TONE.admin}>{ROLE_LABELS.admin}</StatusPill>
           <span className="flex items-center gap-1.5 text-xs text-cream-500">
-            <Lock size={13} /> Fixed — cannot be edited
+            <Lock size={13} /> Fixed, cannot be edited
           </span>
         </div>
         <p className="mt-4 font-display text-2xl text-cream-100">
@@ -159,7 +159,7 @@ export function RolePermissionsEditor() {
         </p>
       </div>
 
-      {/* Manager & Operator — editable */}
+      {/* Manager & Operator, editable */}
       <div className="mt-5 space-y-4">
         {EDITABLE_ROLES.map((role) => {
           const granted = new Set(effective(role, draft));

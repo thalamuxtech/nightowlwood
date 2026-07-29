@@ -311,7 +311,7 @@ export const INVENTORY_KINDS = ["service", "company", "product"] as const;
 export type InventoryKind = (typeof INVENTORY_KINDS)[number];
 
 export const INVENTORY_KIND_LABELS: Record<InventoryKind, string> = {
-  /** Customer-brought items held for service work — we are custodians, not owners. */
+  /** Customer-brought items held for service work, we are custodians, not owners. */
   service: "Service Inventory",
   /** Company-owned consumables and materials used to do the work. */
   company: "Company Inventory",

@@ -171,7 +171,7 @@ body {
   background-size: cover, 560px auto;
   background-position: center;
 }
-/* Inset bevel — makes the section read as a carved wooden panel */
+/* Inset bevel, makes the section read as a carved wooden panel */
 .bg-woodgrain::after {
   content: "";
   position: absolute;
@@ -188,7 +188,7 @@ body {
   z-index: 1;
 }
 
-/* Plank wall — the walnut texture split into 3D boards with seams and bevels */
+/* Plank wall, the walnut texture split into 3D boards with seams and bevels */
 .bg-woodplanks {
   position: relative;
 }
@@ -226,7 +226,7 @@ body {
   z-index: 1;
 }
 
-/* Diagonal parquet — criss-cross seams over the walnut texture */
+/* Diagonal parquet, criss-cross seams over the walnut texture */
 .bg-woodparquet {
   position: relative;
 }

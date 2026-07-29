@@ -186,7 +186,7 @@ function Lightbox({
             onClick={(e) => e.stopPropagation()}
             className="flex max-h-full w-full max-w-5xl flex-col"
           >
-            {/* Full image, never cropped — letterboxed on the dark stage */}
+            {/* Full image, never cropped, letterboxed on the dark stage */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={item.imageUrl}

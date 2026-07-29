@@ -92,7 +92,7 @@ function isEmail(value: unknown): value is string {
 }
 
 // ---------------------------------------------------------------------------
-// sendTestEmail — proves the Brevo path end to end
+// sendTestEmail, proves the Brevo path end to end
 // ---------------------------------------------------------------------------
 
 /**
@@ -135,13 +135,13 @@ export const sendTestEmail = onCall(
         paragraph(
           "Invoices, estimate review links and stock alerts will use this same template."
         ) +
-        calloutBox("No action needed — this is a test."),
+        calloutBox("No action needed, this is a test."),
       footerNote: "Sent from the Nightowl Woodworks admin dashboard.",
     });
 
     const result = await mailer().send({
       to: [{ email: to }],
-      subject: "Nightowl Woodworks — email test",
+      subject: "Nightowl Woodworks, email test",
       html,
       replyTo: { email: company.email, name: company.name },
       tags: ["system-test"],
@@ -174,7 +174,7 @@ export const sendTestEmail = onCall(
 );
 
 // ---------------------------------------------------------------------------
-// getMailConfigStatus — diagnostics without revealing the key
+// getMailConfigStatus, diagnostics without revealing the key
 // ---------------------------------------------------------------------------
 
 /**

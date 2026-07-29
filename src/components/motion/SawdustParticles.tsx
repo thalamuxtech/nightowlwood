@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 
 /**
  * Ambient floating sawdust motes for hero sections.
- * Pure CSS-transform animation — cheap, and skipped under reduced motion.
+ * Pure CSS-transform animation, cheap, and skipped under reduced motion.
  */
 export function SawdustParticles({ count = 18 }: { count?: number }) {
   const reduce = useReducedMotion();

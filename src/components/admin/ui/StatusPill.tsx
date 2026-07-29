@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
  *
  * Tone carries meaning consistently: `positive` = settled/finished, `warn` =
  * needs attention, `danger` = money at risk or cancelled, `info` = in flight,
- * `neutral` = not started. Colour is never the only signal — the label always
+ * `neutral` = not started. Colour is never the only signal, the label always
  * states the status in words.
  */
 

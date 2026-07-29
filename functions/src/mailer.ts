@@ -2,7 +2,7 @@
  * Transactional email.
  *
  * The provider sits behind the `Mailer` interface so feature code never
- * references Brevo directly — swapping to Resend or SMTP later means adding one
+ * references Brevo directly, swapping to Resend or SMTP later means adding one
  * implementation, not touching every call site.
  *
  * The API key is read from Secret Manager at call time via the injected secret,

@@ -5,7 +5,7 @@ import type { ConsumableCycle, Purchase, PurchaseLine } from "./types";
  *
  * The point is purchasing decisions, so the headline figure is never the
  * sticker price. The legacy `Gum & Blade Cycle` sheet shows Infrawood blades
- * lasting ~4 days against Freud's ~14 — a blade at half the price that dies in
+ * lasting ~4 days against Freud's ~14, a blade at half the price that dies in
  * a third of the time is the more expensive blade. `costPerUnitProcessedKobo`
  * (and `costPerDayKobo`) express that directly.
  *
@@ -138,7 +138,7 @@ export interface BrandScorecard {
 /**
  * Rolls closed cycles for one brand into a scorecard.
  *
- * Only **closed** cycles (those with an `endDate`) count toward lifespan — an
+ * Only **closed** cycles (those with an `endDate`) count toward lifespan, an
  * in-service blade has an unknown life, and including it would drag every
  * average down toward zero.
  */
@@ -192,7 +192,7 @@ export interface BrandComparisonRow {
 /**
  * Ranks brands best-first on true cost of ownership, preferring
  * cost-per-unit-processed and falling back to cost-per-day, then lifespan.
- * Brands with too few cycles to judge sort last — with two data points, a
+ * Brands with too few cycles to judge sort last, with two data points, a
  * flattering average is noise, not evidence.
  */
 export function rankBrands(rows: BrandComparisonRow[], minCycles = 3): BrandComparisonRow[] {
@@ -229,7 +229,7 @@ export function brandObservations(rows: BrandComparisonRow[], minCycles = 3): st
     if (ratio >= 1.5) {
       out.push(
         `${best.brandName} lasts ${ratio.toFixed(1)}× longer than ${worst.brandName} ` +
-          `(${bestLife} vs ${worstLife} days average) — favour it on the next order.`
+          `(${bestLife} vs ${worstLife} days average), favour it on the next order.`
       );
     }
   }
@@ -250,7 +250,7 @@ export function brandObservations(rows: BrandComparisonRow[], minCycles = 3): st
     const fail = r.score.earlyFailureRatePercent;
     if (fail !== undefined && fail >= 25) {
       out.push(
-        `${r.brandName} failed early in ${fail}% of cycles — raise it with the supplier ` +
+        `${r.brandName} failed early in ${fail}% of cycles, raise it with the supplier ` +
           `or stop buying it.`
       );
     }
@@ -270,18 +270,18 @@ export function supplierObservations(
     if (score.onTimeRatePercent !== undefined && score.onTimeRatePercent < 70) {
       out.push(
         `${supplierName} hit the promised date on only ${score.onTimeRatePercent}% of ` +
-          `${score.purchaseCount} orders — build slack into schedules that depend on them.`
+          `${score.purchaseCount} orders, build slack into schedules that depend on them.`
       );
     }
     if (score.defectRatePercent !== undefined && score.defectRatePercent >= 5) {
       out.push(
         `${supplierName} short-delivered or failed inspection on ${score.defectRatePercent}% ` +
-          `of goods received — inspect on arrival.`
+          `of goods received, inspect on arrival.`
       );
     }
     if (score.avgLeadTimeDays !== undefined && score.avgLeadTimeDays > 14) {
       out.push(
-        `${supplierName} averages ${score.avgLeadTimeDays} days to deliver — order earlier ` +
+        `${supplierName} averages ${score.avgLeadTimeDays} days to deliver, order earlier ` +
           `or find a second source.`
       );
     }

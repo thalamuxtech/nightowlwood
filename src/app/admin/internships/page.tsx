@@ -1,18 +1,9 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { RecordsBoard } from "@/components/admin/RecordsBoard";
-
-export default function InternshipsAdminPage() {
-  return (
-    <RecordsBoard
-      title="Internship Applications"
-      subtitle="Applications from the careers page, live from Firestore."
-      collectionName="internApplications"
-      columns={[{ key: "area", label: "Area of interest" }]}
-      detailFields={[
-        { key: "area", label: "Area of interest" },
-        { key: "background", label: "Education / experience" },
-      ]}
-    />
-  );
+/**
+ * Legacy route. These four screens were merged into /admin/submissions/ as
+ * tabs; the redirect keeps existing bookmarks working.
+ */
+export default function LegacyRedirect() {
+  redirect("/admin/submissions/");
 }

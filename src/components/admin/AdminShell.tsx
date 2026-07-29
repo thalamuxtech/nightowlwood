@@ -9,12 +9,10 @@ import {
   Eye,
   EyeOff,
   GalleryHorizontalEnd,
-  GraduationCap,
   Inbox,
   LayoutDashboard,
   Loader2,
   LogOut,
-  MailOpen,
   Newspaper,
   PanelLeftClose,
   PanelLeftOpen,
@@ -36,7 +34,7 @@ export const useAdminUser = () => useContext(AdminUserContext);
 /**
  * Nav entries. `capability` hides a link from roles that cannot use the screen;
  * entries without one are visible to any signed-in staff member. This is
- * presentation only — the screens and Firestore rules enforce access.
+ * presentation only, the screens and Firestore rules enforce access.
  */
 interface NavItem {
   href: string;
@@ -48,20 +46,8 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/admin/", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/jobs/", label: "Service Jobs", icon: ClipboardList, capability: "job.view" },
-  { href: "/admin/inquiries/", label: "Quotes", icon: Inbox, capability: "customer.view" },
+  { href: "/admin/submissions/", label: "Submissions", icon: Inbox, capability: "customer.view" },
   { href: "/admin/blog/", label: "Blog", icon: Newspaper, capability: "customer.edit" },
-  {
-    href: "/admin/internships/",
-    label: "Internships",
-    icon: GraduationCap,
-    capability: "customer.view",
-  },
-  {
-    href: "/admin/contacts/",
-    label: "Messages & Subscribers",
-    icon: MailOpen,
-    capability: "customer.view",
-  },
   {
     href: "/admin/work/",
     label: "Work Gallery",
@@ -110,7 +96,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
  * Explains a bare sidebar.
  *
  * Without this, a missing or misshapen `users/{uid}` document just looks like a
- * broken dashboard — the nav silently filters down to the one unrestricted link
+ * broken dashboard, the nav silently filters down to the one unrestricted link
  * and nothing says why.
  */
 function NoRoleNotice({ email }: { email: string }) {
@@ -200,7 +186,7 @@ function Sidebar({ email }: { email: string }) {
         </nav>
       </div>
 
-      {/* Desktop sidebar — collapsible */}
+      {/* Desktop sidebar, collapsible */}
       <aside
         className={`sticky top-0 hidden h-svh shrink-0 flex-col border-r border-night-700/60 bg-night-900 transition-all duration-300 lg:flex ${
           collapsed ? "w-[76px] p-3" : "w-64 p-6"

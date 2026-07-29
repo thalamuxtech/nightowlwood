@@ -77,7 +77,7 @@ export function OwlMark({ size = 44, animate = true }: { size?: number; animate?
         <path key={`md${i}`} d={d} {...strokeProps} />
       ))}
 
-      {/* Eye rings — the authentic crescent shape (cut at the inner-upper
+      {/* Eye rings, the authentic crescent shape (cut at the inner-upper
           side by the brow), traced from the logo */}
       {OWL_EYE_RINGS.map((d, i) => (
         <path key={`ring${i}`} d={d} {...strokeProps} />

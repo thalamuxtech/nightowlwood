@@ -41,7 +41,7 @@ export function GrainDivider({ flip = false }: { flip?: boolean }) {
             }
             transition={{ duration: 11 + i * 2.5, repeat: Infinity, ease: "easeInOut" }}
           >
-            {/* Base grain line — draws on, then stays */}
+            {/* Base grain line, draws on, then stays */}
             <motion.path
               d={line.d}
               fill="none"
@@ -75,7 +75,7 @@ export function GrainDivider({ flip = false }: { flip?: boolean }) {
           </motion.g>
         ))}
 
-        {/* Knot — draws on, then softly pulses */}
+        {/* Knot, draws on, then softly pulses */}
         <motion.circle
           cx={1080}
           cy={30}

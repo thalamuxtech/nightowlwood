@@ -64,7 +64,7 @@ interface StaffOption {
 }
 
 /**
- * Job intake — the digital Job Order Tracker.
+ * Job intake, the digital Job Order Tracker.
  *
  * Field order deliberately follows the paper form so staff transcribing from it
  * read top-to-bottom without hunting: customer, staff, boards, accessories,
@@ -127,7 +127,7 @@ export function JobIntakeForm() {
   /**
    * Applies the rate card when a service type is chosen.
    *
-   * Only fills a price the user hasn't typed into — overwriting a manual entry
+   * Only fills a price the user hasn't typed into, overwriting a manual entry
    * because the row changed would be hostile.
    */
   function setLineService(key: string, serviceType: ServiceType) {
@@ -357,7 +357,7 @@ export function JobIntakeForm() {
                     label="Board"
                     value={line.boardType}
                     onChange={(v) => updateLine(line.key, { boardType: v as BoardType })}
-                    placeholder="—"
+                    placeholder="-"
                     options={BOARD_TYPES.map((b) => ({ value: b, label: BOARD_TYPE_LABELS[b] }))}
                   />
                   <NumberField

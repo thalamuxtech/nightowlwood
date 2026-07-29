@@ -234,8 +234,8 @@ export async function removeJobLine(
 }
 
 /**
- * Records a payment against a job — the "Payment History" table on the paper
- * tracker — and updates the running balance.
+ * Records a payment against a job, the "Payment History" table on the paper
+ * tracker, and updates the running balance.
  */
 export async function recordJobPayment(
   db: Firestore,
@@ -282,7 +282,7 @@ export async function recordJobPayment(
 /**
  * Recomputes totals from the subcollections.
  *
- * A repair path, not part of normal operation — for jobs whose stored totals
+ * A repair path, not part of normal operation, for jobs whose stored totals
  * drifted (a failed batch, or data imported from the spreadsheets).
  */
 export async function recalculateJobTotals(db: Firestore, jobId: string): Promise<void> {
@@ -349,12 +349,12 @@ export function describeBoards(
   boards: BoardBreakdown | undefined,
   labels: Record<string, string>
 ): string {
-  if (!boards) return "—";
+  if (!boards) return "-";
   const parts = BOARD_COUNT_KEYS.filter((k) => {
     const v = boards[k];
     return typeof v === "number" && v > 0;
   }).map((k) => `${labels[k] ?? k} ${boards[k]}`);
-  return parts.length ? parts.join(" · ") : "—";
+  return parts.length ? parts.join(" · ") : "-";
 }
 
 /** Increments a customer's job counter, for the customer list. */

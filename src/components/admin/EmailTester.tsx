@@ -104,7 +104,7 @@ function describeError(e: unknown): string {
         "Function not found. Deploy the functions first: firebase deploy --only functions"
       );
     }
-    if (code.includes("unauthenticated")) return "Sign in again — your session expired.";
+    if (code.includes("unauthenticated")) return "Sign in again, your session expired.";
     if (code.includes("permission-denied")) return message || "Admin access required.";
     return message || code;
   }

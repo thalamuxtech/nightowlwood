@@ -20,7 +20,7 @@ export const JOB_STATUS_TONE: Record<JobStatus, PillTone> = {
   received: "neutral",
   in_progress: "progress",
   qc: "info",
-  ready_for_pickup: "warn", // waiting on the customer — chase it
+  ready_for_pickup: "warn", // waiting on the customer, chase it
   collected: "positive",
   on_hold: "warn",
   cancelled: "danger",
@@ -77,7 +77,7 @@ export const TOOL_REQUEST_STATUS_TONE: Record<ToolRequestStatus, PillTone> = {
 };
 
 export const ROLE_TONE: Record<Role, PillTone> = {
-  admin: "danger", // highest privilege — visually distinct on purpose
+  admin: "danger", // highest privilege, visually distinct on purpose
   manager: "progress",
   operator: "info",
 };

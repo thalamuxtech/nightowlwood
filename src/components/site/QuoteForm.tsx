@@ -22,7 +22,7 @@ export function QuoteForm() {
     const form = e.currentTarget;
     const data = new FormData(form);
 
-    // Honeypot — bots fill hidden fields
+    // Honeypot, bots fill hidden fields
     if (data.get("company")) return;
 
     const payload = {

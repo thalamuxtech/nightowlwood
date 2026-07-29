@@ -35,7 +35,7 @@ interface UserRow {
 /**
  * Users & roles. Admin-only.
  *
- * A user document is what grants staff access — a Firebase account alone does
+ * A user document is what grants staff access, a Firebase account alone does
  * nothing, because public signup is enabled on this project. The uid must match
  * the Firebase Auth uid, so the flow is: create the account in the Firebase
  * console, then record it here with a role.
@@ -207,7 +207,7 @@ export function UsersManager() {
         <p className="text-eyebrow">Access control</p>
         <h1 className="text-title mt-3 text-cream-50">Users &amp; Roles</h1>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-cream-400">
-          A Firebase account alone grants nothing — public signup is enabled, so
+          A Firebase account alone grants nothing, public signup is enabled, so
           staff access comes from the record below. Create the account in the
           Firebase console first, then add its UID here with a role.
         </p>
@@ -270,7 +270,7 @@ export function UsersManager() {
           </div>
         ) : rows.length === 0 ? (
           <p className="mt-6 rounded-3xl border border-night-700/60 bg-night-900/40 p-8 text-center text-sm text-cream-400">
-            No staff accounts yet. Add the first one above — use your own Firebase
+            No staff accounts yet. Add the first one above, use your own Firebase
             UID so you keep admin access once the bootstrap emails are removed.
           </p>
         ) : (
@@ -303,7 +303,7 @@ export function UsersManager() {
                           onChange={(e) => changeRole(row, e.target.value as Role)}
                           title={
                             isSelf
-                              ? "You cannot change your own role — ask another admin."
+                              ? "You cannot change your own role, ask another admin."
                               : undefined
                           }
                           className="cursor-pointer rounded-lg border border-night-600 bg-night-800/60 px-3 py-2 text-cream-100 focus:border-brass-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"

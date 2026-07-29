@@ -8,7 +8,7 @@ import { getDb } from "@/lib/firebase";
 
 type State = "idle" | "sending" | "done" | "error";
 
-/** Footer newsletter signup — writes to the `subscribers` collection. */
+/** Footer newsletter signup, writes to the `subscribers` collection. */
 export function SubscribeForm() {
   const [state, setState] = useState<State>("idle");
 
@@ -31,7 +31,7 @@ export function SubscribeForm() {
       });
       setState("done");
     } catch {
-      // Rules forbid overwriting an existing subscription — treat as already subscribed.
+      // Rules forbid overwriting an existing subscription, treat as already subscribed.
       setState("done");
     }
   }

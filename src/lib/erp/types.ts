@@ -219,7 +219,7 @@ export interface Estimate extends AuditFields {
   errorMarginKobo: number;
   nightowlChargesKobo: number;
   totalKobo: number;
-  /** External-reviewer access. Only hashes are stored — never the raw token. */
+  /** External-reviewer access. Only hashes are stored, never the raw token. */
   reviewTokenHash?: string;
   reviewPasscodeHash?: string;
   reviewEmail?: string;
@@ -401,7 +401,7 @@ export interface LoanRepayment {
 
 /**
  * Service inventory: customer-owned boards and items brought in for service
- * work. Held on site while the job runs — we are custodians, not owners, so
+ * work. Held on site while the job runs, we are custodians, not owners, so
  * these never count as company stock or assets.
  */
 export interface ServiceInventoryItem extends AuditFields {
@@ -473,12 +473,12 @@ export interface ConsumableCycle extends AuditFields {
   line?: "egger" | "mdf" | "both";
   startDate: Timestamp | null;
   endDate?: Timestamp | null;
-  /** Boards processed over the cycle, if tracked — drives cost per board. */
+  /** Boards processed over the cycle, if tracked, drives cost per board. */
   unitsProcessed?: number;
   costKobo?: number;
   /** Computed on close: endDate − startDate, the headline durability figure. */
   lifespanDays?: number;
-  /** Why it was retired — distinguishes fair wear from a premature failure. */
+  /** Why it was retired, distinguishes fair wear from a premature failure. */
   retiredReason?: "worn_out" | "broke_early" | "damaged" | "lost" | "other";
   notes?: string;
 }
@@ -516,7 +516,7 @@ export interface Supplier extends AuditFields {
 }
 
 /**
- * A consumable brand/model — e.g. "Freud Blade" vs "Infrawood BLD". This is the
+ * A consumable brand/model, e.g. "Freud Blade" vs "Infrawood BLD". This is the
  * unit of comparison for purchasing decisions: the legacy Gum & Blade sheet
  * shows Infrawood lasting ~4 days against Freud's ~14, which is the difference
  * between a cheap blade and a false economy.
@@ -535,7 +535,7 @@ export interface ConsumableBrand extends AuditFields {
   /** Mean boards processed per unit, when units are tracked. */
   avgUnitsProcessed?: number;
   avgUnitCostKobo?: number;
-  /** avgUnitCost ÷ avgUnitsProcessed — the true cost driver, not sticker price. */
+  /** avgUnitCost ÷ avgUnitsProcessed, the true cost driver, not sticker price. */
   costPerUnitProcessedKobo?: number;
   /** Share of cycles retired as `broke_early`, 0–100. */
   earlyFailureRatePercent?: number;
@@ -547,7 +547,7 @@ export interface Purchase extends AuditFields {
   supplierName: string;
   reference?: string;
   orderedAt: Timestamp | null;
-  /** What the supplier promised — compared against `receivedAt` for on-time rate. */
+  /** What the supplier promised, compared against `receivedAt` for on-time rate. */
   promisedAt?: Timestamp | null;
   receivedAt?: Timestamp | null;
   status: "ordered" | "partial" | "received" | "cancelled";
@@ -568,7 +568,7 @@ export interface PurchaseLine {
   item: string;
   quantityOrdered: number;
   quantityReceived?: number;
-  /** Rejected on inspection — short delivery or poor quality. */
+  /** Rejected on inspection, short delivery or poor quality. */
   quantityRejected?: number;
   unit: string;
   unitCostKobo: number;
