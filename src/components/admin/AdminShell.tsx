@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   GalleryHorizontalEnd,
+  HandCoins,
   Inbox,
   LayoutDashboard,
   Loader2,
@@ -20,6 +21,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Users,
+  Wallet,
 } from "lucide-react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
 import { getFirebaseAuth } from "@/lib/firebase";
@@ -54,6 +56,8 @@ const NAV: NavItem[] = [
     icon: GalleryHorizontalEnd,
     capability: "customer.edit",
   },
+  { href: "/admin/payroll/", label: "Payroll", icon: Wallet, capability: "wage.run" },
+  { href: "/admin/loans/", label: "Loans & Advances", icon: HandCoins, capability: "loan.request" },
   { href: "/admin/users/", label: "Users & Roles", icon: ShieldCheck, capability: "user.manage" },
   { href: "/admin/settings/", label: "Settings", icon: Settings, capability: "settings.change" },
 ];
