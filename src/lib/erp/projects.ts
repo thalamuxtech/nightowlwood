@@ -1,0 +1,518 @@
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  runTransaction,
+  serverTimestamp,
+  Timestamp,
+  updateDoc,
+  writeBatch,
+  type Firestore,
+} from "firebase/firestore";
+import { COL, COUNTER, componentsPath, estimateLinesPath, featuresPath } from "./collections";
+import type { ProductCategory, ProjectStatus } from "./enums";
+import { applyPercentKobo, lineAmountKobo, sumKobo } from "./money";
+import { allocateDocNumber } from "./numbering";
+import { ESTIMATE_TEMPLATES } from "./estimateTemplates";
+import { writeAudit, type AuditActor } from "./audit";
+
+/**
+ * Projects, components, features and estimates.
+ *
+ * The hierarchy is project > component > feature. A component is a physical
+ * deliverable ("Main kitchen"), a feature is a priced line within it. Estimate
+ * totals roll upward, and each level stores its own subtotal so a list view does
+ * not have to read every descendant.
+ */
+
+export interface NewProjectInput {
+  customerId: string;
+  customerName: string;
+  title: string;
+  location?: string;
+  targetDate?: Date;
+  notes?: string;
+}
+
+export async function createProject(
+  db: Firestore,
+  actor: AuditActor,
+  input: NewProjectInput
+): Promise<{ projectId: string; projectNumber: string }> {
+  const { formatted: projectNumber } = await allocateDocNumber(db, COUNTER.project);
+  const ref = doc(collection(db, COL.projects));
+
+  const batch = writeBatch(db);
+  batch.set(ref, {
+    projectNumber,
+    customerId: input.customerId,
+    customerName: input.customerName,
+    title: input.title,
+    location: input.location ?? null,
+    status: "enquiry" satisfies ProjectStatus,
+    startDate: serverTimestamp(),
+    targetDate: input.targetDate ? Timestamp.fromDate(input.targetDate) : null,
+    estimatedCostKobo: 0,
+    actualCostKobo: 0,
+    notes: input.notes ?? null,
+    createdAt: serverTimestamp(),
+    createdBy: actor.uid,
+  });
+  await batch.commit();
+
+  await writeAudit(db, {
+    actor,
+    action: "create",
+    collectionName: COL.projects,
+    docId: ref.id,
+    summary: `Created ${projectNumber}: ${input.title} for ${input.customerName}`,
+    after: { projectNumber, title: input.title },
+  });
+
+  return { projectId: ref.id, projectNumber };
+}
+
+export async function setProjectStatus(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  projectNumber: string,
+  from: ProjectStatus,
+  to: ProjectStatus
+): Promise<void> {
+  const patch: Record<string, unknown> = {
+    status: to,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  };
+  if (to === "completed") patch.completedAt = serverTimestamp();
+
+  await updateDoc(doc(db, COL.projects, projectId), patch);
+  await writeAudit(db, {
+    actor,
+    action: "status_change",
+    collectionName: COL.projects,
+    docId: projectId,
+    summary: `${projectNumber}: ${from} to ${to}`,
+    before: { status: from },
+    after: { status: to },
+  });
+}
+
+/**
+ * Adds a component, optionally pre-filling its features from the category
+ * template.
+ *
+ * Template features are created at zero price: the item list is what the
+ * business already uses as a checklist, and pre-filling prices with guesses
+ * would be worse than leaving them blank, because a zero is obviously unpriced
+ * while a wrong number looks deliberate.
+ */
+export async function addComponent(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  input: { name: string; category: ProductCategory; order: number; useTemplate: boolean }
+): Promise<string> {
+  const compRef = doc(collection(db, componentsPath(projectId)));
+  const batch = writeBatch(db);
+
+  batch.set(compRef, {
+    name: input.name,
+    category: input.category,
+    status: "estimating" satisfies ProjectStatus,
+    order: input.order,
+    estimatedCostKobo: 0,
+    createdAt: serverTimestamp(),
+    createdBy: actor.uid,
+  });
+
+  if (input.useTemplate) {
+    const template = ESTIMATE_TEMPLATES[input.category];
+    template.items.forEach((t, i) => {
+      batch.set(doc(collection(db, featuresPath(projectId, compRef.id))), {
+        item: t.item,
+        kind: t.kind,
+        actualQuantity: null,
+        quantity: 0,
+        unitPriceKobo: 0,
+        amountKobo: 0,
+        order: i,
+        createdAt: serverTimestamp(),
+        createdBy: actor.uid,
+      });
+    });
+  }
+
+  await batch.commit();
+
+  await writeAudit(db, {
+    actor,
+    action: "create",
+    collectionName: COL.projects,
+    docId: projectId,
+    summary:
+      `Added component "${input.name}" (${input.category})` +
+      (input.useTemplate
+        ? ` with ${ESTIMATE_TEMPLATES[input.category].items.length} template lines`
+        : ""),
+  });
+
+  return compRef.id;
+}
+
+/**
+ * Saves a feature's quantity and price, then rolls the totals up.
+ *
+ * Runs in a transaction over the component and project so two people pricing
+ * different features of the same component cannot both read a stale subtotal.
+ */
+export async function saveFeature(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  componentId: string,
+  featureId: string,
+  values: { quantity: number; unitPriceKobo: number; actualQuantity?: number | null; notes?: string }
+): Promise<void> {
+  const amountKobo = lineAmountKobo(values.quantity, values.unitPriceKobo);
+  const featureRef = doc(db, `${featuresPath(projectId, componentId)}/${featureId}`);
+  const compRef = doc(db, `${componentsPath(projectId)}/${componentId}`);
+  const projRef = doc(db, COL.projects, projectId);
+
+  // Sibling amounts are read outside the transaction: a feature edit by someone
+  // else is caught by the transaction's own conflict check on the component doc.
+  const siblings = await getDocs(collection(db, featuresPath(projectId, componentId)));
+  const othersTotal = sumKobo(
+    siblings.docs.filter((d) => d.id !== featureId).map((d) => d.data().amountKobo as number)
+  );
+
+  await runTransaction(db, async (tx) => {
+    const compSnap = await tx.get(compRef);
+    if (!compSnap.exists()) throw new Error("Component not found.");
+    const projSnap = await tx.get(projRef);
+    if (!projSnap.exists()) throw new Error("Project not found.");
+
+    const previousComponentTotal = (compSnap.data().estimatedCostKobo as number) ?? 0;
+    const nextComponentTotal = othersTotal + amountKobo;
+    const projectTotal = (projSnap.data().estimatedCostKobo as number) ?? 0;
+
+    tx.update(featureRef, {
+      quantity: values.quantity,
+      unitPriceKobo: values.unitPriceKobo,
+      amountKobo,
+      actualQuantity: values.actualQuantity ?? null,
+      notes: values.notes ?? null,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+    tx.update(compRef, { estimatedCostKobo: nextComponentTotal });
+    tx.update(projRef, {
+      // Adjust by the delta rather than recomputing from all components, which
+      // would need a read of every sibling component too.
+      estimatedCostKobo: projectTotal - previousComponentTotal + nextComponentTotal,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+  });
+}
+
+export async function addFeature(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  componentId: string,
+  input: { item: string; order: number }
+): Promise<string> {
+  const ref = doc(collection(db, featuresPath(projectId, componentId)));
+  const batch = writeBatch(db);
+  batch.set(ref, {
+    item: input.item,
+    kind: "material",
+    actualQuantity: null,
+    quantity: 0,
+    unitPriceKobo: 0,
+    amountKobo: 0,
+    order: input.order,
+    createdAt: serverTimestamp(),
+    createdBy: actor.uid,
+  });
+  await batch.commit();
+  return ref.id;
+}
+
+/** Removes a feature and rolls the totals back. */
+export async function removeFeature(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  componentId: string,
+  featureId: string,
+  amountKobo: number
+): Promise<void> {
+  const compRef = doc(db, `${componentsPath(projectId)}/${componentId}`);
+  const projRef = doc(db, COL.projects, projectId);
+
+  await runTransaction(db, async (tx) => {
+    const compSnap = await tx.get(compRef);
+    const projSnap = await tx.get(projRef);
+    if (!compSnap.exists() || !projSnap.exists()) throw new Error("Not found.");
+
+    tx.delete(doc(db, `${featuresPath(projectId, componentId)}/${featureId}`));
+    tx.update(compRef, {
+      estimatedCostKobo: Math.max(
+        0,
+        ((compSnap.data().estimatedCostKobo as number) ?? 0) - amountKobo
+      ),
+    });
+    tx.update(projRef, {
+      estimatedCostKobo: Math.max(
+        0,
+        ((projSnap.data().estimatedCostKobo as number) ?? 0) - amountKobo
+      ),
+    });
+  });
+}
+
+export async function removeComponent(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  componentId: string
+): Promise<void> {
+  // Firestore does not cascade, so features are removed explicitly or they are
+  // orphaned and keep counting toward nothing.
+  const features = await getDocs(collection(db, featuresPath(projectId, componentId)));
+  for (let i = 0; i < features.docs.length; i += 400) {
+    const b = writeBatch(db);
+    features.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref));
+    await b.commit();
+  }
+
+  const compRef = doc(db, `${componentsPath(projectId)}/${componentId}`);
+  const projRef = doc(db, COL.projects, projectId);
+
+  await runTransaction(db, async (tx) => {
+    const compSnap = await tx.get(compRef);
+    const projSnap = await tx.get(projRef);
+    if (!compSnap.exists() || !projSnap.exists()) return;
+    const removed = (compSnap.data().estimatedCostKobo as number) ?? 0;
+    tx.delete(compRef);
+    tx.update(projRef, {
+      estimatedCostKobo: Math.max(
+        0,
+        ((projSnap.data().estimatedCostKobo as number) ?? 0) - removed
+      ),
+    });
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "delete",
+    collectionName: COL.projects,
+    docId: projectId,
+    summary: "Removed a component and its features",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Estimates
+// ---------------------------------------------------------------------------
+
+export interface EstimateTotals {
+  subtotalKobo: number;
+  errorMarginKobo: number;
+  nightowlChargesKobo: number;
+  totalKobo: number;
+}
+
+/**
+ * Computes estimate totals.
+ *
+ * Both percentages apply to the **subtotal only**, never to each other. Charging
+ * a margin on top of a margin is how a quote quietly inflates, and it is the
+ * error the paper template invites by listing them as ordinary rows.
+ */
+export function computeEstimateTotals(
+  subtotalKobo: number,
+  errorMarginPercent: number,
+  nightowlChargePercent: number
+): EstimateTotals {
+  const errorMarginKobo = applyPercentKobo(subtotalKobo, errorMarginPercent);
+  const nightowlChargesKobo = applyPercentKobo(subtotalKobo, nightowlChargePercent);
+  return {
+    subtotalKobo,
+    errorMarginKobo,
+    nightowlChargesKobo,
+    totalKobo: subtotalKobo + errorMarginKobo + nightowlChargesKobo,
+  };
+}
+
+/**
+ * Creates an estimate from the project's current component features.
+ *
+ * A snapshot, not a live view: the lines are copied so a later price edit on the
+ * project does not silently restate an estimate the client has already seen.
+ * Previous estimates for the project are marked superseded, and the version
+ * number increments, so the history stays readable.
+ */
+export async function createEstimate(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  projectNumber: string,
+  options: { errorMarginPercent: number; nightowlChargePercent: number }
+): Promise<{ estimateId: string; version: number; totals: EstimateTotals }> {
+  const compSnap = await getDocs(collection(db, componentsPath(projectId)));
+
+  interface Line {
+    category: ProductCategory;
+    item: string;
+    quantity: number;
+    unitPriceKobo: number;
+    amountKobo: number;
+    actualQuantity: number | null;
+    order: number;
+  }
+  const lines: Line[] = [];
+
+  for (const comp of compSnap.docs) {
+    const category = comp.data().category as ProductCategory;
+    const featSnap = await getDocs(collection(db, featuresPath(projectId, comp.id)));
+    for (const f of featSnap.docs) {
+      const d = f.data();
+      // Skip untouched template rows: an estimate listing 178 zero-value lines
+      // is unreadable, and the client only needs what was actually priced.
+      if (!d.amountKobo) continue;
+      lines.push({
+        category,
+        item: d.item ?? "",
+        quantity: d.quantity ?? 0,
+        unitPriceKobo: d.unitPriceKobo ?? 0,
+        amountKobo: d.amountKobo ?? 0,
+        actualQuantity: d.actualQuantity ?? null,
+        order: d.order ?? 0,
+      });
+    }
+  }
+
+  const subtotal = sumKobo(lines.map((l) => l.amountKobo));
+  const totals = computeEstimateTotals(
+    subtotal,
+    options.errorMarginPercent,
+    options.nightowlChargePercent
+  );
+
+  // Supersede any live estimate for this project before adding the new one.
+  const existing = await getDocs(collection(db, COL.estimates));
+  const mine = existing.docs.filter(
+    (d) => d.data().projectId === projectId && d.data().status !== "superseded"
+  );
+  const version = mine.length + 1;
+
+  const estRef = doc(collection(db, COL.estimates));
+  let batch = writeBatch(db);
+  let ops = 0;
+
+  for (const d of mine) {
+    batch.update(d.ref, { status: "superseded", updatedAt: serverTimestamp() });
+    ops += 1;
+  }
+
+  batch.set(estRef, {
+    projectId,
+    projectNumber,
+    version,
+    status: "draft",
+    subtotalKobo: totals.subtotalKobo,
+    errorMarginPercent: options.errorMarginPercent,
+    errorMarginKobo: totals.errorMarginKobo,
+    nightowlChargesKobo: totals.nightowlChargesKobo,
+    totalKobo: totals.totalKobo,
+    createdAt: serverTimestamp(),
+    createdBy: actor.uid,
+  });
+  ops += 1;
+
+  for (const l of lines) {
+    batch.set(doc(collection(db, estimateLinesPath(estRef.id))), l);
+    ops += 1;
+    if (ops >= 400) {
+      await batch.commit();
+      batch = writeBatch(db);
+      ops = 0;
+    }
+  }
+  if (ops > 0) await batch.commit();
+
+  await writeAudit(db, {
+    actor,
+    action: "create",
+    collectionName: COL.estimates,
+    docId: estRef.id,
+    summary: `Estimate v${version} for ${projectNumber}: ${lines.length} lines, total ${totals.totalKobo} kobo`,
+    after: { version, totalKobo: totals.totalKobo, lineCount: lines.length },
+  });
+
+  return { estimateId: estRef.id, version, totals };
+}
+
+export async function approveEstimate(
+  db: Firestore,
+  actor: AuditActor,
+  estimateId: string,
+  projectId: string,
+  totalKobo: number
+): Promise<void> {
+  const batch = writeBatch(db);
+  batch.update(doc(db, COL.estimates, estimateId), {
+    status: "approved",
+    approvedBy: actor.uid,
+    approvedAt: serverTimestamp(),
+  });
+  // Approving fixes the contract value and moves the project on.
+  batch.update(doc(db, COL.projects, projectId), {
+    status: "approved" satisfies ProjectStatus,
+    contractValueKobo: totalKobo,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+  await batch.commit();
+
+  await writeAudit(db, {
+    actor,
+    action: "estimate_approve",
+    collectionName: COL.estimates,
+    docId: estimateId,
+    summary: `Approved estimate at ${totalKobo} kobo and set the contract value`,
+    after: { status: "approved", contractValueKobo: totalKobo },
+  });
+}
+
+export async function deleteProject(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  projectNumber: string
+): Promise<void> {
+  const comps = await getDocs(collection(db, componentsPath(projectId)));
+  for (const c of comps.docs) {
+    const feats = await getDocs(collection(db, featuresPath(projectId, c.id)));
+    for (let i = 0; i < feats.docs.length; i += 400) {
+      const b = writeBatch(db);
+      feats.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref));
+      await b.commit();
+    }
+    await deleteDoc(c.ref);
+  }
+  await deleteDoc(doc(db, COL.projects, projectId));
+
+  await writeAudit(db, {
+    actor,
+    action: "delete",
+    collectionName: COL.projects,
+    docId: projectId,
+    summary: `Deleted project ${projectNumber} and its components`,
+  });
+}
