@@ -278,3 +278,10 @@ export {
 
 // Admin-only, and deliberately server-side: see invoicePayment.ts.
 export { markInvoicePaid } from "./invoicePayment";
+
+// ---------------------------------------------------------------------------
+// Scheduled alerts
+// ---------------------------------------------------------------------------
+
+// One digest a morning, and nothing at all when there is nothing to report.
+export { dailyOperationsDigest } from "./stockAlerts";

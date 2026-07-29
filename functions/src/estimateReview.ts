@@ -351,21 +351,26 @@ export const submitEstimateReview = onCall(
     if (!token || !passcode) {
       throw new HttpsError("invalid-argument", "Token and passcode are both required.");
     }
-    if (!Array.isArray(lines) || lines.length === 0) {
-      throw new HttpsError("invalid-argument", "No lines were submitted.");
-    }
-    // A bound on the payload: a reviewer adding a few items is expected, tens of
-    // thousands is not, and the batch has limits.
-    if (lines.length > 400) {
-      throw new HttpsError("invalid-argument", "Too many lines in one submission.");
-    }
 
+    // Authenticate BEFORE inspecting the payload. Validating the lines first
+    // leaked whether a token existed: a bogus token with a non-empty payload
+    // returned "No lines were submitted" only when the token was real, which is
+    // enough to confirm a guess. Every pre-auth failure now returns the same
+    // text, so a prober learns nothing from the response.
     const doc = await findByToken(token);
     const rejected = () =>
       new HttpsError("permission-denied", "That link or passcode is not valid.");
     if (!doc) throw rejected();
 
     const est = doc.data();
+    if ((est.reviewAttempts ?? 0) >= MAX_ATTEMPTS) throw rejected();
+    if (!hashesMatch(sha256(passcode), String(est.reviewPasscodeHash ?? ""))) {
+      await doc.ref.update({ reviewAttempts: FieldValue.increment(1) });
+      throw rejected();
+    }
+
+    // Past this point the caller holds a valid token and passcode, so specific
+    // messages are safe and genuinely useful to a real reviewer.
     if (est.reviewedAt) {
       throw new HttpsError("failed-precondition", "This review has already been submitted.");
     }
@@ -373,9 +378,13 @@ export const submitEstimateReview = onCall(
     if (!expiresMs || expiresMs < Date.now()) {
       throw new HttpsError("failed-precondition", "This link has expired.");
     }
-    if (!hashesMatch(sha256(passcode), String(est.reviewPasscodeHash ?? ""))) {
-      await doc.ref.update({ reviewAttempts: FieldValue.increment(1) });
-      throw rejected();
+    if (!Array.isArray(lines) || lines.length === 0) {
+      throw new HttpsError("invalid-argument", "No lines were submitted.");
+    }
+    // A bound on the payload: a reviewer adding a few items is expected, tens of
+    // thousands is not, and the batch has limits.
+    if (lines.length > 400) {
+      throw new HttpsError("invalid-argument", "Too many lines in one submission.");
     }
 
     const db = getFirestore();
