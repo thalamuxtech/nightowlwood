@@ -271,3 +271,10 @@ export {
   openEstimateReview,
   submitEstimateReview,
 } from "./estimateReview";
+
+// ---------------------------------------------------------------------------
+// Invoice settlement
+// ---------------------------------------------------------------------------
+
+// Admin-only, and deliberately server-side: see invoicePayment.ts.
+export { markInvoicePaid } from "./invoicePayment";
