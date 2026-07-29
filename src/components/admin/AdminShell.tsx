@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Eye,
   EyeOff,
+  FolderKanban,
   GalleryHorizontalEnd,
   HandCoins,
   Inbox,
@@ -50,6 +51,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/admin/", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/jobs/", label: "Service Jobs", icon: ClipboardList, capability: "job.view" },
+  { href: "/admin/projects/", label: "Projects", icon: FolderKanban, capability: "project.view" },
   { href: "/admin/submissions/", label: "Submissions", icon: Inbox, capability: "customer.view" },
   { href: "/admin/blog/", label: "Blog", icon: Newspaper, capability: "customer.edit" },
   {
