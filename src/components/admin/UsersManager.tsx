@@ -20,6 +20,7 @@ import { ROLE_TONE } from "@/lib/erp/statusTone";
 import { writeAudit } from "@/lib/erp/audit";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { RolePermissionsEditor } from "@/components/admin/RolePermissionsEditor";
 
 interface UserRow {
   id: string;
@@ -343,29 +344,7 @@ export function UsersManager() {
         )}
       </section>
 
-      {/* Role reference */}
-      <section className="mt-12">
-        <h2 className="font-display text-lg text-cream-100">What each role can do</h2>
-        <div className="mt-5 grid gap-4 sm:grid-cols-3">
-          {ROLES.map((r) => (
-            <div key={r} className="rounded-3xl border border-night-700/60 bg-night-900/40 p-5">
-              <StatusPill tone={ROLE_TONE[r]}>{ROLE_LABELS[r]}</StatusPill>
-              <p className="mt-3 text-2xl font-display text-cream-100">
-                {capabilitiesFor(r).length}
-              </p>
-              <p className="text-xs text-cream-500">permissions</p>
-              <p className="mt-3 text-xs leading-relaxed text-cream-400">
-                {r === "admin" &&
-                  "Full control, including marking invoices paid, wage rates, payroll, loan approval and the audit log."}
-                {r === "manager" &&
-                  "Runs daily operations: jobs, projects, estimates, inventory, purchasing and invoicing — but cannot mark invoices paid, set wages, run payroll or approve loans."}
-                {r === "operator" &&
-                  "Logs their own work, views assigned jobs, requests tools and advances."}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
+      <RolePermissionsEditor />
     </div>
   );
 }

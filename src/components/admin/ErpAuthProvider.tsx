@@ -14,7 +14,7 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { getDb, getFirebaseAuth } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import type { Role } from "@/lib/erp/enums";
-import { can, canAny, type Capability } from "@/lib/erp/permissions";
+import { ADMIN_ONLY_CAPABILITIES, can, type Capability } from "@/lib/erp/permissions";
 
 /**
  * Resolves the signed-in user's ERP role and exposes capability checks.
@@ -150,10 +150,46 @@ export function ErpAuthProvider({ children }: { children: ReactNode }) {
     ).catch(() => {});
   }, [user, role]);
 
-  const canFn = useCallback((capability: Capability) => can(role, capability), [role]);
+  /**
+   * Admin-configured overrides for the Manager and Operator roles.
+   *
+   * Admin is deliberately absent: its capability set is fixed in code so the
+   * top role can never be edited into a state where nobody can administer the
+   * system.
+   */
+  const [overrides, setOverrides] = useState<Partial<Record<Role, Capability[]>>>({});
+
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(
+      doc(getDb(), COL.settings, "rolePermissions"),
+      (snap) => setOverrides((snap.data()?.roles ?? {}) as Partial<Record<Role, Capability[]>>),
+      () => setOverrides({})
+    );
+  }, [user]);
+
+  const canFn = useCallback(
+    (capability: Capability) => {
+      if (!role) return false;
+      // Admin always uses the code list; overrides never apply to it.
+      if (role === "admin") return can(role, capability);
+
+      const custom = overrides[role];
+      if (!custom) return can(role, capability);
+
+      // Admin-only capabilities are never grantable to another role, whatever
+      // the saved list says — the Firestore rules deny them regardless, so
+      // honouring one here would only produce a button that fails on click.
+      if (ADMIN_ONLY_CAPABILITIES.includes(capability)) return false;
+
+      return custom.includes(capability);
+    },
+    [role, overrides]
+  );
+
   const canAnyFn = useCallback(
-    (capabilities: Capability[]) => canAny(role, capabilities),
-    [role]
+    (capabilities: Capability[]) => capabilities.some((c) => canFn(c)),
+    [canFn]
   );
 
   const value = useMemo<ErpSession>(
