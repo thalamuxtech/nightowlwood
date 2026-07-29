@@ -260,3 +260,14 @@ export const getMailConfigStatus = onCall(
     }
   }
 );
+
+// ---------------------------------------------------------------------------
+// External estimate review
+// ---------------------------------------------------------------------------
+
+// Re-exported so the review callables deploy with the rest of the codebase.
+export {
+  sendEstimateForReview,
+  openEstimateReview,
+  submitEstimateReview,
+} from "./estimateReview";
