@@ -38,6 +38,7 @@ export const DEMO_COLLECTIONS = [
   COL.invoices,
   COL.expenses,
   COL.loans,
+  COL.wageRuns,
   COL.inventoryCompany,
   COL.inventoryService,
   COL.consumableCycles,
@@ -147,6 +148,20 @@ const JOB_TEMPLATES: Array<{
     ],
     status: "ready_for_pickup",
     paidFraction: 0.6,
+  },
+  // Deliberately old and unpaid: two such jobs are what the uncollected-work
+  // observation needs before it will fire.
+  {
+    boards: { egger: 7 },
+    lines: [{ serviceType: "cutting_edging", boardType: "egger", qty: 7, naira: 2300 }],
+    status: "ready_for_pickup",
+    paidFraction: 0.2,
+  },
+  {
+    boards: { mdf: 11 },
+    lines: [{ serviceType: "door", boardType: "mdf", qty: 3, naira: 11000 }],
+    status: "ready_for_pickup",
+    paidFraction: 0,
   },
 ];
 
@@ -319,7 +334,9 @@ export async function seedDemoData(
     const t = JOB_TEMPLATES[i];
     const customer = customerIds[i % customerIds.length];
     const staffMember = operators[i % operators.length];
-    const when = daysAgo(40 - i * 4);
+    // Spread backwards from today, but keep the two flagged pickup jobs old
+    // enough to trip the uncollected-work observation.
+    const when = daysAgo(i >= 10 ? 24 + (i - 10) * 6 : 40 - i * 4);
 
     const lines = t.lines.map((l) => ({
       serviceType: l.serviceType,
@@ -576,9 +593,187 @@ export async function seedDemoData(
       requestedByStaffId: s.id,
       requestedByName: s.name,
       requestDate: Timestamp.fromDate(daysAgo(6 - i * 3)),
-      expectedReturnDate: Timestamp.fromDate(daysAgo(i === 0 ? -1 : 2)),
+      // The issued one is deliberately overdue so the tool-return observation
+      // has a subject; the returned one closed on time.
+      expectedReturnDate: Timestamp.fromDate(daysAgo(i === 0 ? 3 : 2)),
       status: i === 0 ? "issued" : "returned",
       returnedDate: i === 1 ? Timestamp.fromDate(daysAgo(1)) : null,
+    });
+    written += 1;
+  }
+  await batch.commit();
+
+  // --- Estimates, invoices, purchases, service inventory, wage runs --------
+  // Added so every stage of both pipelines has data: without these the
+  // estimate builder, invoice list, procurement scorecards and payroll history
+  // all render empty and cannot be exercised.
+  onProgress("Estimates, invoices and purchases");
+  batch = writeBatch(db);
+  ops = 0;
+
+  // One estimate per project, at a different status each, so the whole
+  // draft -> in_review -> reviewed -> approved path is represented.
+  const estimateStatuses = ["approved", "in_review", "approved", "draft"] as const;
+  for (let i = 0; i < PROJECTS.length; i += 1) {
+    const p = PROJECTS[i];
+    const subtotal = p.components.reduce((sum, c) => sum + toKobo(c.valueNaira), 0);
+    const errorMargin = Math.round(subtotal * 0.05);
+    const charges = Math.round(subtotal * 0.15);
+    batch.set(doc(collection(db, COL.estimates)), {
+      ...base,
+      projectNumber: `PRJ-${year}-${pad(100 + i)}`,
+      version: 1,
+      status: estimateStatuses[i],
+      subtotalKobo: subtotal,
+      errorMarginPercent: 5,
+      errorMarginKobo: errorMargin,
+      nightowlChargesKobo: charges,
+      totalKobo: subtotal + errorMargin + charges,
+      reviewEmail: i === 1 ? "quantity.surveyor@example.com" : null,
+      reviewerName: i === 1 ? "Engr. Adewale" : null,
+      reviewSentAt: i === 1 ? Timestamp.fromDate(daysAgo(4)) : null,
+      reviewExpiresAt: i === 1 ? Timestamp.fromDate(daysAgo(-3)) : null,
+    });
+    written += 1;
+    ops += 1;
+  }
+
+  // Invoices across every status, including one part-paid and one settled, so
+  // receivables and the mark-paid path both have subjects.
+  const invoicePlan: Array<{ status: string; fraction: number; days: number }> = [
+    { status: "paid", fraction: 1, days: 30 },
+    { status: "partial", fraction: 0.45, days: 18 },
+    { status: "sent", fraction: 0, days: 9 },
+    { status: "draft", fraction: 0, days: 2 },
+  ];
+  for (let i = 0; i < invoicePlan.length; i += 1) {
+    const plan = invoicePlan[i];
+    const client = customerIds[i % customerIds.length];
+    const subtotal = toKobo([420000, 1850000, 640000, 320000][i]);
+    const paid = Math.round(subtotal * plan.fraction);
+    batch.set(doc(collection(db, COL.invoices)), {
+      ...base,
+      invoiceNumber: `INV-${year}-${pad(200 + i)}`,
+      type: i % 2 === 0 ? "service" : "project",
+      customerId: client.id,
+      customerName: client.name,
+      lines: [
+        {
+          id: "l1",
+          description: i % 2 === 0 ? "Cutting and edging" : "Kitchen fabrication",
+          quantity: 1,
+          unitPriceKobo: subtotal,
+          amountKobo: subtotal,
+        },
+      ],
+      subtotalKobo: subtotal,
+      taxPercent: 0,
+      taxKobo: 0,
+      totalKobo: subtotal,
+      amountPaidKobo: paid,
+      balanceKobo: subtotal - paid,
+      status: plan.status,
+      issuedAt: Timestamp.fromDate(daysAgo(plan.days)),
+      dueAt: Timestamp.fromDate(daysAgo(plan.days - 14)),
+      paidAt: plan.status === "paid" ? Timestamp.fromDate(daysAgo(plan.days - 5)) : null,
+    });
+    written += 1;
+    ops += 1;
+  }
+
+  // Purchases with a mix of on-time and late deliveries, and one rejection, so
+  // the supplier scorecard produces a real ranking rather than a flat one.
+  for (let i = 0; i < SUPPLIERS.length; i += 1) {
+    const sup = SUPPLIERS[i];
+    const ordered = daysAgo(30 - i * 5);
+    const promised = new Date(ordered);
+    promised.setDate(promised.getDate() + 7);
+    const received = new Date(ordered);
+    received.setDate(received.getDate() + sup.lead);
+    const total = toKobo([76000, 38000, 62000, 210000][i]);
+    batch.set(doc(collection(db, COL.purchases)), {
+      ...base,
+      supplierId: supplierIds[sup.name],
+      supplierName: sup.name,
+      reference: `PO-${pad(50 + i, 3)}`,
+      orderedAt: Timestamp.fromDate(ordered),
+      promisedAt: Timestamp.fromDate(promised),
+      receivedAt: Timestamp.fromDate(received),
+      status: "received",
+      subtotalKobo: total,
+      totalKobo: total,
+      hadIssues: !sup.onTime,
+      issueNotes: sup.onTime ? null : "Two units short, delivered late",
+    });
+    written += 1;
+    ops += 1;
+    await commitIfFull();
+  }
+
+  // Service inventory: customer boards still held against open jobs.
+  for (let i = 0; i < 4; i += 1) {
+    const c = customerIds[i];
+    batch.set(doc(collection(db, COL.inventoryService)), {
+      ...base,
+      customerId: c.id,
+      customerName: c.name,
+      boardType: (["mdf", "egger", "quarter", "kwali"] as const)[i],
+      quantity: [6, 4, 2, 3][i],
+      // First two are aged past 21 days so the held-boards observation fires;
+      // the others are recent, which is the normal case.
+      receivedAt: Timestamp.fromDate(daysAgo(i < 2 ? 28 - i * 3 : 8 - i)),
+      status: i === 3 ? "released" : "held",
+      releasedAt: i === 3 ? Timestamp.fromDate(daysAgo(2)) : null,
+    });
+    written += 1;
+    ops += 1;
+  }
+  await batch.commit();
+
+  // Wage runs for the past weeks, one still draft so approve and pay can both
+  // be exercised.
+  onProgress("Wage runs");
+  batch = writeBatch(db);
+  for (let week = 4; week >= 1; week -= 1) {
+    const start = daysAgo(week * 7 + 6);
+    const end = daysAgo(week * 7);
+    const operatorTotal = toKobo(30000 + week * 3500);
+    const assistantTotal = toKobo(9000 + week * 800);
+    const gross = operatorTotal + assistantTotal;
+    const deductions = week === 2 ? toKobo(2000) : 0;
+    const status = week === 1 ? "draft" : week === 2 ? "approved" : "paid";
+
+    batch.set(doc(collection(db, COL.wageRuns)), {
+      ...base,
+      periodStart: Timestamp.fromDate(start),
+      periodEnd: Timestamp.fromDate(end),
+      status,
+      ratesSnapshot: [
+        { workType: "board", operatorRateKobo: toKobo(350), assistantRateKobo: toKobo(50) },
+        { workType: "door", operatorRateKobo: toKobo(1500), assistantRateKobo: toKobo(50) },
+      ],
+      operatorTotalKobo: operatorTotal,
+      assistantTotalKobo: assistantTotal,
+      grandTotalKobo: gross,
+      deductionsKobo: deductions,
+      netPayableKobo: gross - deductions,
+      unattributedAssistantKobo: 0,
+      logCount: 8 + week,
+      perStaff: operators.map((o, k) => {
+        const total = Math.round(operatorTotal / operators.length);
+        const ded = k === 0 ? deductions : 0;
+        return {
+          staffId: o.id,
+          staffName: o.name,
+          operatorKobo: total,
+          assistantKobo: 0,
+          totalKobo: total,
+          deductionKobo: ded,
+          netKobo: total - ded,
+        };
+      }),
+      approvedAt: status !== "draft" ? Timestamp.fromDate(end) : null,
+      paidAt: status === "paid" ? Timestamp.fromDate(end) : null,
     });
     written += 1;
   }

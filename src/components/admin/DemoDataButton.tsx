@@ -27,13 +27,17 @@ export function DemoDataButton() {
   const panelRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = session.role === "admin";
+  /** Drives the trigger label: the action offered depends on what is loaded. */
+  const loaded = (count ?? 0) > 0;
 
+  // Counted on mount rather than on open, so the trigger can say whether demo
+  // data is already loaded before the panel is ever expanded.
   useEffect(() => {
-    if (!open || !isAdmin) return;
+    if (!isAdmin) return;
     countDemoData(getDb())
       .then(setCount)
       .catch(() => setCount(null));
-  }, [open, isAdmin, result]);
+  }, [isAdmin, result]);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -85,12 +89,22 @@ export function DemoDataButton() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-label="Demo data"
-        title="Demo data"
-        className="flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-night-700/60 bg-night-900/70 px-3 text-xs text-cream-300 transition-colors hover:border-brass-500/60 hover:text-brass-300"
+        aria-label={loaded ? "Demo data loaded" : "Load demo data"}
+        title={loaded ? `${count} demo records loaded` : "Load demo data"}
+        className={`flex h-9 cursor-pointer items-center gap-2 rounded-xl border px-3 text-xs transition-colors ${
+          loaded
+            ? "border-brass-500/50 bg-brass-500/10 text-brass-300 hover:border-brass-500"
+            : "border-night-700/60 bg-night-900/70 text-cream-300 hover:border-brass-500/60 hover:text-brass-300"
+        }`}
       >
-        {busy ? <Loader2 size={14} className="animate-spin" /> : <Database size={14} />}
-        <span className="hidden sm:inline">Demo data</span>
+        {busy ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : loaded ? (
+          <Trash2 size={14} />
+        ) : (
+          <Database size={14} />
+        )}
+        <span className="hidden sm:inline">{loaded ? "Clear demo" : "Demo data"}</span>
       </button>
 
       <AnimatePresence>

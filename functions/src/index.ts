@@ -101,6 +101,66 @@ function isEmail(value: unknown): value is string {
  * Exists so the mail path can be verified independently of any business flow:
  * if this fails, the problem is credentials or DNS, not invoice code.
  */
+/**
+ * Builds the test email.
+ *
+ * Shared by the preview and the send so the two cannot drift: a preview that
+ * renders different markup from what is delivered is worse than no preview.
+ */
+async function buildTestEmail(sentByEmail: string): Promise<{ subject: string; html: string }> {
+  const company = await companyDetails();
+  const sentAt = new Date().toLocaleString("en-GB", {
+    timeZone: "Africa/Lagos",
+    dateStyle: "full",
+    timeStyle: "short",
+  });
+
+  const html = renderEmail({
+    company,
+    eyebrow: "System test",
+    heading: "Email delivery is working",
+    body:
+      paragraph(
+        "This is a test message from the Nightowl admin backend. If you are reading it, transactional email is configured correctly."
+      ) +
+      detailTable([
+        ["Sent by", sentByEmail],
+        ["Sent at", sentAt],
+        ["Provider", "Brevo"],
+        ["Sender domain", SENDER.email.split("@")[1] ?? ""],
+      ]) +
+      paragraph(
+        "Invoices, estimate review links and stock alerts will use this same template."
+      ) +
+      calloutBox("No action needed, this is a test."),
+    footerNote: "Sent from the Nightowl Woodworks admin dashboard.",
+  });
+
+  return { subject: "Nightowl Woodworks, email test", html };
+}
+
+/**
+ * Returns the rendered email without sending it.
+ *
+ * Deliberately does not require the Brevo secret: a preview should work even
+ * when the key is missing or rejected, so the template can be checked
+ * independently of whether delivery is configured.
+ */
+export const previewTestEmail = onCall(
+  { region: REGION, cors: true },
+  async (request) => {
+    const actor = await requireRole(request.auth, ["admin"]);
+    const { subject, html } = await buildTestEmail(actor.email);
+    return { subject, html };
+  }
+);
+
+/**
+ * Sends a branded test email. Admin only.
+ *
+ * Exists so the mail path can be verified independently of any business flow:
+ * if this fails, the problem is credentials or DNS, not invoice code.
+ */
 export const sendTestEmail = onCall(
   { region: REGION, secrets: [BREVO_API_KEY], cors: true },
   async (request) => {
@@ -112,36 +172,11 @@ export const sendTestEmail = onCall(
     }
 
     const company = await companyDetails();
-    const sentAt = new Date().toLocaleString("en-GB", {
-      timeZone: "Africa/Lagos",
-      dateStyle: "full",
-      timeStyle: "short",
-    });
-
-    const html = renderEmail({
-      company,
-      eyebrow: "System test",
-      heading: "Email delivery is working",
-      body:
-        paragraph(
-          "This is a test message from the Nightowl admin backend. If you are reading it, transactional email is configured correctly."
-        ) +
-        detailTable([
-          ["Sent by", actor.email],
-          ["Sent at", sentAt],
-          ["Provider", "Brevo"],
-          ["Sender domain", SENDER.email.split("@")[1] ?? ""],
-        ]) +
-        paragraph(
-          "Invoices, estimate review links and stock alerts will use this same template."
-        ) +
-        calloutBox("No action needed, this is a test."),
-      footerNote: "Sent from the Nightowl Woodworks admin dashboard.",
-    });
+    const { subject, html } = await buildTestEmail(actor.email);
 
     const result = await mailer().send({
       to: [{ email: to }],
-      subject: "Nightowl Woodworks, email test",
+      subject,
       html,
       replyTo: { email: company.email, name: company.name },
       tags: ["system-test"],
@@ -153,7 +188,6 @@ export const sendTestEmail = onCall(
       throw new HttpsError("internal", result.error ?? "Send failed.");
     }
 
-    // Best-effort audit; a logging failure must not fail the send.
     try {
       await getFirestore().collection("auditLog").add({
         actorUid: actor.uid,

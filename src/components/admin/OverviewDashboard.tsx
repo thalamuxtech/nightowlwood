@@ -25,6 +25,7 @@ import { COL } from "@/lib/erp/collections";
 import { JOB_STATUS_LABELS, type JobStatus } from "@/lib/erp/enums";
 import { formatNaira, formatNairaCompact } from "@/lib/erp/money";
 import { LiveCounter } from "@/components/admin/ui/LiveCounter";
+import { InsightsPanel } from "@/components/admin/InsightsPanel";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 
 /** Selectable windows for the revenue chart. */
@@ -228,6 +229,8 @@ export function OverviewDashboard() {
         </div>
       ) : (
         <>
+          <InsightsPanel />
+
           {/* Range selector */}
           <div className="mt-8 flex flex-wrap items-center gap-2">
             {RANGES.map((r) => (

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { CheckCircle2, Mail, ShieldAlert, XCircle } from "lucide-react";
+import { CheckCircle2, Eye, Mail, ShieldAlert, X, XCircle } from "lucide-react";
 import { getFirebaseApp } from "@/lib/firebase";
 import { Button, TextField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
@@ -20,9 +20,28 @@ export function EmailTester() {
   const session = useErpSession();
   const [to, setTo] = useState(session.user?.email ?? "");
   const [sending, setSending] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const isAdmin = session.role === "admin";
+
+  async function preview() {
+    setPreviewing(true);
+    setResult(null);
+    try {
+      const fn = httpsCallable<void, { subject: string; html: string }>(
+        getFunctions(getFirebaseApp(), REGION),
+        "previewTestEmail"
+      );
+      const res = await fn();
+      setPreviewHtml(res.data.html);
+    } catch (e) {
+      setResult({ ok: false, message: describeError(e) });
+    } finally {
+      setPreviewing(false);
+    }
+  }
 
   async function sendTest() {
     setSending(true);
@@ -59,6 +78,14 @@ export function EmailTester() {
         Verifies the Brevo path used for invoices, estimate review links and stock
         alerts. The API key lives in Secret Manager and is never sent to the browser.
       </p>
+
+      <div className="mt-5">
+        <Button variant="secondary" onClick={preview} busy={previewing}>
+          <span className="flex items-center gap-2">
+            <Eye size={15} /> Preview email
+          </span>
+        </Button>
+      </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
         <TextField
