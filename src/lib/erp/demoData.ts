@@ -9,7 +9,7 @@ import {
   writeBatch,
   type Firestore,
 } from "firebase/firestore";
-import { COL, jobLinesPath, jobPaymentsPath } from "./collections";
+import { COL, jobLinesPath, jobPaymentsPath, purchaseLinesPath, toolItemsPath } from "./collections";
 import type { BoardType, JobStatus, ServiceType, WageWorkType } from "./enums";
 import { lineAmountKobo, toKobo } from "./money";
 
@@ -585,7 +585,25 @@ export async function seedDemoData(
 
   for (let i = 0; i < 2; i += 1) {
     const s = staffIds[i];
-    batch.set(doc(collection(db, COL.toolRequests)), {
+    const toolRef = doc(collection(db, COL.toolRequests));
+    // Items, with the issued request left one short so the outstanding column
+    // and the overdue observation both have a real subject.
+    const toolSpecs: Array<[string, string, number]> =
+      i === 0
+        ? [["Cordless drill", "18V with bits", 2], ["Spirit level", "1200mm", 1]]
+        : [["Router", "Handheld, 1/4 inch", 1]];
+    toolSpecs.forEach(([name, description, qty], k) => {
+      batch.set(doc(collection(db, toolItemsPath(toolRef.id))), {
+        name,
+        description,
+        quantityRequested: qty,
+        quantityIssued: qty,
+        // The overdue request keeps one item out; the returned one is complete.
+        quantityReturned: i === 0 ? (k === 0 ? qty - 1 : qty) : qty,
+      });
+      written += 1;
+    });
+    batch.set(toolRef, {
       ...base,
       requestNumber: `TR-${year}-${pad(10 + i)}`,
       jobName: i === 0 ? "Yakubu kitchen install" : "Musa door hanging",
@@ -596,7 +614,7 @@ export async function seedDemoData(
       // The issued one is deliberately overdue so the tool-return observation
       // has a subject; the returned one closed on time.
       expectedReturnDate: Timestamp.fromDate(daysAgo(i === 0 ? 3 : 2)),
-      status: i === 0 ? "issued" : "returned",
+      status: i === 0 ? "partially_returned" : "returned",
       returnedDate: i === 1 ? Timestamp.fromDate(daysAgo(1)) : null,
     });
     written += 1;
@@ -691,7 +709,28 @@ export async function seedDemoData(
     const received = new Date(ordered);
     received.setDate(received.getDate() + sup.lead);
     const total = toKobo([76000, 38000, 62000, 210000][i]);
-    batch.set(doc(collection(db, COL.purchases)), {
+    const purchaseRef = doc(collection(db, COL.purchases));
+    // Lines matter: the supplier defect rate is computed from received against
+    // rejected, so a purchase with no lines scores nothing.
+    const lineSpecs: Array<[string, number, number, string]> =
+      i % 2 === 0
+        ? [["Blade 300mm", 4, 19000, "each"], ["Edge tape 22mm", 10, 4200, "roll"]]
+        : [["Pressing gum", 6, 18500, "carton"]];
+    lineSpecs.forEach(([item, qty, naira, unit], k) => {
+      const rejected = !sup.onTime && k === 0 ? 2 : 0;
+      batch.set(doc(collection(db, purchaseLinesPath(purchaseRef.id))), {
+        item,
+        unit,
+        quantityOrdered: qty,
+        quantityReceived: qty - rejected,
+        quantityRejected: rejected,
+        unitCostKobo: toKobo(naira),
+        amountKobo: lineAmountKobo(qty, toKobo(naira)),
+      });
+      written += 1;
+      ops += 1;
+    });
+    batch.set(purchaseRef, {
       ...base,
       supplierId: supplierIds[sup.name],
       supplierName: sup.name,
@@ -796,34 +835,59 @@ export async function clearDemoData(
 ): Promise<{ deleted: number }> {
   let deleted = 0;
 
-  // Job subcollections first, while the parents are still findable.
-  onProgress("Job lines and payments");
-  const jobSnap = await getDocs(
-    query(collection(db, COL.serviceJobs), where(DEMO_FLAG, "==", true))
-  );
-  for (const jobDoc of jobSnap.docs) {
-    for (const path of [jobLinesPath(jobDoc.id), jobPaymentsPath(jobDoc.id)]) {
-      const kids = await getDocs(collection(db, path));
-      if (kids.empty) continue;
-      const b = writeBatch(db);
-      kids.docs.forEach((k) => b.delete(k.ref));
-      await b.commit();
-      deleted += kids.size;
-    }
-  }
+  /**
+   * Subcollections first, while their parents are still findable.
+   *
+   * Firestore does not cascade, so a child left behind is unreachable but still
+   * billed and still counted. Purchase lines and tool items were missed on the
+   * first pass, which is exactly the kind of leak this table prevents: adding a
+   * subcollection to the seeder means adding it here, in one place.
+   */
+  const SUBCOLLECTIONS: Array<{
+    label: string;
+    parent: string;
+    paths: (parentId: string) => string[];
+  }> = [
+    {
+      label: "Job lines and payments",
+      parent: COL.serviceJobs,
+      paths: (id) => [jobLinesPath(id), jobPaymentsPath(id)],
+    },
+    {
+      label: "Project components",
+      parent: COL.projects,
+      paths: (id) => [`${COL.projects}/${id}/components`],
+    },
+    {
+      label: "Purchase lines",
+      parent: COL.purchases,
+      paths: (id) => [purchaseLinesPath(id)],
+    },
+    {
+      label: "Tool items",
+      parent: COL.toolRequests,
+      paths: (id) => [toolItemsPath(id)],
+    },
+  ];
 
-  // Project components.
-  onProgress("Project components");
-  const projSnap = await getDocs(
-    query(collection(db, COL.projects), where(DEMO_FLAG, "==", true))
-  );
-  for (const p of projSnap.docs) {
-    const kids = await getDocs(collection(db, `${COL.projects}/${p.id}/components`));
-    if (kids.empty) continue;
-    const b = writeBatch(db);
-    kids.docs.forEach((k) => b.delete(k.ref));
-    await b.commit();
-    deleted += kids.size;
+  for (const group of SUBCOLLECTIONS) {
+    onProgress(group.label);
+    const parents = await getDocs(
+      query(collection(db, group.parent), where(DEMO_FLAG, "==", true))
+    );
+    for (const parent of parents.docs) {
+      for (const path of group.paths(parent.id)) {
+        const kids = await getDocs(collection(db, path));
+        if (kids.empty) continue;
+        // Chunked: a batch caps at 500 operations.
+        for (let i = 0; i < kids.docs.length; i += 400) {
+          const b = writeBatch(db);
+          kids.docs.slice(i, i + 400).forEach((k) => b.delete(k.ref));
+          await b.commit();
+        }
+        deleted += kids.size;
+      }
+    }
   }
 
   for (const name of DEMO_COLLECTIONS) {

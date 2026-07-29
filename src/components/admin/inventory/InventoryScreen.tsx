@@ -1,0 +1,584 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import {
+  AlertTriangle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  ClipboardCheck,
+  Loader2,
+  Package,
+  Plus,
+  ShieldAlert,
+} from "lucide-react";
+import { getDb } from "@/lib/firebase";
+import { COL, inventoryMovementsPath } from "@/lib/erp/collections";
+import { formatNaira, parseNairaInput } from "@/lib/erp/money";
+import { createInventoryItem, recordMovement } from "@/lib/erp/inventory";
+import type { MovementType } from "@/lib/erp/enums";
+import { StatusPill } from "@/components/admin/ui/StatusPill";
+import {
+  Button,
+  EmptyState,
+  NumberField,
+  SelectField,
+  TextField,
+} from "@/components/admin/ui/Fields";
+import { useErpSession } from "@/components/admin/ErpAuthProvider";
+
+interface ItemRow {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  quantityOnHand: number;
+  reorderLevel: number;
+  unitCostKobo: number;
+  supplier?: string;
+  lastRestockedAtMs: number | null;
+}
+
+interface MovementRow {
+  id: string;
+  type: MovementType;
+  quantity: number;
+  reason: string;
+  balanceAfter: number;
+  atMs: number | null;
+}
+
+/**
+ * Company inventory.
+ *
+ * Sorted with the items that need attention first: out of stock, then at or
+ * below the reorder level, then everything else. A list sorted alphabetically
+ * buries the one thing you needed to know.
+ */
+export function InventoryScreen() {
+  const session = useErpSession();
+  const canEdit = session.can("inventory.edit");
+
+  const [rows, setRows] = useState<ItemRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [onlyLow, setOnlyLow] = useState(false);
+
+  useEffect(() => {
+    const q = query(collection(getDb(), COL.inventoryCompany), orderBy("name", "asc"));
+    return onSnapshot(
+      q,
+      (snap) => {
+        setRows(
+          snap.docs
+            .filter((d) => d.data().active !== false)
+            .map((d) => {
+              const x = d.data();
+              return {
+                id: d.id,
+                name: x.name ?? "",
+                category: x.category ?? "",
+                unit: x.unit ?? "",
+                quantityOnHand: x.quantityOnHand ?? 0,
+                reorderLevel: x.reorderLevel ?? 0,
+                unitCostKobo: x.unitCostKobo ?? 0,
+                supplier: x.supplier ?? undefined,
+                lastRestockedAtMs: x.lastRestockedAt?.toMillis?.() ?? null,
+              };
+            })
+        );
+        setLoading(false);
+      },
+      (e) => {
+        setError(e.message);
+        setLoading(false);
+      }
+    );
+  }, []);
+
+  const actor = useMemo(
+    () => ({
+      uid: session.user?.uid ?? "",
+      email: session.user?.email ?? "",
+      role: session.role ?? "manager",
+    }),
+    [session.user, session.role]
+  );
+
+  /** Urgency, not alphabet: out of stock first, then low, then the rest. */
+  const sorted = useMemo(() => {
+    const rank = (r: ItemRow) => {
+      if (r.quantityOnHand === 0) return 0;
+      if (r.reorderLevel > 0 && r.quantityOnHand <= r.reorderLevel) return 1;
+      return 2;
+    };
+    return [...rows]
+      .filter((r) => !onlyLow || (r.reorderLevel > 0 && r.quantityOnHand <= r.reorderLevel))
+      .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  }, [rows, onlyLow]);
+
+  const stats = useMemo(() => {
+    const low = rows.filter((r) => r.reorderLevel > 0 && r.quantityOnHand <= r.reorderLevel);
+    return {
+      items: rows.length,
+      low: low.length,
+      out: rows.filter((r) => r.quantityOnHand === 0).length,
+      value: rows.reduce((s, r) => s + r.quantityOnHand * r.unitCostKobo, 0),
+    };
+  }, [rows]);
+
+  return (
+    <div className="mx-auto max-w-6xl pb-20">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-eyebrow">Inventory</p>
+          <h1 className="text-title mt-3 text-cream-50">Company stock</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-cream-400">
+            Materials and consumables Nightowl owns. Customer boards are held
+            separately, since those are never ours to issue.
+          </p>
+        </div>
+        {canEdit && !adding && (
+          <Button onClick={() => setAdding(true)}>
+            <span className="flex items-center gap-2">
+              <Plus size={15} /> Add item
+            </span>
+          </Button>
+        )}
+      </header>
+
+      {error && (
+        <p
+          role="alert"
+          className="mt-6 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-400"
+        >
+          <ShieldAlert size={16} className="mt-0.5 shrink-0" /> {error}
+        </p>
+      )}
+
+      <div className="mt-8 grid gap-4 sm:grid-cols-4">
+        <Tile label="Items" value={String(stats.items)} />
+        <Tile
+          label="At reorder level"
+          value={String(stats.low)}
+          tone={stats.low > 0 ? "warn" : undefined}
+        />
+        <Tile
+          label="Out of stock"
+          value={String(stats.out)}
+          tone={stats.out > 0 ? "danger" : undefined}
+        />
+        <Tile label="Stock value" value={formatNaira(stats.value)} />
+      </div>
+
+      {adding && (
+        <AddItemForm actor={actor} onClose={() => setAdding(false)} onError={setError} />
+      )}
+
+      {stats.low > 0 && (
+        <button
+          type="button"
+          onClick={() => setOnlyLow((v) => !v)}
+          className={`mt-8 flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 text-sm transition-colors ${
+            onlyLow
+              ? "border-amber-500 bg-amber-500/10 text-amber-300"
+              : "border-amber-500/40 bg-amber-500/5 text-amber-300 hover:border-amber-500"
+          }`}
+        >
+          <AlertTriangle size={15} />
+          {onlyLow
+            ? "Showing only items needing a reorder"
+            : `${stats.low} item${stats.low === 1 ? "" : "s"} need reordering`}
+        </button>
+      )}
+
+      {loading ? (
+        <div className="mt-10 flex justify-center py-10">
+          <Loader2 className="animate-spin text-brass-400" size={26} aria-label="Loading" />
+        </div>
+      ) : sorted.length === 0 ? (
+        <div className="mt-8">
+          <EmptyState
+            title={rows.length === 0 ? "No stock recorded" : "Nothing needs reordering"}
+            hint={
+              rows.length === 0
+                ? "Add the boards, tape, gum and fittings you keep on hand."
+                : "Every item is above its reorder level."
+            }
+          />
+        </div>
+      ) : (
+        <div className="mt-6 space-y-3">
+          {sorted.map((r) => (
+            <ItemPanel
+              key={r.id}
+              item={r}
+              open={openId === r.id}
+              onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+              canEdit={canEdit}
+              actor={actor}
+              onError={setError}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ItemPanel({
+  item,
+  open,
+  onToggle,
+  canEdit,
+  actor,
+  onError,
+}: {
+  item: ItemRow;
+  open: boolean;
+  onToggle: () => void;
+  canEdit: boolean;
+  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  onError: (m: string) => void;
+}) {
+  const [movements, setMovements] = useState<MovementRow[]>([]);
+  const [mode, setMode] = useState<MovementType | null>(null);
+  const [qty, setQty] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Only the open item subscribes to its ledger: a shelf of 40 items would
+  // otherwise hold 40 listeners for history nobody is reading.
+  useEffect(() => {
+    if (!open) return;
+    return onSnapshot(
+      query(
+        collection(getDb(), inventoryMovementsPath(item.id)),
+        orderBy("createdAt", "desc"),
+        limit(25)
+      ),
+      (snap) =>
+        setMovements(
+          snap.docs.map((d) => ({
+            id: d.id,
+            type: (d.data().type as MovementType) ?? "in",
+            quantity: d.data().quantity ?? 0,
+            reason: d.data().reason ?? "",
+            balanceAfter: d.data().balanceAfter ?? 0,
+            atMs: d.data().createdAt?.toMillis?.() ?? null,
+          }))
+        ),
+      () => {}
+    );
+  }, [open, item.id]);
+
+  const out = item.quantityOnHand === 0;
+  const low = item.reorderLevel > 0 && item.quantityOnHand <= item.reorderLevel;
+
+  async function submit() {
+    if (!mode) return;
+    const n = Number(qty);
+    if (!(n >= 0) || (mode !== "adjust" && n <= 0)) {
+      onError("Enter a quantity.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await recordMovement(getDb(), actor, item.id, {
+        type: mode,
+        quantity: n,
+        reason: reason.trim() || defaultReason(mode),
+      });
+      setMode(null);
+      setQty("");
+      setReason("");
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not record the movement.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className={`overflow-hidden rounded-2xl border ${
+        out
+          ? "border-red-500/40 bg-red-500/5"
+          : low
+            ? "border-amber-500/40 bg-amber-500/5"
+            : "border-night-700/60 bg-night-900/40"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full cursor-pointer items-center justify-between gap-4 p-5 text-left"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <Package
+            size={17}
+            className={`shrink-0 ${out ? "text-red-400" : low ? "text-amber-400" : "text-cream-500"}`}
+          />
+          <span className="min-w-0">
+            <span className="block truncate text-cream-100">{item.name}</span>
+            <span className="block text-xs text-cream-500">
+              {item.category}
+              {item.supplier ? ` · ${item.supplier}` : ""}
+            </span>
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-3">
+          {out ? (
+            <StatusPill tone="danger">Out of stock</StatusPill>
+          ) : low ? (
+            <StatusPill tone="warn">Reorder</StatusPill>
+          ) : null}
+          <span className="text-right">
+            <span className="block font-display text-lg text-cream-50">
+              {item.quantityOnHand}
+              <span className="ml-1 text-xs font-normal text-cream-500">{item.unit}</span>
+            </span>
+            <span className="block text-xs text-cream-500">
+              {formatNaira(item.quantityOnHand * item.unitCostKobo)}
+            </span>
+          </span>
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-night-700/60 p-5">
+          <dl className="grid gap-4 text-sm sm:grid-cols-3">
+            <Detail label="Reorder level" value={`${item.reorderLevel} ${item.unit}`} />
+            <Detail label="Unit cost" value={formatNaira(item.unitCostKobo)} />
+            <Detail
+              label="Last restocked"
+              value={
+                item.lastRestockedAtMs
+                  ? new Date(item.lastRestockedAtMs).toLocaleDateString("en-GB")
+                  : "Never"
+              }
+            />
+          </dl>
+
+          {canEdit && (
+            <div className="mt-5">
+              {mode ? (
+                <div className="rounded-xl border border-night-700/60 bg-night-950/40 p-4">
+                  <p className="text-sm text-cream-200">
+                    {mode === "in"
+                      ? "Receive stock"
+                      : mode === "out"
+                        ? "Issue stock"
+                        : "Correct the count"}
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <NumberField
+                      id={`qty-${item.id}`}
+                      label={mode === "adjust" ? "Counted quantity" : "Quantity"}
+                      value={qty}
+                      onChange={setQty}
+                    />
+                    <TextField
+                      id={`reason-${item.id}`}
+                      label="Reason"
+                      value={reason}
+                      onChange={setReason}
+                      placeholder={defaultReason(mode)}
+                    />
+                  </div>
+                  {mode === "out" && (
+                    <p className="mt-2 text-xs text-cream-500">
+                      Only {item.quantityOnHand} on hand. Issuing more is refused, since
+                      a negative balance would hide a miscount.
+                    </p>
+                  )}
+                  <div className="mt-4 flex gap-2">
+                    <Button onClick={submit} busy={busy}>
+                      Record
+                    </Button>
+                    <Button variant="ghost" onClick={() => setMode(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" onClick={() => setMode("in")}>
+                    <span className="flex items-center gap-1.5">
+                      <ArrowDownToLine size={14} /> Receive
+                    </span>
+                  </Button>
+                  <Button variant="secondary" onClick={() => setMode("out")}>
+                    <span className="flex items-center gap-1.5">
+                      <ArrowUpFromLine size={14} /> Issue
+                    </span>
+                  </Button>
+                  <Button variant="secondary" onClick={() => setMode("adjust")}>
+                    <span className="flex items-center gap-1.5">
+                      <ClipboardCheck size={14} /> Stock take
+                    </span>
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <h3 className="mt-6 text-xs uppercase tracking-wider text-cream-500">
+            Recent movements
+          </h3>
+          {movements.length === 0 ? (
+            <p className="mt-2 text-sm text-cream-500">Nothing recorded yet.</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-night-800">
+              {movements.map((m) => (
+                <li key={m.id} className="flex items-center justify-between gap-4 py-2.5">
+                  <span className="min-w-0">
+                    <span className="text-sm text-cream-200">
+                      {m.type === "in" ? "+" : m.type === "out" ? "-" : "="}
+                      {m.quantity} {item.unit}
+                    </span>
+                    <span className="block truncate text-xs text-cream-500">
+                      {m.reason}
+                      {m.atMs
+                        ? ` · ${new Date(m.atMs).toLocaleDateString("en-GB")}`
+                        : ""}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs text-cream-400">
+                    balance {m.balanceAfter}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function defaultReason(mode: MovementType): string {
+  if (mode === "in") return "Delivery received";
+  if (mode === "out") return "Issued to job";
+  return "Stock take";
+}
+
+function AddItemForm({
+  actor,
+  onClose,
+  onError,
+}: {
+  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  onClose: () => void;
+  onError: (m: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("boards");
+  const [unit, setUnit] = useState("sheet");
+  const [qty, setQty] = useState("");
+  const [reorder, setReorder] = useState("");
+  const [cost, setCost] = useState("");
+  const [supplier, setSupplier] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!name.trim()) {
+      onError("Name the item.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await createInventoryItem(getDb(), actor, {
+        name: name.trim(),
+        category,
+        unit: unit.trim() || "unit",
+        quantityOnHand: Number(qty) || 0,
+        reorderLevel: Number(reorder) || 0,
+        unitCostKobo: parseNairaInput(cost),
+        supplier: supplier.trim() || undefined,
+      });
+      onClose();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not add the item.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-3xl border border-brass-500/30 bg-night-900/40 p-6">
+      <h2 className="font-display text-lg text-cream-100">Add an item</h2>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <TextField id="inv-name" label="Name" value={name} onChange={setName} required />
+        <SelectField
+          id="inv-cat"
+          label="Category"
+          value={category}
+          onChange={setCategory}
+          options={[
+            { value: "boards", label: "Boards" },
+            { value: "consumables", label: "Consumables" },
+            { value: "fittings", label: "Fittings" },
+            { value: "tools", label: "Tools" },
+            { value: "other", label: "Other" },
+          ]}
+        />
+        <TextField id="inv-unit" label="Unit" value={unit} onChange={setUnit} />
+        <TextField
+          id="inv-supplier"
+          label="Usual supplier"
+          value={supplier}
+          onChange={setSupplier}
+        />
+        <NumberField id="inv-qty" label="Quantity on hand" value={qty} onChange={setQty} />
+        <NumberField
+          id="inv-reorder"
+          label="Reorder level"
+          value={reorder}
+          onChange={setReorder}
+          hint="alert at or below"
+        />
+        <NumberField id="inv-cost" label="Unit cost (₦)" value={cost} onChange={setCost} />
+      </div>
+      <div className="mt-5 flex gap-3">
+        <Button onClick={submit} busy={busy}>
+          Add item
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs uppercase tracking-wider text-cream-500">{label}</dt>
+      <dd className="mt-0.5 text-cream-100">{value}</dd>
+    </div>
+  );
+}
+
+function Tile({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "warn" | "danger";
+}) {
+  const colour =
+    tone === "danger" ? "text-red-300" : tone === "warn" ? "text-amber-300" : "text-cream-50";
+  return (
+    <div className="rounded-3xl border border-night-700/60 bg-night-900/40 p-5">
+      <p className="text-xs uppercase tracking-wider text-cream-500">{label}</p>
+      <p className={`mt-2 font-display text-2xl ${colour}`}>{value}</p>
+    </div>
+  );
+}

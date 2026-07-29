@@ -16,14 +16,17 @@ import {
   Loader2,
   LogOut,
   Newspaper,
+  Package,
   PanelLeftClose,
   PanelLeftOpen,
   ReceiptText,
   Settings,
   ShieldAlert,
   ShieldCheck,
+  Truck,
   Users,
   Wallet,
+  Wrench,
 } from "lucide-react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
 import { getFirebaseAuth } from "@/lib/firebase";
@@ -61,6 +64,9 @@ const NAV: NavItem[] = [
     icon: GalleryHorizontalEnd,
     capability: "customer.edit",
   },
+  { href: "/admin/inventory/", label: "Inventory", icon: Package, capability: "inventory.view" },
+  { href: "/admin/tools/", label: "Tool Log", icon: Wrench, capability: "tool.request" },
+  { href: "/admin/procurement/", label: "Suppliers", icon: Truck, capability: "supplier.view" },
   { href: "/admin/invoices/", label: "Invoices", icon: ReceiptText, capability: "invoice.view" },
   { href: "/admin/worklog/", label: "Work Log", icon: ClipboardList, capability: "worklog.create" },
   { href: "/admin/payroll/", label: "Payroll", icon: Wallet, capability: "wage.run" },
