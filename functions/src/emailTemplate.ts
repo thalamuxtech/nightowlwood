@@ -1,3 +1,5 @@
+import { OWL_MARK_PNG_DATA_URI, OWL_MARK_WIDTH, OWL_MARK_HEIGHT } from "./emailLogo";
+
 /**
  * Branded email shell.
  *
@@ -6,8 +8,9 @@
  * palette follows the Job Order Tracker: brown/brass on cream, "PRECISION IN
  * EVERY CUT" under the wordmark.
  *
- * Email clients strip external CSS and often block remote images, so the owl
- * mark is inline SVG and every rule is on the element.
+ * Email clients strip external CSS, so every rule is on the element. They also
+ * block remote images by default, so the owl mark is an inlined data URI — see
+ * emailLogo.ts for why that beats both SVG and a hosted file here.
  */
 
 const BRASS = "#dba95f";
@@ -17,15 +20,14 @@ const MUTED = "#6b6560";
 const CREAM = "#faf7f2";
 const BORDER = "#e6ddd0";
 
-/** Inline owl mark, simplified for email rendering. */
-const OWL_SVG = `<svg width="46" height="32" viewBox="0 0 516 349" xmlns="http://www.w3.org/2000/svg" style="display:block;">
-  <path fill="${BROWN}" d="M259.5 19 L276.5 46 L306.5 29 L312 28 L308 50.5 L312.5 54 Q330 58 349.5 69 L382 96.5 L403 124.5 L354.5 122 Q320 128 291 156.5 L263.5 194 L254.5 196 L231 164.5 L213.5 145 Q185 128 161.5 122 L111.5 126 L125 105.5 L162.5 70 Q185 58 204.5 54 L209 50.5 L204 28.5 L210.5 29 L241 47 L259.5 19 Z"/>
-  <path fill="${BROWN}" d="M70.5 157 Q120 162 195.5 181 L248.5 217 L261.5 217 Q300 192 443.5 157 Q447 200 447 245.5 Q443 262 448.5 270 Q480 292 501 330.5 L11.5 331 Q30 296 69 266.5 Q64 230 70.5 157 Z"/>
-  <circle cx="181" cy="222" r="30" fill="${CREAM}"/>
-  <circle cx="328" cy="225" r="28" fill="${CREAM}"/>
-  <circle cx="181" cy="222" r="15" fill="${BROWN}"/>
-  <circle cx="328" cy="225" r="14" fill="${BROWN}"/>
-</svg>`;
+/**
+ * Owl mark as an <img>.
+ *
+ * `display:block` avoids the descender gap that inline images pick up in
+ * Outlook, and explicit width/height stop the layout jumping before the image
+ * decodes. Width is halved from the asset's native size for retina sharpness.
+ */
+const OWL_IMG = `<img src="${OWL_MARK_PNG_DATA_URI}" width="${OWL_MARK_WIDTH / 2}" height="${Math.round(OWL_MARK_HEIGHT / 2)}" alt="" style="display:block;border:0;outline:none;text-decoration:none;">`;
 
 export interface CompanyDetails {
   name: string;
@@ -77,7 +79,7 @@ export function renderEmail(input: EmailShellInput): string {
             <td style="padding:26px 30px 20px;border-bottom:2px solid ${BRASS};">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
-                  <td width="52" valign="middle">${OWL_SVG}</td>
+                  <td width="72" valign="middle">${OWL_IMG}</td>
                   <td valign="middle" style="padding-left:12px;">
                     <div style="font-size:19px;font-weight:bold;letter-spacing:1.5px;color:${BROWN};text-transform:uppercase;">${escapeHtml(company.name)}</div>
                     <div style="font-size:9px;letter-spacing:2.4px;color:${MUTED};text-transform:uppercase;margin-top:3px;">${escapeHtml(company.tagline)}</div>
