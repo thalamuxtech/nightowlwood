@@ -36,18 +36,22 @@ export function WorkLogSheet({
   rows,
   periodLabel,
   onDone,
+  autoPrint = true,
 }: {
   rows: WorkLogPrintRow[];
   periodLabel: string;
   onDone: () => void;
+  /** False when embedded in the preview, which prints on demand. */
+  autoPrint?: boolean;
 }) {
   useEffect(() => {
+    if (!autoPrint) return;
     const t = setTimeout(() => {
       window.print();
       onDone();
     }, 250);
     return () => clearTimeout(t);
-  }, [onDone]);
+  }, [onDone, autoPrint]);
 
   const blanks = Math.max(0, MIN_ROWS - rows.length);
 
@@ -287,4 +291,99 @@ const PRINT_CSS = `
     font-size: 7pt; color: #9a938c;
   }
 }
+
+/* Screen copy for the on-screen preview, scoped so it cannot affect the
+   dashboard. Generated from the print rules above: if those change, regenerate
+   rather than editing this by hand. */
+
+  body { background: #fff !important; }
+  .wl-sheet, .wl-sheet * { display: revert; }
+  .print-preview.wl-sheet {
+    display: block;
+    position: static;
+    
+    background: #fff;
+    color: #1c1917;
+    /* Stack chosen for U+20A6 and consistency with the other print sheets. */
+    font-family: "DejaVu Sans", "Segoe UI", Tahoma, Helvetica, Arial, sans-serif;
+    font-size: 9pt;
+    line-height: 1.4;
+  }
+
+  /* Landscape: the assistant column needs the width or names wrap illegibly. */
+
+  .print-preview .wl-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    border-bottom: 2.5pt solid #6b4a2b; padding-bottom: 6pt;
+  }
+  .wl-brand { display: flex; align-items: center; gap: 9pt; }
+  .print-preview .wl-co {
+    font-size: 12.5pt; font-weight: bold; color: #6b4a2b;
+    text-transform: uppercase; letter-spacing: 0.6pt;
+  }
+  .print-preview .wl-tag {
+    font-size: 6.5pt; letter-spacing: 1.6pt; color: #6b6560;
+    text-transform: uppercase; margin-top: 1pt;
+  }
+  .wl-doc { text-align: right; }
+  .print-preview .wl-title {
+    font-size: 7.5pt; letter-spacing: 2pt; text-transform: uppercase; color: #6b6560;
+  }
+  .wl-period { font-size: 13pt; font-weight: bold; color: #1c1917; }
+  .wl-count { font-size: 8pt; color: #6b6560; }
+
+  .wl-table { width: 100%; border-collapse: collapse; margin-top: 9pt; }
+  .print-preview .wl-table th {
+    background: #f0e6d6; color: #6b4a2b; font-size: 7.5pt;
+    text-transform: uppercase; letter-spacing: 0.7pt; text-align: left;
+    padding: 4pt 5pt; border: 0.5pt solid #dcd0bd;
+  }
+  .print-preview .wl-table td {
+    padding: 4pt 5pt; border: 0.5pt solid #e6ddd0; font-size: 8.5pt;
+  }
+  /* Repeat the header if the table runs onto a second sheet. */
+  .wl-table thead { display: table-header-group; }
+  .wl-num { text-align: right; }
+  .wl-blank td { height: 14pt; }
+  .wl-flag { color: #8a5a2b; font-style: italic; }
+
+  .print-preview .wl-foot-grid {
+    display: flex; gap: 20pt; margin-top: 12pt; break-inside: avoid;
+  }
+  .wl-foot-grid > div { flex: 1; }
+
+  .print-preview .wl-h2 {
+    font-size: 7.5pt; font-weight: bold; letter-spacing: 1.4pt;
+    text-transform: uppercase; color: #6b4a2b;
+    border-bottom: 0.5pt solid #e6ddd0; padding-bottom: 2.5pt; margin-bottom: 5pt;
+  }
+
+  .wl-summary { width: 100%; border-collapse: collapse; max-width: 240pt; }
+  .print-preview .wl-summary td {
+    padding: 3pt 6pt; font-size: 8.5pt; border-bottom: 0.5pt dotted #cfc4b4;
+  }
+  .print-preview .wl-summary .wl-total td {
+    background: #f0e6d6; color: #6b4a2b; font-weight: bold;
+    border-top: 1pt solid #dba95f; border-bottom: none;
+  }
+
+  .print-preview .wl-warn {
+    margin-top: 6pt; font-size: 7.5pt; color: #8a5a2b; max-width: 260pt;
+  }
+
+  .wl-sign { display: flex; align-items: flex-end; gap: 5pt; margin-top: 10pt; }
+  .wl-sign > span:first-child {
+    color: #6b6560; min-width: 56pt; font-size: 8.5pt;
+  }
+  .wl-rule { flex: 1; border-bottom: 0.5pt solid #8a8079; height: 11pt; }
+  .print-preview .wl-note {
+    margin-top: 8pt; font-size: 7pt; color: #9a938c; line-height: 1.5;
+  }
+
+  .print-preview .wl-foot {
+    display: flex; justify-content: space-between;
+    margin-top: 12pt; padding-top: 5pt; border-top: 0.5pt solid #e6ddd0;
+    font-size: 7pt; color: #9a938c;
+  }
+
 `;

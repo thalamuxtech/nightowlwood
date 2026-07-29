@@ -45,6 +45,7 @@ import {
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { StaffPicker, type PickedStaff } from "@/components/admin/services/StaffPicker";
 import { WorkLogSheet } from "./WorkLogSheet";
+import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 
 interface StaffOption {
   id: string;
@@ -84,6 +85,7 @@ export function WorkLogScreen() {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [previewing, setPreviewing] = useState(false);
   const [printing, setPrinting] = useState(false);
 
   // Form state
@@ -264,11 +266,34 @@ export function WorkLogScreen() {
 
   return (
     <div className="mx-auto max-w-5xl pb-20">
+      {previewing && (
+        <PrintPreview
+          title="Work log"
+          paper="a4-landscape"
+          onPrint={() => {
+            // Leave the preview open behind the print dialog: closing it first
+            // would unmount the sheet before the browser had captured it.
+            setPrinting(true);
+          }}
+          onClose={() => setPreviewing(false)}
+        >
+          <WorkLogSheet
+            rows={rows}
+            periodLabel={printLabel}
+            autoPrint={false}
+            onDone={() => {}}
+          />
+        </PrintPreview>
+      )}
+
       {printing && (
         <WorkLogSheet
           rows={rows}
           periodLabel={printLabel}
-          onDone={() => setPrinting(false)}
+          onDone={() => {
+            setPrinting(false);
+            setPreviewing(false);
+          }}
         />
       )}
 
@@ -283,9 +308,9 @@ export function WorkLogScreen() {
         </div>
         <div className="flex flex-wrap gap-3">
           {rows.length > 0 && (
-            <Button variant="secondary" onClick={() => setPrinting(true)}>
+            <Button variant="secondary" onClick={() => setPreviewing(true)}>
               <span className="flex items-center gap-2">
-                <Printer size={15} /> Print log
+                <Printer size={15} /> Preview &amp; print
               </span>
             </Button>
           )}

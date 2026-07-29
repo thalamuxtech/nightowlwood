@@ -28,6 +28,7 @@ import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { Button, EmptyState } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { PayslipSheet } from "./PayslipSheet";
+import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 
 interface RunRow {
   id: string;
@@ -75,6 +76,7 @@ export function WageRunScreen() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [previewRun, setPreviewRun] = useState<RunRow | null>(null);
   const [printRun, setPrintRun] = useState<RunRow | null>(null);
 
   useEffect(() => {
@@ -200,12 +202,32 @@ export function WageRunScreen() {
 
   return (
     <div className="mx-auto max-w-6xl pb-20">
+      {previewRun && (
+        <PrintPreview
+          title="Payslips"
+          paper="a4-portrait"
+          onPrint={() => setPrintRun(previewRun)}
+          onClose={() => setPreviewRun(null)}
+        >
+          <PayslipSheet
+            periodStartMs={previewRun.periodStartMs}
+            periodEndMs={previewRun.periodEndMs}
+            perStaff={previewRun.perStaff}
+            autoPrint={false}
+            onDone={() => {}}
+          />
+        </PrintPreview>
+      )}
+
       {printRun && (
         <PayslipSheet
           periodStartMs={printRun.periodStartMs}
           periodEndMs={printRun.periodEndMs}
           perStaff={printRun.perStaff}
-          onDone={() => setPrintRun(null)}
+          onDone={() => {
+            setPrintRun(null);
+            setPreviewRun(null);
+          }}
         />
       )}
 
@@ -315,8 +337,8 @@ export function WageRunScreen() {
                       </StatusPill>
                       <button
                         type="button"
-                        onClick={() => setPrintRun(r)}
-                        aria-label="Print payslips"
+                        onClick={() => setPreviewRun(r)}
+                        aria-label="Preview and print payslips"
                         className="cursor-pointer text-cream-400 transition-colors hover:text-brass-300"
                       >
                         <Printer size={16} />

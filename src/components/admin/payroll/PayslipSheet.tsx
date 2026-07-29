@@ -32,19 +32,23 @@ export function PayslipSheet({
   periodEndMs,
   perStaff,
   onDone,
+  autoPrint = true,
 }: {
   periodStartMs: number | null;
   periodEndMs: number | null;
   perStaff: PayslipStaff[];
   onDone: () => void;
+  /** False when embedded in the preview, which prints on demand. */
+  autoPrint?: boolean;
 }) {
   useEffect(() => {
+    if (!autoPrint) return;
     const t = setTimeout(() => {
       window.print();
       onDone();
     }, 250);
     return () => clearTimeout(t);
-  }, [onDone]);
+  }, [onDone, autoPrint]);
 
   const period = `${fmt(periodStartMs)} to ${fmt(periodEndMs)}`;
 
@@ -198,4 +202,74 @@ const PRINT_CSS = `
     margin-top: 8mm; border-top: 0.5pt dashed #b5aca2;
   }
 }
+
+/* Screen copy for the on-screen preview, scoped so it cannot affect the
+   dashboard. Generated from the print rules above: if those change, regenerate
+   rather than editing this by hand. */
+
+  body { background: #fff !important; }
+  .payslips, .payslips * { display: revert; }
+  .print-preview.payslips {
+    display: block;
+    position: static;
+    
+    background: #fff;
+    color: #1c1917;
+    /* Stack chosen for U+20A6: the naira sign is absent from several common
+       printer fonts and renders as a blank box without a fallback. */
+    font-family: "DejaVu Sans", "Segoe UI", Tahoma, Helvetica, Arial, sans-serif;
+  }
+
+
+  /* Two slips per sheet: break after every second one. */
+  .print-preview .ps {
+    break-inside: avoid;
+    padding: 6mm 0 4mm;
+  }
+  .ps-second { break-after: page; }
+
+  .print-preview .ps-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    border-bottom: 1.5pt solid #6b4a2b; padding-bottom: 5pt;
+  }
+  .ps-brand { display: flex; align-items: center; gap: 7pt; }
+  .print-preview .ps-co {
+    font-size: 10.5pt; font-weight: bold; color: #6b4a2b;
+    text-transform: uppercase; letter-spacing: 0.5pt;
+  }
+  .print-preview .ps-tag {
+    font-size: 6pt; letter-spacing: 1.4pt; color: #6b6560;
+    text-transform: uppercase; margin-top: 1pt;
+  }
+  .ps-doc { text-align: right; }
+  .print-preview .ps-title {
+    font-size: 8pt; letter-spacing: 2pt; text-transform: uppercase; color: #6b6560;
+  }
+  .ps-period { font-size: 9.5pt; font-weight: bold; color: #1c1917; }
+
+  .print-preview .ps-name {
+    margin-top: 8pt; font-size: 14pt; font-weight: bold; color: #1c1917;
+  }
+
+  .print-preview .ps-table {
+    width: 100%; border-collapse: collapse; margin-top: 7pt; font-size: 9.5pt;
+  }
+  .ps-table td { padding: 4pt 6pt; border-bottom: 0.5pt solid #e6ddd0; }
+  .ps-num { text-align: right; font-weight: 600; width: 34%; }
+  .ps-sub td { border-top: 0.5pt solid #cfc4b4; font-weight: bold; }
+  .ps-deduct td { color: #8a5a2b; }
+  .print-preview .ps-net td {
+    background: #f0e6d6; color: #6b4a2b; font-size: 12pt;
+    font-weight: bold; border-top: 1pt solid #dba95f;
+  }
+
+  .ps-signs { display: flex; gap: 18pt; margin-top: 12pt; }
+  .ps-sign { flex: 1; display: flex; align-items: flex-end; gap: 5pt; font-size: 8.5pt; }
+  .ps-sign > span:first-child { color: #6b6560; min-width: 48pt; }
+  .ps-rule { flex: 1; border-bottom: 0.5pt solid #8a8079; height: 11pt; }
+
+  .print-preview .ps-cut {
+    margin-top: 8mm; border-top: 0.5pt dashed #b5aca2;
+  }
+
 `;

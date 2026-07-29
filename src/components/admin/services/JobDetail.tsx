@@ -49,6 +49,7 @@ import {
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { JobSheet } from "./JobSheet";
 import { JobDetailsEditor } from "./JobDetailsEditor";
+import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 
 interface JobDoc {
   jobNumber: string;
@@ -107,6 +108,7 @@ export function JobDetail() {
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [previewing, setPreviewing] = useState(false);
   const [printing, setPrinting] = useState(false);
 
   const canEdit = session.can("job.edit");
@@ -238,12 +240,32 @@ export function JobDetail() {
   return (
     <div className="mx-auto max-w-5xl pb-20">
       {/* Print view is rendered off-screen and swapped in by the print stylesheet */}
+      {previewing && (
+        <PrintPreview
+          title={`Job order ${job.jobNumber}`}
+          paper="a4-portrait"
+          onPrint={() => setPrinting(true)}
+          onClose={() => setPreviewing(false)}
+        >
+          <JobSheet
+            job={job}
+            lines={lines}
+            payments={payments}
+            autoPrint={false}
+            onDone={() => {}}
+          />
+        </PrintPreview>
+      )}
+
       {printing && (
         <JobSheet
           job={job}
           lines={lines}
           payments={payments}
-          onDone={() => setPrinting(false)}
+          onDone={() => {
+            setPrinting(false);
+            setPreviewing(false);
+          }}
         />
       )}
 
@@ -275,9 +297,9 @@ export function JobDetail() {
               )}
             </div>
           </div>
-          <Button variant="secondary" onClick={() => setPrinting(true)}>
+          <Button variant="secondary" onClick={() => setPreviewing(true)}>
             <span className="flex items-center gap-2">
-              <Printer size={15} /> Print job sheet
+              <Printer size={15} /> Preview &amp; print
             </span>
           </Button>
         </header>
