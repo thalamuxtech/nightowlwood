@@ -27,6 +27,7 @@ import { formatNaira, formatNairaCompact } from "@/lib/erp/money";
 import { LiveCounter } from "@/components/admin/ui/LiveCounter";
 import { InsightsPanel } from "@/components/admin/InsightsPanel";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { OperatorDashboard } from "@/components/admin/dashboards/OperatorDashboard";
 
 /** Selectable windows for the revenue chart. */
 const RANGES = [
@@ -68,10 +69,23 @@ interface ExpensePoint {
  */
 export function OverviewDashboard() {
   const session = useErpSession();
+  /**
+   * Finance figures are capability-gated, not merely hidden by nav.
+   *
+   * Revenue, collected and outstanding are company financials, which the
+   * permission matrix reserves for admins. Before this the whole dashboard
+   * rendered identically for every role, so a manager or operator who reached
+   * /admin/ saw turnover and receivables regardless of what their role allowed.
+   */
+  const canSeeFinance = session.can("dashboard.view.finance");
   const [jobs, setJobs] = useState<JobPoint[]>([]);
   const [expenses, setExpenses] = useState<ExpensePoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<RangeKey>("30d");
+
+  // An operator's view is a different screen, not a subset of this one: almost
+  // every panel here is company-wide and none of it is theirs to see.
+  const isOperator = session.ready && session.role === "operator";
 
   useEffect(() => {
     const q = query(collection(getDb(), COL.serviceJobs), orderBy("receivedAt", "desc"));
@@ -198,6 +212,23 @@ export function OverviewDashboard() {
       .slice(0, 6);
   }, [inRange]);
 
+  // Returned before the company panels so an operator never renders them, even
+  // briefly, and never subscribes to data they cannot read.
+  if (isOperator) return <OperatorDashboard />;
+
+  /** Job counts per customer, for the manager view that omits money. */
+  const jobsPerCustomer = useMemo(() => {
+    const by = new Map<string, number>();
+    for (const j of inRange) {
+      if (!j.customerName) continue;
+      by.set(j.customerName, (by.get(j.customerName) ?? 0) + 1);
+    }
+    return [...by.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [inRange]);
+
   if (loading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -251,24 +282,37 @@ export function OverviewDashboard() {
           </div>
 
           {/* Animated headline figures */}
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Figure
-              label="Revenue"
-              value={totals.revenue}
-              format={(n) => formatNaira(n)}
-              accent
-            />
-            <Figure label="Collected" value={totals.collected} format={(n) => formatNaira(n)} />
-            <Figure
-              label="Outstanding"
-              value={totals.outstanding}
-              format={(n) => formatNaira(n)}
-              warn={totals.outstanding > 0}
-            />
+          <div
+            className={`mt-6 grid gap-4 sm:grid-cols-2 ${
+              canSeeFinance ? "lg:grid-cols-4" : "lg:grid-cols-2"
+            }`}
+          >
+            {canSeeFinance && (
+              <>
+                <Figure
+                  label="Revenue"
+                  value={totals.revenue}
+                  format={(n) => formatNaira(n)}
+                  accent
+                />
+                <Figure
+                  label="Collected"
+                  value={totals.collected}
+                  format={(n) => formatNaira(n)}
+                />
+                <Figure
+                  label="Outstanding"
+                  value={totals.outstanding}
+                  format={(n) => formatNaira(n)}
+                  warn={totals.outstanding > 0}
+                />
+              </>
+            )}
             <Figure label="Jobs" value={totals.jobCount} format={(n) => String(Math.round(n))} />
           </div>
 
           {/* Revenue vs expenses */}
+          {canSeeFinance && (
           <Panel
             title="Revenue and spend"
             hint={days === 1 ? "Today" : `Last ${days} days`}
@@ -325,6 +369,7 @@ export function OverviewDashboard() {
               </AreaChart>
             </ResponsiveContainer>
           </Panel>
+          )}
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <Panel title="Jobs by status" delay={0.1}>
@@ -349,6 +394,7 @@ export function OverviewDashboard() {
               </ResponsiveContainer>
             </Panel>
 
+            {canSeeFinance ? (
             <Panel title="Top customers" hint="by value in range" delay={0.15}>
               {topCustomers.length === 0 ? (
                 <p className="py-16 text-center text-sm text-cream-500">
@@ -388,6 +434,33 @@ export function OverviewDashboard() {
                 </ResponsiveContainer>
               )}
             </Panel>
+            ) : (
+              /* Managers get workload instead of value: the same customers, ranked
+                 by how much work is in the building rather than by money. */
+              <Panel title="Busiest customers" hint="by job count in range" delay={0.15}>
+                {topCustomers.length === 0 ? (
+                  <p className="py-16 text-center text-sm text-cream-500">
+                    No jobs in this range.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-night-800">
+                    {jobsPerCustomer.map((c) => (
+                      <li
+                        key={c.name}
+                        className="flex items-center justify-between gap-4 py-3"
+                      >
+                        <span className="min-w-0 truncate text-sm text-cream-200">
+                          {c.name}
+                        </span>
+                        <span className="shrink-0 font-display text-lg text-cream-50">
+                          {c.count}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Panel>
+            )}
           </div>
 
           <div className="mt-8 flex flex-wrap gap-3">
