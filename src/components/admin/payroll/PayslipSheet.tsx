@@ -140,7 +140,9 @@ const PRINT_CSS = `
     inset: 0;
     background: #fff;
     color: #1c1917;
-    font-family: Helvetica, Arial, sans-serif;
+    /* Stack chosen for U+20A6: the naira sign is absent from several common
+       printer fonts and renders as a blank box without a fallback. */
+    font-family: "DejaVu Sans", "Segoe UI", Tahoma, Helvetica, Arial, sans-serif;
   }
 
   @page { size: A4; margin: 12mm; }

@@ -14,6 +14,7 @@ import {
   ClipboardList,
   Loader2,
   Plus,
+  Printer,
   ShieldAlert,
   Trash2,
   Users,
@@ -43,6 +44,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { StaffPicker, type PickedStaff } from "@/components/admin/services/StaffPicker";
+import { WorkLogSheet } from "./WorkLogSheet";
 
 interface StaffOption {
   id: string;
@@ -82,6 +84,7 @@ export function WorkLogScreen() {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [printing, setPrinting] = useState(false);
 
   // Form state
   const [operator, setOperator] = useState<PickedStaff | null>(null);
@@ -248,9 +251,28 @@ export function WorkLogScreen() {
     );
   }
 
+  // The printed range is whatever is on screen, which is what the user just
+  // filtered to; labelling it from the rows avoids claiming a period the sheet
+  // does not actually cover.
+  const printLabel = (() => {
+    const dates = rows.map((r) => r.workDateMs).filter((m): m is number => m !== null);
+    if (dates.length === 0) return "All entries";
+    const f = (ms: number) =>
+      new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    return `${f(Math.min(...dates))} to ${f(Math.max(...dates))}`;
+  })();
+
   return (
     <div className="mx-auto max-w-5xl pb-20">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      {printing && (
+        <WorkLogSheet
+          rows={rows}
+          periodLabel={printLabel}
+          onDone={() => setPrinting(false)}
+        />
+      )}
+
+      <header className="flex flex-wrap items-end justify-between gap-4 print:hidden">
         <div>
           <p className="text-eyebrow">Payroll</p>
           <h1 className="text-title mt-3 text-cream-50">Work log</h1>
@@ -259,13 +281,22 @@ export function WorkLogScreen() {
             so an unlogged job is unpaid work.
           </p>
         </div>
-        {canLog && !adding && (
-          <Button onClick={() => setAdding(true)}>
-            <span className="flex items-center gap-2">
-              <Plus size={15} /> Log work
-            </span>
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-3">
+          {rows.length > 0 && (
+            <Button variant="secondary" onClick={() => setPrinting(true)}>
+              <span className="flex items-center gap-2">
+                <Printer size={15} /> Print log
+              </span>
+            </Button>
+          )}
+          {canLog && !adding && (
+            <Button onClick={() => setAdding(true)}>
+              <span className="flex items-center gap-2">
+                <Plus size={15} /> Log work
+              </span>
+            </Button>
+          )}
+        </div>
       </header>
 
       {error && (
@@ -278,7 +309,7 @@ export function WorkLogScreen() {
       )}
 
       {adding && (
-        <section className="mt-6 rounded-3xl border border-brass-500/30 bg-night-900/40 p-6">
+        <section className="mt-6 rounded-3xl border border-brass-500/30 print:hidden bg-night-900/40 p-6">
           <h2 className="flex items-center gap-2 font-display text-lg text-cream-100">
             <ClipboardList size={18} className="text-brass-400" /> New work log
           </h2>
@@ -424,7 +455,7 @@ export function WorkLogScreen() {
         </section>
       )}
 
-      <section className="mt-8">
+      <section className="mt-8 print:hidden">
         {loading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="animate-spin text-brass-400" size={24} aria-label="Loading" />
