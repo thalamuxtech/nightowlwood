@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -347,6 +348,134 @@ export async function approveWageRun(
     collectionName: COL.wageRuns,
     docId: runId,
     summary: "Approved wage run and posted loan repayments",
+  });
+}
+
+/**
+ * Adjusts one person's pay on a draft run.
+ *
+ * Draft only. An approved run has been signed off and a paid one has left the
+ * account, so both are a record of a decision already taken rather than a working
+ * document. Approving is the point at which the figures stop being editable, which
+ * is why the guard lives here and not only in the UI.
+ *
+ * The run's own totals are recomputed from the adjusted rows rather than patched by
+ * a delta, so the header can never drift from the lines that justify it. The
+ * deduction is left alone: it comes from outstanding loans, and overriding it here
+ * would let someone quietly write off a debt without a repayment being recorded.
+ */
+export async function adjustWageRunStaff(
+  db: Firestore,
+  actor: AuditActor,
+  runId: string,
+  staffId: string,
+  next: { operatorKobo: number; assistantKobo: number }
+): Promise<void> {
+  if (next.operatorKobo < 0 || next.assistantKobo < 0) {
+    throw new Error("Pay cannot be negative.");
+  }
+
+  const ref = doc(db, COL.wageRuns, runId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("Wage run not found.");
+    const run = snap.data();
+
+    if (run.status !== "draft") {
+      throw new Error(
+        `This run is ${run.status}, so its figures can no longer be changed. ` +
+          "Generate a new run for the period instead."
+      );
+    }
+
+    const perStaff = (run.perStaff ?? []) as RunPreview["perStaff"];
+    const row = perStaff.find((s) => s.staffId === staffId);
+    if (!row) throw new Error("That staff member is not on this run.");
+
+    const before = { operatorKobo: row.operatorKobo, assistantKobo: row.assistantKobo };
+
+    const updated = perStaff.map((s) => {
+      if (s.staffId !== staffId) return s;
+      const total = next.operatorKobo + next.assistantKobo;
+      return {
+        ...s,
+        operatorKobo: next.operatorKobo,
+        assistantKobo: next.assistantKobo,
+        totalKobo: total,
+        // Never negative: a deduction larger than the adjusted gross would
+        // otherwise show as the company owing the worker money.
+        netKobo: Math.max(0, total - (s.deductionKobo ?? 0)),
+      };
+    });
+
+    const grandTotal = sumKobo(updated.map((s) => s.totalKobo));
+    const deductions = sumKobo(updated.map((s) => s.deductionKobo ?? 0));
+
+    tx.update(ref, {
+      perStaff: updated,
+      operatorTotalKobo: sumKobo(updated.map((s) => s.operatorKobo)),
+      assistantTotalKobo: sumKobo(updated.map((s) => s.assistantKobo)),
+      grandTotalKobo: grandTotal,
+      deductionsKobo: deductions,
+      netPayableKobo: Math.max(0, grandTotal - deductions),
+      // Flagged so a run that no longer matches the work logs is obvious later.
+      adjusted: true,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+
+    return { before, name: row.staffName };
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.wageRuns,
+    docId: runId,
+    summary:
+      `Adjusted pay on a draft run: operator ${next.operatorKobo} kobo, ` +
+      `assistant ${next.assistantKobo} kobo`,
+    after: { staffId, ...next },
+  });
+}
+
+/**
+ * Deletes a draft run and its lines.
+ *
+ * A draft is a working document derived from the work logs, so discarding one and
+ * regenerating is the normal way to pick up a corrected log. Approved and paid runs
+ * are never deletable: they are the record of what was actually paid.
+ */
+export async function deleteDraftWageRun(
+  db: Firestore,
+  actor: AuditActor,
+  runId: string
+): Promise<void> {
+  const ref = doc(db, COL.wageRuns, runId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Wage run not found.");
+  if (snap.data().status !== "draft") {
+    throw new Error("Only a draft run can be discarded.");
+  }
+
+  // Lines are a subcollection, so they are removed explicitly or they outlive the
+  // run and count toward nothing.
+  const lineSnap = await getDocs(collection(db, wageRunLinesPath(runId)));
+  for (let i = 0; i < lineSnap.docs.length; i += 400) {
+    const batch = writeBatch(db);
+    lineSnap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  await deleteDoc(ref);
+
+  await writeAudit(db, {
+    actor,
+    action: "delete",
+    collectionName: COL.wageRuns,
+    docId: runId,
+    summary: `Discarded a draft wage run (${lineSnap.size} line(s))`,
   });
 }
 

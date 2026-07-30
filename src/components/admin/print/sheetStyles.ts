@@ -267,7 +267,18 @@ ${root} { display: none; }
   body > *:not(:has(${root})):not(${root}) { display: none !important; }
   body { background: #fff !important; }
 
-  body :has(${root}) {
+  /* Anything asking not to print is excluded deliberately.
+     The on-screen preview overlay holds its own copy of the sheet, so it matched
+     :has() and was forced back to display:block, overriding the print:hidden class
+     it carries. That printed a dark full-screen panel over the document and a
+     second copy of the sheet with it, which is what looked like a blank page. An
+     element that has asked not to print must stay hidden even when it contains a
+     sheet.
+
+     Matched by attribute rather than as a class, because Tailwind's class name
+     contains a colon and escaping it inside this template literal is not worth
+     the confusion. */
+  body :has(${root}):not([class*="print:hidden"]) {
     display: block !important;
     position: static !important;
     overflow: visible !important;
@@ -282,6 +293,10 @@ ${root} { display: none; }
   /* Anything alongside the sheet inside those ancestors still goes, or the
      dashboard's own chrome prints above it. */
   body :has(${root}) > *:not(:has(${root})):not(${root}) { display: none !important; }
+
+  /* A sheet inside a print:hidden subtree is a preview copy, never the one to
+     print. Without this the overlay's own sheet still lays out and prints. */
+  [class*="print:hidden"] ${root} { display: none !important; }
 
   ${root}, ${root} * { display: revert; }
   ${root} {

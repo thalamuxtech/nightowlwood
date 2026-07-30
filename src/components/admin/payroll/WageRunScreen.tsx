@@ -6,17 +6,21 @@ import {
   AlertTriangle,
   CheckCircle2,
   Loader2,
+  PenLine,
   Printer,
   RefreshCw,
   ShieldAlert,
+  Trash2,
   Wallet,
 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { WAGE_WORK_TYPE_LABELS, type WageRunStatus } from "@/lib/erp/enums";
-import { formatNaira } from "@/lib/erp/money";
+import { formatNaira, parseNairaInput } from "@/lib/erp/money";
 import {
+  adjustWageRunStaff,
   approveWageRun,
+  deleteDraftWageRun,
   markWageRunPaid,
   previewWageRun,
   saveDraftWageRun,
@@ -25,7 +29,7 @@ import {
 import { weekBounds } from "@/lib/erp/wages";
 import { WAGE_RUN_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
-import { Button, EmptyState } from "@/components/admin/ui/Fields";
+import { Button, EmptyState, NumberField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { PayslipSheet } from "./PayslipSheet";
 import { PrintPreview } from "@/components/admin/ui/PrintPreview";
@@ -75,6 +79,8 @@ export function WageRunScreen() {
   const [runs, setRuns] = useState<RunRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** The draft whose per-staff figures are open for adjustment. */
+  const [editRunId, setEditRunId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [previewRun, setPreviewRun] = useState<RunRow | null>(null);
   const [printRun, setPrintRun] = useState<RunRow | null>(null);
@@ -163,6 +169,19 @@ export function WageRunScreen() {
       await approveWageRun(getDb(), actor, id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not approve the run.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function discard(id: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await deleteDraftWageRun(getDb(), actor, id);
+      setEditRunId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not discard the run.");
     } finally {
       setBusy(false);
     }
@@ -343,10 +362,30 @@ export function WageRunScreen() {
                       >
                         <Printer size={16} />
                       </button>
+                      {/* Only a draft is editable: approving is the point at which
+                          the figures become a decision already taken. */}
                       {r.status === "draft" && (
-                        <Button onClick={() => approve(r.id)} busy={busy}>
-                          Approve
-                        </Button>
+                        <>
+                          <button
+                            type="button"
+                            aria-label="Edit this draft"
+                            onClick={() => setEditRunId(editRunId === r.id ? null : r.id)}
+                            className="cursor-pointer text-cream-400 transition-colors hover:text-brass-300"
+                          >
+                            <PenLine size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Discard this draft"
+                            onClick={() => discard(r.id)}
+                            className="cursor-pointer text-cream-500 transition-colors hover:text-red-400"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                          <Button onClick={() => approve(r.id)} busy={busy}>
+                            Approve
+                          </Button>
+                        </>
                       )}
                       {r.status === "approved" && (
                         <Button variant="secondary" onClick={() => pay(r.id)} busy={busy}>
@@ -355,12 +394,140 @@ export function WageRunScreen() {
                       )}
                     </div>
                   </div>
+
+                  {editRunId === r.id && r.status === "draft" && (
+                    <DraftEditor
+                      run={r}
+                      actor={actor}
+                      onError={setError}
+                      onDone={() => setEditRunId(null)}
+                    />
+                  )}
                 </div>
               ))}
             </div>
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Adjusts a draft run person by person.
+ *
+ * A run is calculated from the work logs, so this is for the cases the logs cannot
+ * express: an agreed bonus, a corrected figure someone spotted after the fact. The
+ * deduction is shown but not editable, because it comes from outstanding loans and
+ * changing it here would write off a debt with no repayment recorded against it.
+ */
+function DraftEditor({
+  run,
+  actor,
+  onError,
+  onDone,
+}: {
+  run: RunRow;
+  actor: { uid: string; email: string; role: "admin" };
+  onError: (message: string) => void;
+  onDone: () => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [operator, setOperator] = useState("");
+  const [assistant, setAssistant] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function begin(s: RunRow["perStaff"][number]) {
+    setEditingId(s.staffId);
+    setOperator(String(s.operatorKobo / 100));
+    setAssistant(String(s.assistantKobo / 100));
+  }
+
+  async function save(staffId: string) {
+    setSaving(true);
+    try {
+      await adjustWageRunStaff(getDb(), actor, run.id, staffId, {
+        operatorKobo: parseNairaInput(operator),
+        assistantKobo: parseNairaInput(assistant),
+      });
+      setEditingId(null);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not adjust the pay.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-night-700/60 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs uppercase tracking-wider text-cream-500">
+          Adjust this draft
+        </p>
+        <button
+          type="button"
+          onClick={onDone}
+          className="cursor-pointer text-xs text-cream-400 transition-colors hover:text-brass-300"
+        >
+          Done
+        </button>
+      </div>
+
+      <ul className="mt-3 space-y-2">
+        {run.perStaff.map((s) => (
+          <li
+            key={s.staffId}
+            className="rounded-xl border border-night-700/50 bg-night-950/40 p-3"
+          >
+            {editingId === s.staffId ? (
+              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                <NumberField
+                  id={`op-${run.id}-${s.staffId}`}
+                  label={`${s.staffName} · operator (₦)`}
+                  value={operator}
+                  onChange={setOperator}
+                />
+                <NumberField
+                  id={`as-${run.id}-${s.staffId}`}
+                  label="Assistant (₦)"
+                  value={assistant}
+                  onChange={setAssistant}
+                />
+                <div className="flex gap-2">
+                  <Button onClick={() => save(s.staffId)} busy={saving}>
+                    Save
+                  </Button>
+                  <Button variant="ghost" onClick={() => setEditingId(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <span className="text-cream-100">{s.staffName}</span>
+                <span className="flex flex-wrap items-center gap-3 text-xs text-cream-400">
+                  <span>operator {formatNaira(s.operatorKobo)}</span>
+                  <span>assistant {formatNaira(s.assistantKobo)}</span>
+                  {s.deductionKobo > 0 && (
+                    <span className="text-amber-300">
+                      less {formatNaira(s.deductionKobo)}
+                    </span>
+                  )}
+                  <span className="text-cream-100">net {formatNaira(s.netKobo)}</span>
+                  <button
+                    type="button"
+                    aria-label={`Adjust pay for ${s.staffName}`}
+                    onClick={() => begin(s)}
+                    className="cursor-pointer text-cream-500 transition-colors hover:text-brass-300"
+                  >
+                    <PenLine size={14} />
+                  </button>
+                </span>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
