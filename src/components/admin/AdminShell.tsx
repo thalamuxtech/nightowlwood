@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ChevronDown,
   ClipboardList,
   Eye,
   EyeOff,
@@ -250,6 +251,21 @@ function Sidebar({ email }: { email: string }) {
 
   // Groups with every item filtered out are dropped entirely: a heading over an
   // empty section reads as something failing to load.
+  /**
+   * Only one group is expanded at a time, and it starts as the one owning the
+   * current route. The page's tab strip already lists the sibling screens, so the
+   * sidebar is a shortcut rather than the only way in, and keeping it collapsed
+   * stops it repeating what the tabs show.
+   */
+  const currentGroupTitle =
+    NAV_GROUPS.find((g) => g.title && g.items.some((i) => i.href === pathname))?.title ?? null;
+  const [openGroup, setOpenGroup] = useState<string | null>(currentGroupTitle);
+
+  // Follow navigation: moving into another group opens it and closes the last.
+  useEffect(() => {
+    if (currentGroupTitle) setOpenGroup(currentGroupTitle);
+  }, [currentGroupTitle]);
+
   const visibleGroups = NAV_GROUPS.map((g) => ({
     ...g,
     items: g.items.filter((item) => !item.capability || (ready && can(item.capability))),
@@ -339,43 +355,99 @@ function Sidebar({ email }: { email: string }) {
           className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-color:#3a332c_transparent] [scrollbar-width:thin]"
           aria-label="Admin"
         >
-          {visibleGroups.map((group, gi) => (
-            <div key={group.title ?? "root"} className={gi > 0 ? "mt-3" : undefined}>
-              {/* A heading is pointless when collapsed to icons, and the rule
-                  below does the separating instead. */}
-              {group.title && !collapsed && (
-                <p className="mb-1.5 px-4 text-[0.6rem] font-medium uppercase tracking-[0.22em] text-cream-600">
-                  {group.title}
-                </p>
-              )}
-              {group.title && collapsed && (
-                <span
-                  aria-hidden
-                  className="mx-auto mb-2 block h-px w-6 bg-night-700"
-                />
-              )}
-              <div className="flex flex-col gap-1">
-                {group.items.map(({ href, label, icon: Icon }) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    title={collapsed ? label : undefined}
-                    aria-current={pathname === href ? "page" : undefined}
-                    className={`flex items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition-colors duration-200 ${
-                      collapsed ? "justify-center px-0" : "px-4"
-                    } ${
-                      pathname === href
-                        ? "bg-brass-500 text-night-950"
-                        : "text-cream-300 hover:bg-night-800 hover:text-cream-100"
-                    }`}
-                  >
-                    <Icon size={18} className="shrink-0" />
-                    {!collapsed && <span className="truncate">{label}</span>}
-                  </Link>
-                ))}
+          {visibleGroups.map((group) => {
+            // Ungrouped entries (the dashboard) are plain links with no header.
+            if (!group.title) {
+              return group.items.map(({ href, label, icon: Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  title={collapsed ? label : undefined}
+                  aria-current={pathname === href ? "page" : undefined}
+                  className={`flex items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition-colors duration-200 ${
+                    collapsed ? "justify-center px-0" : "px-4"
+                  } ${
+                    pathname === href
+                      ? "bg-brass-500 text-night-950"
+                      : "text-cream-300 hover:bg-night-800 hover:text-cream-100"
+                  }`}
+                >
+                  <Icon size={18} className="shrink-0" />
+                  {!collapsed && <span className="truncate">{label}</span>}
+                </Link>
+              ));
+            }
+
+            const isOpen = openGroup === group.title;
+            const holdsCurrent = group.items.some((i) => i.href === pathname);
+            // The group icon is its first screen's, which keeps the collapsed
+            // rail meaningful without inventing a second icon set.
+            const GroupIcon = group.items[0].icon;
+
+            return (
+              <div key={group.title}>
+                <button
+                  type="button"
+                  onClick={() => setOpenGroup(isOpen ? null : group.title)}
+                  aria-expanded={isOpen}
+                  title={collapsed ? group.title : undefined}
+                  className={`flex w-full cursor-pointer items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition-colors duration-200 ${
+                    collapsed ? "justify-center px-0" : "px-4"
+                  } ${
+                    holdsCurrent && !isOpen
+                      ? "bg-night-800 text-brass-300"
+                      : "text-cream-300 hover:bg-night-800 hover:text-cream-100"
+                  }`}
+                >
+                  <GroupIcon size={18} className="shrink-0" />
+                  {!collapsed && (
+                    <>
+                      <span className="flex-1 truncate text-left">{group.title}</span>
+                      <ChevronDown
+                        size={15}
+                        aria-hidden
+                        className={`shrink-0 transition-transform duration-200 ${
+                          isOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </>
+                  )}
+                </button>
+
+                {/* Children render only for the open group, so the rail stays
+                    short. The tab strip on the page covers the same screens, so
+                    this is a shortcut rather than the only route. */}
+                <AnimatePresence initial={false}>
+                  {isOpen && !collapsed && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-1 flex flex-col gap-0.5 border-l border-night-700/60 pl-3">
+                        {group.items.map(({ href, label }) => (
+                          <Link
+                            key={href}
+                            href={href}
+                            aria-current={pathname === href ? "page" : undefined}
+                            className={`truncate rounded-lg px-3 py-2 text-[0.8rem] transition-colors duration-200 ${
+                              pathname === href
+                                ? "bg-brass-500/15 text-brass-300"
+                                : "text-cream-400 hover:bg-night-800 hover:text-cream-100"
+                            }`}
+                          >
+                            {label}
+                          </Link>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
         <div className="shrink-0 border-t border-night-700/60 pt-4">
           {!collapsed && (
