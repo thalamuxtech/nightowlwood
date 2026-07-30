@@ -17,6 +17,7 @@ import {
   Loader2,
   LogOut,
   Newspaper,
+  NotebookPen,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
@@ -54,30 +55,77 @@ interface NavItem {
   capability?: Capability;
 }
 
-const NAV: NavItem[] = [
-  { href: "/admin/", label: "Overview", icon: LayoutDashboard },
-  { href: "/admin/jobs/", label: "Service Jobs", icon: ClipboardList, capability: "job.view" },
-  { href: "/admin/projects/", label: "Projects", icon: FolderKanban, capability: "project.view" },
-  { href: "/admin/submissions/", label: "Submissions", icon: Inbox, capability: "customer.view" },
-  { href: "/admin/blog/", label: "Blog", icon: Newspaper, capability: "customer.edit" },
+/**
+ * Nav groups.
+ *
+ * Seventeen flat entries meant scanning the whole list to find anything. Grouping
+ * by the kind of work puts a heading in the way first, which is faster to skim.
+ *
+ * Overview sits outside any group: it is the landing page, not a category. The
+ * split is deliberately by *activity* rather than by data model, so Payroll,
+ * Expenses and Loans sit together under Finance even though they are unrelated
+ * collections, because whoever opens one is usually reaching for another.
+ */
+interface NavGroup {
+  title: string | null;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
   {
-    href: "/admin/work/",
-    label: "Work Gallery",
-    icon: GalleryHorizontalEnd,
-    capability: "customer.edit",
+    title: null,
+    items: [{ href: "/admin/", label: "Overview", icon: LayoutDashboard }],
   },
-  { href: "/admin/inventory/", label: "Inventory", icon: Package, capability: "inventory.view" },
-  { href: "/admin/tools/", label: "Tool Log", icon: Wrench, capability: "tool.request" },
-  { href: "/admin/procurement/", label: "Suppliers", icon: Truck, capability: "supplier.view" },
-  { href: "/admin/invoices/", label: "Invoices", icon: ReceiptText, capability: "invoice.view" },
-  { href: "/admin/expenses/", label: "Expenses", icon: Receipt, capability: "expense.view" },
-  { href: "/admin/meters/", label: "Power Meters", icon: Gauge, capability: "expense.view" },
-  { href: "/admin/worklog/", label: "Work Log", icon: ClipboardList, capability: "worklog.create" },
-  { href: "/admin/payroll/", label: "Payroll", icon: Wallet, capability: "wage.run" },
-  { href: "/admin/loans/", label: "Loans & Advances", icon: HandCoins, capability: "loan.request" },
-  { href: "/admin/users/", label: "Users & Roles", icon: ShieldCheck, capability: "user.manage" },
-  { href: "/admin/settings/", label: "Settings", icon: Settings, capability: "settings.change" },
+  {
+    title: "Operations",
+    items: [
+      { href: "/admin/jobs/", label: "Service Jobs", icon: ClipboardList, capability: "job.view" },
+      { href: "/admin/projects/", label: "Projects", icon: FolderKanban, capability: "project.view" },
+      { href: "/admin/worklog/", label: "Work Log", icon: NotebookPen, capability: "worklog.create" },
+    ],
+  },
+  {
+    title: "Stock & tools",
+    items: [
+      { href: "/admin/inventory/", label: "Inventory", icon: Package, capability: "inventory.view" },
+      { href: "/admin/tools/", label: "Tool Log", icon: Wrench, capability: "tool.request" },
+      { href: "/admin/procurement/", label: "Suppliers", icon: Truck, capability: "supplier.view" },
+    ],
+  },
+  {
+    title: "Finance",
+    items: [
+      { href: "/admin/invoices/", label: "Invoices", icon: ReceiptText, capability: "invoice.view" },
+      { href: "/admin/expenses/", label: "Expenses", icon: Receipt, capability: "expense.view" },
+      { href: "/admin/meters/", label: "Power Meters", icon: Gauge, capability: "expense.view" },
+      { href: "/admin/payroll/", label: "Payroll", icon: Wallet, capability: "wage.run" },
+      { href: "/admin/loans/", label: "Loans & Advances", icon: HandCoins, capability: "loan.request" },
+    ],
+  },
+  {
+    title: "Website",
+    items: [
+      { href: "/admin/submissions/", label: "Submissions", icon: Inbox, capability: "customer.view" },
+      { href: "/admin/blog/", label: "Blog", icon: Newspaper, capability: "customer.edit" },
+      {
+        href: "/admin/work/",
+        label: "Work Gallery",
+        icon: GalleryHorizontalEnd,
+        capability: "customer.edit",
+      },
+    ],
+  },
+  {
+    title: "Admin",
+    items: [
+      { href: "/admin/users/", label: "Users & Roles", icon: ShieldCheck, capability: "user.manage" },
+      { href: "/admin/settings/", label: "Settings", icon: Settings, capability: "settings.change" },
+    ],
+  },
 ];
+
+/** Flat list, kept for the mobile bar where headings would not fit. */
+const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -169,6 +217,13 @@ function Sidebar({ email }: { email: string }) {
   // flashing the full nav and then removing links.
   const visibleNav = NAV.filter((item) => !item.capability || (ready && can(item.capability)));
 
+  // Groups with every item filtered out are dropped entirely: a heading over an
+  // empty section reads as something failing to load.
+  const visibleGroups = NAV_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((item) => !item.capability || (ready && can(item.capability))),
+  })).filter((g) => g.items.length > 0);
+
   useEffect(() => {
     setCollapsed(localStorage.getItem("admin-sidebar-collapsed") === "1");
   }, []);
@@ -250,26 +305,45 @@ function Sidebar({ email }: { email: string }) {
             height without it, so overflow-y-auto would never engage and the
             footer would stay pushed off screen. */}
         <nav
-          className="mt-4 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-color:#3a332c_transparent] [scrollbar-width:thin]"
+          className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-color:#3a332c_transparent] [scrollbar-width:thin]"
           aria-label="Admin"
         >
-          {visibleNav.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              title={collapsed ? label : undefined}
-              aria-current={pathname === href ? "page" : undefined}
-              className={`flex items-center gap-3 rounded-xl py-3 text-sm font-medium transition-colors duration-200 ${
-                collapsed ? "justify-center px-0" : "px-4"
-              } ${
-                pathname === href
-                  ? "bg-brass-500 text-night-950"
-                  : "text-cream-300 hover:bg-night-800 hover:text-cream-100"
-              }`}
-            >
-              <Icon size={18} className="shrink-0" />
-              {!collapsed && label}
-            </Link>
+          {visibleGroups.map((group, gi) => (
+            <div key={group.title ?? "root"} className={gi > 0 ? "mt-3" : undefined}>
+              {/* A heading is pointless when collapsed to icons, and the rule
+                  below does the separating instead. */}
+              {group.title && !collapsed && (
+                <p className="mb-1.5 px-4 text-[0.6rem] font-medium uppercase tracking-[0.22em] text-cream-600">
+                  {group.title}
+                </p>
+              )}
+              {group.title && collapsed && (
+                <span
+                  aria-hidden
+                  className="mx-auto mb-2 block h-px w-6 bg-night-700"
+                />
+              )}
+              <div className="flex flex-col gap-1">
+                {group.items.map(({ href, label, icon: Icon }) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    title={collapsed ? label : undefined}
+                    aria-current={pathname === href ? "page" : undefined}
+                    className={`flex items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition-colors duration-200 ${
+                      collapsed ? "justify-center px-0" : "px-4"
+                    } ${
+                      pathname === href
+                        ? "bg-brass-500 text-night-950"
+                        : "text-cream-300 hover:bg-night-800 hover:text-cream-100"
+                    }`}
+                  >
+                    <Icon size={18} className="shrink-0" />
+                    {!collapsed && <span className="truncate">{label}</span>}
+                  </Link>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
         <div className="shrink-0 border-t border-night-700/60 pt-4">

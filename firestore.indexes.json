@@ -69,6 +69,48 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "meterReadings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "meterName",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "meterReadings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "meterName",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "wageRates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "workType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "effectiveTo",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []
