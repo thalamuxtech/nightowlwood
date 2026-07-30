@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Loader2,
   Plus,
+  FileText,
   Printer,
   ShieldAlert,
   Trash2,
@@ -474,7 +475,7 @@ function RequestPanel({
           <div className="mt-5 flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => onPrint(items)}>
               <span className="flex items-center gap-1.5">
-                <Printer size={14} /> Preview &amp; print
+                <FileText size={14} /> View &amp; download
               </span>
             </Button>
 

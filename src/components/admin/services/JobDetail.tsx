@@ -10,6 +10,7 @@ import {
   Loader2,
   PenLine,
   Plus,
+  FileText,
   Printer,
   ShieldAlert,
   Trash2,
@@ -300,7 +301,7 @@ export function JobDetail() {
           </div>
           <Button variant="secondary" onClick={() => setPreviewing(true)}>
             <span className="flex items-center gap-2">
-              <Printer size={15} /> Preview &amp; print
+              <FileText size={15} /> View &amp; download
             </span>
           </Button>
         </header>

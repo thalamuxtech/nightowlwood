@@ -5,9 +5,9 @@ import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestor
 import {
   AlertTriangle,
   CheckCircle2,
+  FileText,
   Loader2,
   PenLine,
-  Printer,
   RefreshCw,
   ShieldAlert,
   Trash2,
@@ -354,14 +354,11 @@ export function WageRunScreen() {
                       <StatusPill tone={WAGE_RUN_STATUS_TONE[r.status]}>
                         {r.status}
                       </StatusPill>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewRun(r)}
-                        aria-label="Preview and print payslips"
-                        className="cursor-pointer text-cream-400 transition-colors hover:text-brass-300"
-                      >
-                        <Printer size={16} />
-                      </button>
+                      <Button variant="secondary" onClick={() => setPreviewRun(r)}>
+                        <span className="flex items-center gap-1.5">
+                          <FileText size={14} /> Payslips
+                        </span>
+                      </Button>
                       {/* Only a draft is editable: approving is the point at which
                           the figures become a decision already taken. */}
                       {r.status === "draft" && (
