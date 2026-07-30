@@ -3,6 +3,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -73,6 +74,63 @@ export async function recordExpense(
   });
 
   return ref.id;
+}
+
+/**
+ * Corrects a recorded expense.
+ *
+ * Editing rather than delete-and-recreate keeps the original `createdAt`, so the
+ * ledger stays in the order the money actually moved. Re-entering it would place
+ * the correction at today's date and quietly reorder the books.
+ *
+ * The before-image is captured for the audit entry: for money, what a figure was
+ * changed *from* is as important as what it became.
+ */
+export async function updateExpense(
+  db: Firestore,
+  actor: AuditActor,
+  expenseId: string,
+  input: NewExpense
+): Promise<void> {
+  if (input.amountKobo <= 0) throw new Error("Amount must be greater than zero.");
+  if (!input.payeeName.trim()) throw new Error("Record who was paid.");
+
+  const ref = doc(db, COL.expenses, expenseId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("That expense no longer exists.");
+  const prev = snap.data();
+
+  await updateDoc(ref, {
+    date: Timestamp.fromDate(input.date),
+    payeeType: input.payeeType,
+    payeeName: input.payeeName.trim(),
+    purpose: input.purpose.trim() || "Not stated",
+    category: input.category,
+    amountKobo: input.amountKobo,
+    receiptUrl: input.receiptUrl ?? null,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.expenses,
+    docId: expenseId,
+    summary:
+      `Corrected expense for ${input.payeeName.trim()}: ` +
+      `${prev.amountKobo ?? 0} → ${input.amountKobo} kobo`,
+    before: {
+      amountKobo: prev.amountKobo ?? 0,
+      category: prev.category ?? null,
+      payeeName: prev.payeeName ?? "",
+    },
+    after: {
+      amountKobo: input.amountKobo,
+      category: input.category,
+      payeeName: input.payeeName.trim(),
+    },
+  });
 }
 
 /** Deletes an expense. Admin only, enforced in rules. */

@@ -9,13 +9,20 @@ import {
   ClipboardCheck,
   Loader2,
   Package,
+  PenLine,
   Plus,
+  RotateCcw,
   ShieldAlert,
 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL, inventoryMovementsPath } from "@/lib/erp/collections";
-import { formatNaira, parseNairaInput } from "@/lib/erp/money";
-import { createInventoryItem, recordMovement } from "@/lib/erp/inventory";
+import { formatNaira, parseNairaInput, toNaira } from "@/lib/erp/money";
+import {
+  createInventoryItem,
+  recordMovement,
+  setInventoryItemActive,
+  updateInventoryItem,
+} from "@/lib/erp/inventory";
 import type { MovementType } from "@/lib/erp/enums";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import {
@@ -36,6 +43,8 @@ interface ItemRow {
   reorderLevel: number;
   unitCostKobo: number;
   supplier?: string;
+  sku?: string;
+  active: boolean;
   lastRestockedAtMs: number | null;
 }
 
@@ -71,23 +80,26 @@ export function InventoryScreen() {
     return onSnapshot(
       q,
       (snap) => {
+        // Retired items are read too, not filtered out at the snapshot: a
+        // retirement has to be reversible, and an item the query never returns
+        // could not be restored from this screen.
         setRows(
-          snap.docs
-            .filter((d) => d.data().active !== false)
-            .map((d) => {
-              const x = d.data();
-              return {
-                id: d.id,
-                name: x.name ?? "",
-                category: x.category ?? "",
-                unit: x.unit ?? "",
-                quantityOnHand: x.quantityOnHand ?? 0,
-                reorderLevel: x.reorderLevel ?? 0,
-                unitCostKobo: x.unitCostKobo ?? 0,
-                supplier: x.supplier ?? undefined,
-                lastRestockedAtMs: x.lastRestockedAt?.toMillis?.() ?? null,
-              };
-            })
+          snap.docs.map((d) => {
+            const x = d.data();
+            return {
+              id: d.id,
+              name: x.name ?? "",
+              category: x.category ?? "",
+              unit: x.unit ?? "",
+              quantityOnHand: x.quantityOnHand ?? 0,
+              reorderLevel: x.reorderLevel ?? 0,
+              unitCostKobo: x.unitCostKobo ?? 0,
+              supplier: x.supplier ?? undefined,
+              sku: x.sku ?? undefined,
+              active: x.active !== false,
+              lastRestockedAtMs: x.lastRestockedAt?.toMillis?.() ?? null,
+            };
+          })
         );
         setLoading(false);
       },
@@ -107,6 +119,9 @@ export function InventoryScreen() {
     [session.user, session.role]
   );
 
+  const active = useMemo(() => rows.filter((r) => r.active), [rows]);
+  const retired = useMemo(() => rows.filter((r) => !r.active), [rows]);
+
   /** Urgency, not alphabet: out of stock first, then low, then the rest. */
   const sorted = useMemo(() => {
     const rank = (r: ItemRow) => {
@@ -114,20 +129,22 @@ export function InventoryScreen() {
       if (r.reorderLevel > 0 && r.quantityOnHand <= r.reorderLevel) return 1;
       return 2;
     };
-    return [...rows]
+    return [...active]
       .filter((r) => !onlyLow || (r.reorderLevel > 0 && r.quantityOnHand <= r.reorderLevel))
       .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
-  }, [rows, onlyLow]);
+  }, [active, onlyLow]);
 
+  // Retired items are excluded from every figure: they are no longer stock the
+  // business intends to hold, so counting them would overstate what is on hand.
   const stats = useMemo(() => {
-    const low = rows.filter((r) => r.reorderLevel > 0 && r.quantityOnHand <= r.reorderLevel);
+    const low = active.filter((r) => r.reorderLevel > 0 && r.quantityOnHand <= r.reorderLevel);
     return {
-      items: rows.length,
+      items: active.length,
       low: low.length,
-      out: rows.filter((r) => r.quantityOnHand === 0).length,
-      value: rows.reduce((s, r) => s + r.quantityOnHand * r.unitCostKobo, 0),
+      out: active.filter((r) => r.quantityOnHand === 0).length,
+      value: active.reduce((s, r) => s + r.quantityOnHand * r.unitCostKobo, 0),
     };
-  }, [rows]);
+  }, [active]);
 
   return (
     <div className="mx-auto max-w-6xl pb-20">
@@ -174,7 +191,7 @@ export function InventoryScreen() {
       </div>
 
       {adding && (
-        <AddItemForm actor={actor} onClose={() => setAdding(false)} onError={setError} />
+        <ItemForm actor={actor} onClose={() => setAdding(false)} onError={setError} />
       )}
 
       {stats.low > 0 && (
@@ -201,9 +218,9 @@ export function InventoryScreen() {
       ) : sorted.length === 0 ? (
         <div className="mt-8">
           <EmptyState
-            title={rows.length === 0 ? "No stock recorded" : "Nothing needs reordering"}
+            title={active.length === 0 ? "No stock recorded" : "Nothing needs reordering"}
             hint={
-              rows.length === 0
+              active.length === 0
                 ? "Add the boards, tape, gum and fittings you keep on hand."
                 : "Every item is above its reorder level."
             }
@@ -223,6 +240,29 @@ export function InventoryScreen() {
             />
           ))}
         </div>
+      )}
+
+      {/* Retired items are kept visible but out of the way: their movement
+          history still explains past stock, and restoring one must be possible. */}
+      {retired.length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-xs uppercase tracking-wider text-cream-500">
+            Retired ({retired.length})
+          </h2>
+          <div className="mt-3 space-y-3 opacity-60">
+            {retired.map((r) => (
+              <ItemPanel
+                key={r.id}
+                item={r}
+                open={openId === r.id}
+                onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                canEdit={canEdit}
+                actor={actor}
+                onError={setError}
+              />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );
@@ -245,6 +285,7 @@ function ItemPanel({
 }) {
   const [movements, setMovements] = useState<MovementRow[]>([]);
   const [mode, setMode] = useState<MovementType | null>(null);
+  const [editing, setEditing] = useState(false);
   const [qty, setQty] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -331,7 +372,9 @@ function ItemPanel({
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-3">
-          {out ? (
+          {!item.active ? (
+            <StatusPill tone="neutral">Retired</StatusPill>
+          ) : out ? (
             <StatusPill tone="danger">Out of stock</StatusPill>
           ) : low ? (
             <StatusPill tone="warn">Reorder</StatusPill>
@@ -361,9 +404,63 @@ function ItemPanel({
                   : "Never"
               }
             />
+            {item.sku && <Detail label="SKU" value={item.sku} />}
           </dl>
 
           {canEdit && (
+            <div className="mt-5 flex flex-wrap gap-3">
+              {!editing && (
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className="flex cursor-pointer items-center gap-2 text-sm text-brass-300 transition-colors hover:text-brass-200"
+                >
+                  <PenLine size={15} /> Edit details
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() =>
+                  setInventoryItemActive(
+                    getDb(),
+                    actor,
+                    item.id,
+                    !item.active,
+                    item.name
+                  ).catch((e) =>
+                    onError(
+                      e instanceof Error
+                        ? e.message
+                        : item.active
+                          ? "Could not retire the item."
+                          : "Could not restore the item."
+                    )
+                  )
+                }
+                // Retiring rather than deleting: the movement ledger is the
+                // record of stock that passed through, and removing the item
+                // would leave those movements pointing at nothing.
+                className={`flex cursor-pointer items-center gap-2 text-sm transition-colors ${
+                  item.active
+                    ? "text-cream-500 hover:text-amber-300"
+                    : "text-cream-500 hover:text-brass-300"
+                }`}
+              >
+                <RotateCcw size={14} /> {item.active ? "Retire item" : "Restore item"}
+              </button>
+            </div>
+          )}
+
+          {canEdit && editing && (
+            <ItemForm
+              actor={actor}
+              editing={item}
+              onClose={() => setEditing(false)}
+              onError={onError}
+            />
+          )}
+
+          {canEdit && item.active && (
             <div className="mt-5">
               {mode ? (
                 <div className="rounded-xl border border-night-700/60 bg-night-950/40 p-4">
@@ -466,23 +563,37 @@ function defaultReason(mode: MovementType): string {
   return "Stock take";
 }
 
-function AddItemForm({
+/**
+ * The one item form, used to add and to correct.
+ *
+ * Quantity on hand appears only when adding. Editing it would leave the item
+ * claiming a balance the movement ledger cannot account for, so a correction to
+ * the count is a stock take rather than a field on this form.
+ */
+function ItemForm({
   actor,
+  editing,
   onClose,
   onError,
 }: {
   actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  editing?: ItemRow;
   onClose: () => void;
   onError: (m: string) => void;
 }) {
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("boards");
-  const [unit, setUnit] = useState("sheet");
+  const [name, setName] = useState(editing?.name ?? "");
+  const [category, setCategory] = useState(editing?.category ?? "boards");
+  const [unit, setUnit] = useState(editing?.unit ?? "sheet");
   const [qty, setQty] = useState("");
-  const [reorder, setReorder] = useState("");
-  const [cost, setCost] = useState("");
-  const [supplier, setSupplier] = useState("");
+  const [reorder, setReorder] = useState(editing ? String(editing.reorderLevel) : "");
+  const [cost, setCost] = useState(editing ? String(toNaira(editing.unitCostKobo)) : "");
+  const [supplier, setSupplier] = useState(editing?.supplier ?? "");
+  const [sku, setSku] = useState(editing?.sku ?? "");
   const [busy, setBusy] = useState(false);
+
+  // Field ids are suffixed per item, since an item's form can be open while the
+  // add form is showing and duplicate ids would misdirect the labels.
+  const key = editing ? editing.id : "new";
 
   async function submit() {
     if (!name.trim()) {
@@ -491,18 +602,32 @@ function AddItemForm({
     }
     setBusy(true);
     try {
-      await createInventoryItem(getDb(), actor, {
+      const shared = {
         name: name.trim(),
         category,
         unit: unit.trim() || "unit",
-        quantityOnHand: Number(qty) || 0,
         reorderLevel: Number(reorder) || 0,
         unitCostKobo: parseNairaInput(cost),
         supplier: supplier.trim() || undefined,
-      });
+        sku: sku.trim() || undefined,
+      };
+      if (editing) {
+        await updateInventoryItem(getDb(), actor, editing.id, shared);
+      } else {
+        await createInventoryItem(getDb(), actor, {
+          ...shared,
+          quantityOnHand: Number(qty) || 0,
+        });
+      }
       onClose();
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Could not add the item.");
+      onError(
+        e instanceof Error
+          ? e.message
+          : editing
+            ? "Could not save the item."
+            : "Could not add the item."
+      );
     } finally {
       setBusy(false);
     }
@@ -510,11 +635,19 @@ function AddItemForm({
 
   return (
     <section className="mt-6 rounded-3xl border border-brass-500/30 bg-night-900/40 p-6">
-      <h2 className="font-display text-lg text-cream-100">Add an item</h2>
+      <h2 className="font-display text-lg text-cream-100">
+        {editing ? "Correct this item" : "Add an item"}
+      </h2>
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <TextField id="inv-name" label="Name" value={name} onChange={setName} required />
+        <TextField
+          id={`inv-name-${key}`}
+          label="Name"
+          value={name}
+          onChange={setName}
+          required
+        />
         <SelectField
-          id="inv-cat"
+          id={`inv-cat-${key}`}
           label="Category"
           value={category}
           onChange={setCategory}
@@ -526,26 +659,45 @@ function AddItemForm({
             { value: "other", label: "Other" },
           ]}
         />
-        <TextField id="inv-unit" label="Unit" value={unit} onChange={setUnit} />
+        <TextField id={`inv-unit-${key}`} label="Unit" value={unit} onChange={setUnit} />
         <TextField
-          id="inv-supplier"
+          id={`inv-supplier-${key}`}
           label="Usual supplier"
           value={supplier}
           onChange={setSupplier}
         />
-        <NumberField id="inv-qty" label="Quantity on hand" value={qty} onChange={setQty} />
+        {!editing && (
+          <NumberField
+            id={`inv-qty-${key}`}
+            label="Quantity on hand"
+            value={qty}
+            onChange={setQty}
+          />
+        )}
         <NumberField
-          id="inv-reorder"
+          id={`inv-reorder-${key}`}
           label="Reorder level"
           value={reorder}
           onChange={setReorder}
           hint="alert at or below"
         />
-        <NumberField id="inv-cost" label="Unit cost (₦)" value={cost} onChange={setCost} />
+        <NumberField
+          id={`inv-cost-${key}`}
+          label="Unit cost (₦)"
+          value={cost}
+          onChange={setCost}
+        />
+        <TextField id={`inv-sku-${key}`} label="SKU" value={sku} onChange={setSku} />
       </div>
+      {editing && (
+        <p className="mt-3 text-xs text-cream-500">
+          The count stays as the movement ledger reports it. Use a stock take to
+          correct the quantity on hand.
+        </p>
+      )}
       <div className="mt-5 flex gap-3">
         <Button onClick={submit} busy={busy}>
-          Add item
+          {editing ? "Save changes" : "Add item"}
         </Button>
         <Button variant="ghost" onClick={onClose}>
           Cancel

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Cell,
@@ -10,7 +10,7 @@ import {
   Tooltip,
 } from "recharts";
 import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
-import { Loader2, Plus, Receipt, ShieldAlert, Trash2 } from "lucide-react";
+import { Loader2, PenLine, Plus, Receipt, ShieldAlert, Trash2 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import {
@@ -18,8 +18,8 @@ import {
   EXPENSE_CATEGORY_LABELS,
   type ExpenseCategory,
 } from "@/lib/erp/enums";
-import { formatNaira, formatNairaCompact, parseNairaInput } from "@/lib/erp/money";
-import { deleteExpense, recordExpense } from "@/lib/erp/ledgers";
+import { formatNaira, formatNairaCompact, parseNairaInput, toNaira } from "@/lib/erp/money";
+import { deleteExpense, recordExpense, updateExpense } from "@/lib/erp/ledgers";
 import { fromDateInputValue, toDateInputValue } from "@/lib/erp/workLogs";
 import { LiveCounter } from "@/components/admin/ui/LiveCounter";
 import {
@@ -69,6 +69,7 @@ export function ExpensesScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [range, setRange] = useState<RangeKey>("30d");
   const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | "all">("all");
 
@@ -171,7 +172,7 @@ export function ExpensesScreen() {
       )}
 
       {adding && (
-        <AddExpenseForm actor={actor} onClose={() => setAdding(false)} onError={setError} />
+        <ExpenseForm actor={actor} onClose={() => setAdding(false)} onError={setError} />
       )}
 
       <div className="mt-8 flex flex-wrap gap-2">
@@ -359,7 +360,8 @@ export function ExpensesScreen() {
               </thead>
               <tbody className="divide-y divide-night-800">
                 {visible.map((r) => (
-                  <tr key={r.id} className="transition-colors hover:bg-night-900/40">
+                  <Fragment key={r.id}>
+                  <tr className="transition-colors hover:bg-night-900/40">
                     <td className="px-5 py-3.5 text-cream-400">
                       {r.dateMs
                         ? new Date(r.dateMs).toLocaleDateString("en-GB", {
@@ -381,28 +383,55 @@ export function ExpensesScreen() {
                     </td>
                     {isAdmin && (
                       <td className="px-5 py-3.5 text-right">
-                        <button
-                          type="button"
-                          aria-label={`Delete ${r.purpose}`}
-                          onClick={() =>
-                            deleteExpense(
-                              getDb(),
-                              actor,
-                              r.id,
-                              `${r.payeeName}: ${r.purpose}`
-                            ).catch((e) =>
-                              setError(
-                                e instanceof Error ? e.message : "Could not delete."
+                        <div className="flex justify-end gap-3">
+                          <button
+                            type="button"
+                            aria-label={`Edit ${r.purpose}`}
+                            onClick={() =>
+                              setEditingId(editingId === r.id ? null : r.id)
+                            }
+                            className="cursor-pointer text-cream-600 transition-colors hover:text-brass-300"
+                          >
+                            <PenLine size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Delete ${r.purpose}`}
+                            onClick={() =>
+                              deleteExpense(
+                                getDb(),
+                                actor,
+                                r.id,
+                                `${r.payeeName}: ${r.purpose}`
+                              ).catch((e) =>
+                                setError(
+                                  e instanceof Error ? e.message : "Could not delete."
+                                )
                               )
-                            )
-                          }
-                          className="cursor-pointer text-cream-600 transition-colors hover:text-red-400"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                            }
+                            className="cursor-pointer text-cream-600 transition-colors hover:text-red-400"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
+                  {isAdmin && editingId === r.id && (
+                    <tr>
+                      {/* The form spans the row it corrects, so the entry being
+                          changed stays visible directly above it. */}
+                      <td colSpan={6} className="px-5 pb-5">
+                        <ExpenseForm
+                          actor={actor}
+                          editing={r}
+                          onClose={() => setEditingId(null)}
+                          onError={setError}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -413,22 +442,44 @@ export function ExpensesScreen() {
   );
 }
 
-function AddExpenseForm({
+/**
+ * The one expense form, used to record and to correct.
+ *
+ * A correction has to offer exactly the fields the entry was created with,
+ * otherwise something typed on the way in would have no way back out. Passing
+ * the existing row switches it to editing rather than duplicating the fields.
+ */
+function ExpenseForm({
   actor,
+  editing,
   onClose,
   onError,
 }: {
   actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  editing?: ExpenseRow;
   onClose: () => void;
   onError: (m: string) => void;
 }) {
-  const [date, setDate] = useState(toDateInputValue(new Date()));
-  const [payeeType, setPayeeType] = useState<"staff" | "company" | "vendor">("vendor");
-  const [payeeName, setPayeeName] = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [category, setCategory] = useState<ExpenseCategory>("consumables");
-  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(
+    toDateInputValue(editing?.dateMs ? new Date(editing.dateMs) : new Date())
+  );
+  const [payeeType, setPayeeType] = useState<"staff" | "company" | "vendor">(
+    (editing?.payeeType as "staff" | "company" | "vendor") ?? "vendor"
+  );
+  const [payeeName, setPayeeName] = useState(editing?.payeeName ?? "");
+  const [purpose, setPurpose] = useState(editing?.purpose ?? "");
+  const [category, setCategory] = useState<ExpenseCategory>(
+    editing?.category ?? "consumables"
+  );
+  const [amount, setAmount] = useState(
+    editing ? String(toNaira(editing.amountKobo)) : ""
+  );
   const [busy, setBusy] = useState(false);
+
+  // Field ids are suffixed per row: two of these can be mounted at once when a
+  // row is being corrected while the create form is open, and duplicate ids
+  // would send the labels to the wrong input.
+  const key = editing ? editing.id : "new";
 
   async function submit() {
     const kobo = parseNairaInput(amount);
@@ -442,17 +493,28 @@ function AddExpenseForm({
     }
     setBusy(true);
     try {
-      await recordExpense(getDb(), actor, {
+      const input = {
         date: fromDateInputValue(date),
         payeeType,
         payeeName,
         purpose,
         category,
         amountKobo: kobo,
-      });
+      };
+      if (editing) {
+        await updateExpense(getDb(), actor, editing.id, input);
+      } else {
+        await recordExpense(getDb(), actor, input);
+      }
       onClose();
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Could not record the expense.");
+      onError(
+        e instanceof Error
+          ? e.message
+          : editing
+            ? "Could not save the expense."
+            : "Could not record the expense."
+      );
     } finally {
       setBusy(false);
     }
@@ -461,15 +523,16 @@ function AddExpenseForm({
   return (
     <section className="mt-6 rounded-3xl border border-brass-500/30 bg-night-900/40 p-6">
       <h2 className="flex items-center gap-2 font-display text-lg text-cream-100">
-        <Receipt size={18} className="text-brass-400" /> Record an expense
+        <Receipt size={18} className="text-brass-400" />{" "}
+        {editing ? "Correct this expense" : "Record an expense"}
       </h2>
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
-          <label htmlFor="exp-date" className="mb-1.5 block text-sm text-cream-300">
+          <label htmlFor={`exp-date-${key}`} className="mb-1.5 block text-sm text-cream-300">
             Date
           </label>
           <input
-            id="exp-date"
+            id={`exp-date-${key}`}
             type="date"
             value={date}
             max={toDateInputValue(new Date())}
@@ -478,7 +541,7 @@ function AddExpenseForm({
           />
         </div>
         <SelectField
-          id="exp-payee-type"
+          id={`exp-payee-type-${key}`}
           label="Paid to"
           value={payeeType}
           onChange={(v) => setPayeeType(v as "staff" | "company" | "vendor")}
@@ -489,21 +552,21 @@ function AddExpenseForm({
           ]}
         />
         <TextField
-          id="exp-payee"
+          id={`exp-payee-${key}`}
           label="Name"
           value={payeeName}
           onChange={setPayeeName}
           required
         />
         <TextField
-          id="exp-purpose"
+          id={`exp-purpose-${key}`}
           label="Purpose"
           value={purpose}
           onChange={setPurpose}
           placeholder="Diesel for generator"
         />
         <SelectField
-          id="exp-category"
+          id={`exp-category-${key}`}
           label="Category"
           value={category}
           onChange={(v) => setCategory(v as ExpenseCategory)}
@@ -512,11 +575,16 @@ function AddExpenseForm({
             label: EXPENSE_CATEGORY_LABELS[c] ?? c,
           }))}
         />
-        <NumberField id="exp-amount" label="Amount (₦)" value={amount} onChange={setAmount} />
+        <NumberField
+          id={`exp-amount-${key}`}
+          label="Amount (₦)"
+          value={amount}
+          onChange={setAmount}
+        />
       </div>
       <div className="mt-5 flex gap-3">
         <Button onClick={submit} busy={busy}>
-          Record
+          {editing ? "Save changes" : "Record"}
         </Button>
         <Button variant="ghost" onClick={onClose}>
           Cancel

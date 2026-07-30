@@ -3,8 +3,10 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   serverTimestamp,
   Timestamp,
+  updateDoc,
   type Firestore,
 } from "firebase/firestore";
 import { COL } from "./collections";
@@ -77,6 +79,72 @@ export async function createWorkLog(
   });
 
   return ref.id;
+}
+
+/**
+ * Corrects a work log.
+ *
+ * A work log is the sole input to payroll, so a mis-keyed board count mis-pays a
+ * real person. Correction was previously delete-and-recreate, which loses who
+ * originally recorded it and when.
+ *
+ * Wage runs snapshot their lines at save time, so an edit cannot retroactively
+ * change a run that has already been generated, approved or paid. It does change
+ * what a *future* run for that period computes, which is the intended behaviour
+ * for a correction, and is why the before-image is recorded.
+ */
+export async function updateWorkLog(
+  db: Firestore,
+  actor: AuditActor,
+  logId: string,
+  input: NewWorkLog
+): Promise<void> {
+  if (input.units <= 0) throw new Error("Units must be greater than zero.");
+
+  const ref = doc(db, COL.workLogs, logId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("That work log no longer exists.");
+  const prev = snap.data();
+
+  const ids = (input.assistantIds ?? []).filter(Boolean);
+
+  await updateDoc(ref, {
+    staffId: input.staffId,
+    staffName: input.staffName,
+    workType: input.workType,
+    units: input.units,
+    workDate: Timestamp.fromDate(input.workDate),
+    assistantIds: ids,
+    assistantNames: input.assistantNames ?? [],
+    assistantCount: ids.length,
+    jobId: input.jobId ?? null,
+    jobNumber: input.jobNumber ?? null,
+    notes: input.notes ?? null,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.workLogs,
+    docId: logId,
+    summary:
+      `Corrected work log for ${input.staffName}: ` +
+      `${prev.units ?? 0} → ${input.units} × ${input.workType}`,
+    before: {
+      staffId: prev.staffId ?? "",
+      workType: prev.workType ?? "",
+      units: prev.units ?? 0,
+      assistantCount: prev.assistantCount ?? 0,
+    },
+    after: {
+      staffId: input.staffId,
+      workType: input.workType,
+      units: input.units,
+      assistantCount: ids.length,
+    },
+  });
 }
 
 /**

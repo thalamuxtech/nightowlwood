@@ -7,11 +7,13 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronDown,
   ClipboardList,
+  Contact,
   Eye,
   EyeOff,
   FolderKanban,
   GalleryHorizontalEnd,
   Gauge,
+  Coins,
   HandCoins,
   Inbox,
   LayoutDashboard,
@@ -101,6 +103,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/expenses/", label: "Expenses", icon: Receipt, capability: "expense.view" },
       { href: "/admin/meters/", label: "Power Meters", icon: Gauge, capability: "expense.view" },
       { href: "/admin/payroll/", label: "Payroll", icon: Wallet, capability: "wage.run" },
+      { href: "/admin/wage-rates/", label: "Piece Rates", icon: Coins, capability: "wage.editRates" },
       { href: "/admin/loans/", label: "Loans & Advances", icon: HandCoins, capability: "loan.request" },
     ],
   },
@@ -120,6 +123,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "Admin",
     items: [
+      // Gated on customer.edit rather than staff.edit: managers keep the
+      // customer and supplier lists, and the staff tab hides its own controls
+      // from anyone without staff.edit.
+      { href: "/admin/directory/", label: "Directory", icon: Contact, capability: "customer.edit" },
       { href: "/admin/users/", label: "Users & Roles", icon: ShieldCheck, capability: "user.manage" },
       { href: "/admin/settings/", label: "Settings", icon: Settings, capability: "settings.change" },
     ],

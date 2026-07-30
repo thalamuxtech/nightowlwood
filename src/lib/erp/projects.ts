@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
   runTransaction,
@@ -73,6 +74,100 @@ export async function createProject(
   });
 
   return { projectId: ref.id, projectNumber };
+}
+
+/**
+ * Corrects a project's details.
+ *
+ * The project number is deliberately not editable: it is the reference quoted on
+ * estimates, invoices and to the client, so renumbering after the fact would break
+ * every document that already cites it. Everything a person types by hand is.
+ *
+ * Costs are excluded too. They are derived from the priced features beneath the
+ * project, and letting them be typed over would put the header out of step with
+ * the lines that justify it.
+ */
+export async function updateProjectDetails(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  input: {
+    title: string;
+    customerId: string;
+    customerName: string;
+    location?: string;
+    targetDate?: Date | null;
+    notes?: string;
+  }
+): Promise<void> {
+  if (!input.title.trim()) throw new Error("A project needs a title.");
+  if (!input.customerName.trim()) throw new Error("A project needs a client.");
+
+  const ref = doc(db, COL.projects, projectId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Project not found.");
+  const prev = snap.data();
+
+  await updateDoc(ref, {
+    title: input.title.trim(),
+    customerId: input.customerId,
+    customerName: input.customerName.trim(),
+    location: input.location?.trim() || null,
+    targetDate: input.targetDate ? Timestamp.fromDate(input.targetDate) : null,
+    notes: input.notes?.trim() || null,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.projects,
+    docId: projectId,
+    summary: `Edited ${prev.projectNumber ?? "project"}: ${input.title.trim()}`,
+    before: { title: prev.title ?? "", customerName: prev.customerName ?? "" },
+    after: { title: input.title.trim(), customerName: input.customerName.trim() },
+  });
+}
+
+/**
+ * Renames a component, or moves it in the ordering.
+ *
+ * The category is fixed after creation because it selected the template that
+ * generated the feature rows; changing it would leave a closet's line items under
+ * a component labelled as a kitchen. A component in the wrong category has to be
+ * recreated, which is what removeComponent is for.
+ */
+export async function updateComponent(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  componentId: string,
+  input: { name: string; order?: number }
+): Promise<void> {
+  if (!input.name.trim()) throw new Error("A component needs a name.");
+
+  const ref = doc(db, `${componentsPath(projectId)}/${componentId}`);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("That component no longer exists.");
+  const prev = snap.data();
+
+  await updateDoc(ref, {
+    name: input.name.trim(),
+    ...(input.order === undefined ? {} : { order: input.order }),
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.projects,
+    docId: projectId,
+    summary: `Renamed component "${prev.name ?? ""}" to "${input.name.trim()}"`,
+    before: { name: prev.name ?? "" },
+    after: { name: input.name.trim() },
+  });
 }
 
 export async function setProjectStatus(
@@ -176,7 +271,15 @@ export async function saveFeature(
   projectId: string,
   componentId: string,
   featureId: string,
-  values: { quantity: number; unitPriceKobo: number; actualQuantity?: number | null; notes?: string }
+  values: {
+    quantity: number;
+    unitPriceKobo: number;
+    actualQuantity?: number | null;
+    notes?: string;
+    /** Renames the line. Omitted leaves the existing label untouched, so callers
+     *  that only price a templated row cannot blank its name by accident. */
+    item?: string;
+  }
 ): Promise<void> {
   const amountKobo = lineAmountKobo(values.quantity, values.unitPriceKobo);
   const featureRef = doc(db, `${featuresPath(projectId, componentId)}/${featureId}`);
@@ -206,6 +309,9 @@ export async function saveFeature(
       amountKobo,
       actualQuantity: values.actualQuantity ?? null,
       notes: values.notes ?? null,
+      // Only written when supplied: an absent label must not overwrite the
+      // template's own wording with an empty string.
+      ...(values.item?.trim() ? { item: values.item.trim() } : {}),
       updatedAt: serverTimestamp(),
       updatedBy: actor.uid,
     });

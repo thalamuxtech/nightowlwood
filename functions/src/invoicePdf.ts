@@ -97,15 +97,41 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 /**
- * Money, formatted for print.
+ * The digits of an amount, without the currency sign.
  *
  * Intl is not used for the symbol: its output for NGN varies by ICU build (some
  * emit "NGN", some "₦"), and an invoice cannot look different depending on which
- * runtime rendered it. The sign is written explicitly.
+ * runtime rendered it. The sign is drawn separately by drawMoney.
  */
-function naira(kobo: number): string {
-  const whole = Math.round(kobo / 100);
-  return "₦" + whole.toLocaleString("en-US");
+function nairaDigits(kobo: number): string {
+  return Math.round(kobo / 100).toLocaleString("en-US");
+}
+
+/**
+ * Writes an amount right-aligned, with the sign kept against its digits.
+ *
+ * An earlier attempt pinned the ₦ to the left of the column and the digits to the
+ * right to get a perfect column of numerals. It read badly: on a wide column the
+ * sign ends up stranded an inch from the number it belongs to. Keeping them
+ * together and right-aligning the pair is what printed invoices actually do, and
+ * the digits still line up closely enough to scan because the sign is a fixed
+ * width in this font.
+ */
+function drawMoney(
+  doc: Doc,
+  kobo: number,
+  x: number,
+  y: number,
+  width: number,
+  opts: { bold?: boolean; size?: number; color?: string } = {}
+): void {
+  const { bold = false, size = 8.5, color = C.ink } = opts;
+  doc.font(bold ? BOLD : REGULAR).fontSize(size).fillColor(color);
+  doc.text("₦" + nairaDigits(kobo), x, y, {
+    width,
+    align: "right",
+    lineBreak: false,
+  });
 }
 
 function fmtDate(ms: number | null): string {
@@ -120,58 +146,76 @@ function fmtDate(ms: number | null): string {
 
 type Doc = PDFKit.PDFDocument;
 
-/** Header band: logo and company on the left, document identity on the right. */
+/**
+ * Header band, bled to the paper edges.
+ *
+ * Full-bleed rather than inset within the margin: a band that stops short on three
+ * sides reads as a box sitting on the page, whereas one that runs to the edges reads
+ * as letterhead. It also gives the mark room to be seen at a glance, which a 28pt
+ * logo inside a margin did not.
+ */
 function drawHeader(doc: Doc, invoice: PdfInvoice, company: PdfCompany): number {
-  const BAND_H = 58;
-  doc.rect(MARGIN, MARGIN, CONTENT_W, BAND_H).fill(C.brown);
+  const BAND_H = 92;
+  doc.rect(0, 0, PAGE.width, BAND_H).fill(C.brown);
   // The brass rule under the band is what makes it read as letterhead rather
   // than a block of colour.
-  doc.rect(MARGIN, MARGIN + BAND_H, CONTENT_W, 2.5).fill(C.brass);
+  doc.rect(0, BAND_H, PAGE.width, 3).fill(C.brass);
 
   const logo = join(__dirname, "..", "assets", "owl-mark.png");
-  let textX = MARGIN + 14;
+  let textX = MARGIN;
   if (existsSync(logo)) {
     try {
-      doc.image(logo, MARGIN + 14, MARGIN + 15, { height: 28 });
-      textX = MARGIN + 14 + 44;
+      doc.image(logo, MARGIN, 26, { height: 40 });
+      textX = MARGIN + 62;
     } catch {
       // A missing or unreadable logo must not cost the customer their invoice.
     }
   }
 
-  doc.font(BOLD).fontSize(13).fillColor(C.white);
-  doc.text(company.name, textX, MARGIN + 16, { width: 300, lineBreak: false });
-  doc.font(REGULAR).fontSize(7.5).fillColor(C.brassPale);
-  doc.text(company.tagline, textX, MARGIN + 34, { width: 300, lineBreak: false });
+  doc.font(BOLD).fontSize(16).fillColor(C.white);
+  doc.text(company.name, textX, 30, { width: 300, lineBreak: false });
+  doc.font(REGULAR).fontSize(8).fillColor(C.brass);
+  doc.text(company.tagline.toUpperCase(), textX, 52, {
+    width: 300,
+    lineBreak: false,
+    characterSpacing: 1.4,
+  });
 
   const overdue =
     invoice.balanceKobo > 0 && invoice.dueAtMs !== null && invoice.dueAtMs < Date.now();
-  const rightW = 170;
-  const rightX = MARGIN + CONTENT_W - rightW - 14;
+  const rightW = 200;
+  const rightX = PAGE.width - MARGIN - rightW;
 
-  doc.font(REGULAR).fontSize(8).fillColor(C.brassPale);
-  doc.text("INVOICE", rightX, MARGIN + 13, {
+  doc.font(REGULAR).fontSize(8.5).fillColor(C.brass);
+  doc.text("INVOICE", rightX, 26, {
     width: rightW,
     align: "right",
-    characterSpacing: 2,
+    characterSpacing: 3.5,
   });
-  doc.font(BOLD).fontSize(14).fillColor(C.white);
-  doc.text(invoice.invoiceNumber, rightX, MARGIN + 26, { width: rightW, align: "right" });
+  doc.font(BOLD).fontSize(19).fillColor(C.white);
+  doc.text(invoice.invoiceNumber, rightX, 40, { width: rightW, align: "right" });
 
   const label = overdue ? "OVERDUE" : (STATUS_LABELS[invoice.status] ?? invoice.status);
   doc.font(BOLD).fontSize(7);
-  const chipW = doc.widthOfString(label) + 12;
-  const chipX = MARGIN + CONTENT_W - 14 - chipW;
-  const chipY = MARGIN + 44;
-  doc
-    .roundedRect(chipX, chipY, chipW, 12, 2)
-    .lineWidth(0.7)
-    .strokeColor(overdue ? C.late : C.brass)
-    .stroke();
-  doc.fillColor(overdue ? "#ffd9cf" : C.brassPale);
-  doc.text(label, chipX, chipY + 3.2, { width: chipW, align: "center" });
+  const chipW = doc.widthOfString(label.toUpperCase(), { characterSpacing: 0.8 }) + 16;
+  const chipX = PAGE.width - MARGIN - chipW;
+  const chipY = 66;
+  // Filled for an overdue invoice rather than outlined: it is the one state that
+  // should be impossible to miss on a glance across a desk.
+  if (overdue) {
+    doc.roundedRect(chipX, chipY, chipW, 14, 3).fill(C.late);
+    doc.fillColor(C.white);
+  } else {
+    doc.roundedRect(chipX, chipY, chipW, 14, 3).lineWidth(0.8).strokeColor(C.brass).stroke();
+    doc.fillColor(C.brass);
+  }
+  doc.text(label.toUpperCase(), chipX, chipY + 4, {
+    width: chipW,
+    align: "center",
+    characterSpacing: 0.8,
+  });
 
-  return MARGIN + BAND_H + 2.5 + 18;
+  return BAND_H + 3 + 22;
 }
 
 /** Small caps-ish section heading with a hairline under it. */
@@ -198,9 +242,11 @@ function drawParties(doc: Doc, invoice: PdfInvoice, y: number): number {
   const rightX = MARGIN + colW + 24;
 
   let ly = sectionHeading(doc, "Billed to", MARGIN, y, colW);
-  doc.font(BOLD).fontSize(10.5).fillColor(C.ink);
+  // Larger than the surrounding body text: on a document that gets filed by
+  // client, the client's name is what someone scans for.
+  doc.font(BOLD).fontSize(12).fillColor(C.ink);
   doc.text(invoice.customerName, MARGIN, ly, { width: colW });
-  ly = doc.y + 2;
+  ly = doc.y + 3;
   doc.font(REGULAR).fontSize(8).fillColor(C.muted);
   for (const line of [invoice.customerAddress, invoice.customerPhone]) {
     if (!line) continue;
@@ -233,7 +279,16 @@ const COLS = [
   { key: "amt", label: "Amount", w: 0.2, align: "right" as const },
 ];
 
-const MIN_LINES = 4;
+/**
+ * Blank rows drawn beneath a short item list.
+ *
+ * Twelve rather than four. The payment panel is pinned to the foot of the page, so
+ * a four-line invoice left a hand's width of empty paper between the notes and that
+ * panel, which reads as a document that was truncated. Ruled blank rows fill the
+ * space the way a paper invoice book does, and they also stop anyone adding a line
+ * by hand after the fact without it being obvious.
+ */
+const MIN_LINES = 12;
 /** Reserved for totals, payment details and the footer. */
 const TAIL_RESERVE = 250;
 
@@ -284,23 +339,39 @@ function drawLines(doc: Doc, invoice: PdfInvoice, startY: number): number {
       : 0;
     const rowH = Math.max(15, descH + 7);
 
-    const cells = line
-      ? [
-          String(i + 1),
-          desc,
-          String(line.quantity),
-          naira(line.unitPriceKobo),
-          naira(line.amountKobo),
-        ]
-      : [String(i + 1), "", "", "", ""];
+    // Zebra banding on alternate rows. Across a long item list this is what lets
+    // the eye track a description to its amount without a ruler.
+    if (line && i % 2 === 1) {
+      doc.rect(MARGIN, y, CONTENT_W, rowH).fill(C.panel);
+    }
 
-    COLS.forEach((c, ci) => {
-      doc.fillColor(ci === 0 ? C.faint : C.ink);
-      doc.text(cells[ci], xs[ci] + 4, y + 4, {
-        width: c.w * CONTENT_W - 8,
-        align: c.align,
+    doc.font(REGULAR).fontSize(8.5);
+    if (line) {
+      doc.fillColor(C.faint);
+      doc.text(String(i + 1), xs[0] + 4, y + 5, {
+        width: COLS[0].w * CONTENT_W - 8,
+        lineBreak: false,
       });
-    });
+      doc.fillColor(C.ink);
+      doc.text(desc, xs[1] + 4, y + 5, { width: COLS[1].w * CONTENT_W - 8 });
+      doc.text(String(line.quantity), xs[2] + 4, y + 5, {
+        width: COLS[2].w * CONTENT_W - 8,
+        align: "right",
+        lineBreak: false,
+      });
+      drawMoney(doc, line.unitPriceKobo, xs[3] + 6, y + 5, COLS[3].w * CONTENT_W - 12, {
+        color: C.muted,
+      });
+      drawMoney(doc, line.amountKobo, xs[4] + 6, y + 5, COLS[4].w * CONTENT_W - 12, {
+        bold: true,
+      });
+    } else {
+      doc.fillColor(C.faint);
+      doc.text(String(i + 1), xs[0] + 4, y + 5, {
+        width: COLS[0].w * CONTENT_W - 8,
+        lineBreak: false,
+      });
+    }
 
     y += rowH;
     doc.moveTo(MARGIN, y).lineTo(MARGIN + CONTENT_W, y).lineWidth(0.4).strokeColor(C.border).stroke();
@@ -310,90 +381,138 @@ function drawLines(doc: Doc, invoice: PdfInvoice, startY: number): number {
 }
 
 function drawTotals(doc: Doc, invoice: PdfInvoice, y: number): number {
-  const boxW = 210;
+  const boxW = 250;
   const x = MARGIN + CONTENT_W - boxW;
   const settled = invoice.balanceKobo <= 0 && invoice.totalKobo > 0;
+  const PAD = 12;
 
-  const entries: Array<[string, string]> = [["Subtotal", naira(invoice.subtotalKobo)]];
+  const entries: Array<[string, number]> = [["Subtotal", invoice.subtotalKobo]];
   if (invoice.taxKobo > 0) {
     const label =
       (invoice.taxLabel ?? "Tax") +
       (invoice.taxPercent ? ` (${invoice.taxPercent}%)` : "");
-    entries.push([label, naira(invoice.taxKobo)]);
+    entries.push([label, invoice.taxKobo]);
   }
-  entries.push(["Total", naira(invoice.totalKobo)]);
+  entries.push(["Total", invoice.totalKobo]);
   if (invoice.amountPaidKobo > 0) {
-    entries.push(["Paid", naira(invoice.amountPaidKobo)]);
+    entries.push(["Less paid", -invoice.amountPaidKobo]);
   }
 
-  // Clear of the last item row. Without this the totals crowd the table and read
-  // as another line of it rather than a summary of it.
-  let yy = y + 6;
-  doc.fontSize(8.5);
+  // Clear of the last item row, so the totals read as a summary of the table
+  // rather than another line in it.
+  const top = y + 10;
+  const rowsH = entries.length * 15;
+  const dueH = 34;
+
+  // A tinted panel groups the working figures, and the amount due sits in solid
+  // brown beneath it. Previously both were loose text and the one number the
+  // recipient is looking for had no more weight than the subtotal.
+  doc.rect(x, top, boxW, rowsH + PAD).fill(C.panel);
+  doc.rect(x, top, 2.5, rowsH + PAD).fill(C.brass);
+
+  let yy = top + PAD * 0.5;
   for (const [label, value] of entries) {
-    doc.font(REGULAR).fillColor(C.muted).text(label, x, yy, { width: boxW * 0.55 });
+    const isTotal = label === "Total";
     doc
-      .font(BOLD)
-      .fillColor(C.ink)
-      .text(value, x + boxW * 0.55, yy, { width: boxW * 0.45, align: "right" });
-    yy += 13;
+      .font(isTotal ? BOLD : REGULAR)
+      .fontSize(8.5)
+      .fillColor(isTotal ? C.ink : C.muted)
+      .text(label, x + PAD, yy, { width: boxW * 0.5, lineBreak: false });
+    drawMoney(doc, Math.abs(value), x + boxW * 0.5, yy, boxW * 0.5 - PAD, {
+      bold: isTotal,
+      color: isTotal ? C.ink : C.muted,
+    });
+    yy += 15;
   }
 
-  // The amount due is the one number the recipient is looking for, so it gets
-  // the only filled block on the page.
-  const gh = 24;
-  doc.rect(x, yy + 2, boxW, gh).fill(C.brown);
-  doc.font(BOLD).fontSize(9).fillColor(C.brassPale);
-  doc.text(settled ? "Paid in full" : "Amount due", x + 8, yy + 9, { width: boxW * 0.5 });
-  doc.fontSize(11).fillColor(C.white);
+  const dueY = top + rowsH + PAD;
+  doc.rect(x, dueY, boxW, dueH).fill(C.brown);
+  doc.font(BOLD).fontSize(9).fillColor(C.brass);
+  doc.text(settled ? "PAID IN FULL" : "AMOUNT DUE", x + PAD, dueY + 14, {
+    width: boxW * 0.4,
+    lineBreak: false,
+    characterSpacing: 1.2,
+  });
   // A settled invoice shows what was paid, not the zero balance. "Paid in full:
   // ₦0" is technically the outstanding figure but reads as though nothing was
   // ever charged, which is the opposite of what the document is confirming.
-  doc.text(naira(settled ? invoice.totalKobo : invoice.balanceKobo), x + boxW * 0.5, yy + 7, {
-    width: boxW * 0.5 - 8,
-    align: "right",
-  });
+  drawMoney(
+    doc,
+    settled ? invoice.totalKobo : invoice.balanceKobo,
+    x + boxW * 0.4,
+    dueY + 10,
+    boxW * 0.6 - PAD,
+    { bold: true, size: 14, color: C.white }
+  );
 
-  return yy + gh + 14;
+  return dueY + dueH + 18;
 }
 
-function drawFooterBlocks(doc: Doc, invoice: PdfInvoice, company: PdfCompany, y: number): number {
-  const colW = (CONTENT_W - 24) / 2;
-  const rightX = MARGIN + colW + 24;
+/**
+ * Payment details and the signature block, as a single panel.
+ *
+ * Anchored to the foot of the page rather than left to follow the totals. On a
+ * short invoice the old flow left this floating mid-page with a hand's width of
+ * blank paper beneath it, which reads as a document that was cut off. Pinning it
+ * low means a two-line invoice and a twenty-line one both look composed.
+ */
+function drawFooterBlocks(
+  doc: Doc,
+  invoice: PdfInvoice,
+  company: PdfCompany,
+  y: number
+): number {
+  const PANEL_H = 96;
+  const footerTop = PAGE.height - MARGIN - 26;
+  // Sits at the foot unless the items have already run down that far, in which
+  // case it follows them and the page breaks naturally.
+  const top = Math.max(y, footerTop - PANEL_H);
+
+  const PAD = 14;
+  const colW = (CONTENT_W - PAD * 3) / 2;
+  const leftX = MARGIN + PAD;
+  const rightX = MARGIN + PAD * 2 + colW;
   const hasBank = company.bankName || company.bankAccountName || company.bankAccountNumber;
 
-  let ly = y;
+  doc
+    .roundedRect(MARGIN, top, CONTENT_W, PANEL_H, 4)
+    .lineWidth(0.6)
+    .strokeColor(C.border)
+    .stroke();
+
+  let ly = top + PAD;
   if (hasBank) {
-    ly = sectionHeading(doc, "Payment details", MARGIN, y, colW);
-    ly = row(doc, "Bank", company.bankName ?? "", MARGIN, ly, colW);
-    ly = row(doc, "Account name", company.bankAccountName ?? "", MARGIN, ly, colW);
-    ly = row(doc, "Account no.", company.bankAccountNumber ?? "", MARGIN, ly, colW);
-    doc.font(REGULAR).fontSize(7).fillColor(C.muted);
-    doc.text(
-      `Please quote ${invoice.invoiceNumber} on the transfer so payment can be matched to this invoice.`,
-      MARGIN,
-      ly + 2,
-      { width: colW }
-    );
-    ly = doc.y;
+    doc.font(BOLD).fontSize(7.5).fillColor(C.brown);
+    doc.text("PAYMENT DETAILS", leftX, ly, { width: colW, characterSpacing: 1.1 });
+    ly += 13;
+    ly = row(doc, "Bank", company.bankName ?? "", leftX, ly, colW);
+    ly = row(doc, "Account name", company.bankAccountName ?? "", leftX, ly, colW);
+    ly = row(doc, "Account no.", company.bankAccountNumber ?? "", leftX, ly, colW);
+    doc.font(REGULAR).fontSize(6.8).fillColor(C.faint);
+    doc.text(`Quote ${invoice.invoiceNumber} on the transfer.`, leftX, ly + 1, {
+      width: colW,
+    });
   }
 
-  // Signature block: the printed sheet has one, and a PDF that reaches a site
-  // office often gets printed and signed on delivery.
-  let ry = sectionHeading(doc, "Received by", rightX, y, colW);
+  // Signature block: a PDF that reaches a site office often gets printed and
+  // signed on delivery.
+  let ry = top + PAD;
+  doc.font(BOLD).fontSize(7.5).fillColor(C.brown);
+  doc.text("RECEIVED BY", rightX, ry, { width: colW, characterSpacing: 1.1 });
+  ry += 15;
   for (const label of ["Name", "Signature", "Date"]) {
-    doc.font(REGULAR).fontSize(8).fillColor(C.muted);
-    doc.text(label, rightX, ry, { width: 52, lineBreak: false });
+    doc.font(REGULAR).fontSize(7.5).fillColor(C.muted);
+    doc.text(label, rightX, ry, { width: 48, lineBreak: false });
     doc
-      .moveTo(rightX + 54, ry + 9)
-      .lineTo(rightX + colW, ry + 9)
+      .moveTo(rightX + 50, ry + 8)
+      .lineTo(rightX + colW, ry + 8)
       .lineWidth(0.5)
       .strokeColor(C.border)
       .stroke();
-    ry += 20;
+    ry += 19;
   }
 
-  return Math.max(ly, ry) + 8;
+  return top + PANEL_H + 10;
 }
 
 /**
@@ -470,18 +589,23 @@ export function renderInvoicePdf(
 
       // Totals and the payment block belong together; push them to a new page
       // rather than splitting the amount due away from how to pay it.
-      if (y > PAGE.height - MARGIN - 200) {
+      if (y > PAGE.height - MARGIN - 260) {
         doc.addPage();
         y = MARGIN;
       }
       y = drawTotals(doc, invoice, y);
-      y = drawFooterBlocks(doc, invoice, company, y);
 
+      // Notes come before the payment panel, because that panel is pinned to the
+      // foot of the page and anything after it would be printed on top of it.
       if (invoice.notes) {
-        y = sectionHeading(doc, "Notes", MARGIN, y, CONTENT_W);
-        doc.font(REGULAR).fontSize(8).fillColor(C.ink);
-        doc.text(invoice.notes, MARGIN, y, { width: CONTENT_W });
+        doc.font(BOLD).fontSize(7.5).fillColor(C.brown);
+        doc.text("NOTES", MARGIN, y, { width: CONTENT_W, characterSpacing: 1.1 });
+        doc.font(REGULAR).fontSize(8).fillColor(C.muted);
+        doc.text(invoice.notes, MARGIN, y + 13, { width: CONTENT_W * 0.62 });
+        y = doc.y + 12;
       }
+
+      drawFooterBlocks(doc, invoice, company, y);
 
       // Footer on every page, so a detached second sheet is still identifiable.
       const range = doc.bufferedPageRange();

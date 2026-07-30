@@ -30,12 +30,13 @@ import {
   type PaymentMethod,
   type ServiceType,
 } from "@/lib/erp/enums";
-import { formatNaira, lineAmountKobo, parseNairaInput } from "@/lib/erp/money";
+import { formatNaira, lineAmountKobo, parseNairaInput, toNaira } from "@/lib/erp/money";
 import {
   addJobLine,
   advanceJobStatus,
   recordJobPayment,
   removeJobLine,
+  updateJobLine,
 } from "@/lib/erp/serviceJobs";
 import { JOB_STATUS_TONE } from "@/lib/erp/statusTone";
 import type { BoardBreakdown } from "@/lib/erp/types";
@@ -562,35 +563,14 @@ function LinesSection({
             </thead>
             <tbody className="divide-y divide-night-800">
               {lines.map((l) => (
-                <tr key={l.id}>
-                  <td className="py-3 text-cream-100">{SERVICE_TYPE_LABELS[l.serviceType]}</td>
-                  <td className="py-3 text-cream-400">
-                    {l.boardType ? BOARD_TYPE_LABELS[l.boardType] : "-"}
-                  </td>
-                  <td className="py-3 text-right text-cream-200">{l.quantity}</td>
-                  <td className="py-3 text-right text-cream-400">
-                    {formatNaira(l.unitPriceKobo)}
-                  </td>
-                  <td className="py-3 text-right text-cream-100">
-                    {formatNaira(l.amountKobo)}
-                  </td>
-                  {canEdit && (
-                    <td className="py-3 pl-3 text-right">
-                      <button
-                        type="button"
-                        aria-label="Remove line"
-                        onClick={() =>
-                          removeJobLine(getDb(), actor, jobId, l.id, l.amountKobo).catch((e) =>
-                            onError(e instanceof Error ? e.message : "Could not remove.")
-                          )
-                        }
-                        className="cursor-pointer text-cream-500 transition-colors hover:text-red-400"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </td>
-                  )}
-                </tr>
+                <LineRowEditor
+                  key={l.id}
+                  jobId={jobId}
+                  line={l}
+                  canEdit={canEdit}
+                  actor={actor}
+                  onError={onError}
+                />
               ))}
             </tbody>
           </table>
@@ -633,6 +613,140 @@ function LinesSection({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * One work line, read-only until the pencil is pressed.
+ *
+ * Only quantity and unit price open for editing. Changing the service or board
+ * type would make the line a different piece of work, which is an add and a
+ * remove rather than a correction, and the audit trail reads better that way.
+ */
+function LineRowEditor({
+  jobId,
+  line,
+  canEdit,
+  actor,
+  onError,
+}: {
+  jobId: string;
+  line: LineRow;
+  canEdit: boolean;
+  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  onError: (m: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [quantity, setQuantity] = useState(String(line.quantity));
+  const [price, setPrice] = useState(String(toNaira(line.unitPriceKobo)));
+
+  function open() {
+    // Re-seed from the document each time, so a cancelled edit does not leave
+    // stale figures waiting in the fields for the next attempt.
+    setQuantity(String(line.quantity));
+    setPrice(String(toNaira(line.unitPriceKobo)));
+    setEditing(true);
+  }
+
+  async function save() {
+    const nextQty = Number(quantity);
+    if (!nextQty) {
+      onError("Enter a quantity.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateJobLine(getDb(), actor, jobId, line.id, {
+        serviceType: line.serviceType,
+        boardType: line.boardType,
+        quantity: nextQty,
+        unitPriceKobo: parseNairaInput(price),
+      });
+      setEditing(false);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not save the line.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <tr>
+        <td className="py-3 text-cream-100">{SERVICE_TYPE_LABELS[line.serviceType]}</td>
+        <td className="py-3 text-cream-400">
+          {line.boardType ? BOARD_TYPE_LABELS[line.boardType] : "-"}
+        </td>
+        <td className="py-3 pr-2">
+          <NumberField
+            id={`edit-qty-${line.id}`}
+            label="Qty"
+            value={quantity}
+            onChange={setQuantity}
+          />
+        </td>
+        <td className="py-3 pr-2">
+          <NumberField
+            id={`edit-price-${line.id}`}
+            label="Unit (₦)"
+            value={price}
+            onChange={setPrice}
+          />
+        </td>
+        <td className="py-3 text-right text-brass-300">
+          {formatNaira(lineAmountKobo(Number(quantity) || 0, parseNairaInput(price)))}
+        </td>
+        <td className="py-3 pl-3 text-right">
+          <div className="flex justify-end gap-2">
+            <Button onClick={save} busy={saving}>
+              Save
+            </Button>
+            <Button variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr>
+      <td className="py-3 text-cream-100">{SERVICE_TYPE_LABELS[line.serviceType]}</td>
+      <td className="py-3 text-cream-400">
+        {line.boardType ? BOARD_TYPE_LABELS[line.boardType] : "-"}
+      </td>
+      <td className="py-3 text-right text-cream-200">{line.quantity}</td>
+      <td className="py-3 text-right text-cream-400">{formatNaira(line.unitPriceKobo)}</td>
+      <td className="py-3 text-right text-cream-100">{formatNaira(line.amountKobo)}</td>
+      {canEdit && (
+        <td className="py-3 pl-3 text-right">
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              aria-label="Edit line"
+              onClick={open}
+              className="cursor-pointer text-cream-500 transition-colors hover:text-brass-300"
+            >
+              <PenLine size={15} />
+            </button>
+            <button
+              type="button"
+              aria-label="Remove line"
+              onClick={() =>
+                removeJobLine(getDb(), actor, jobId, line.id, line.amountKobo).catch((e) =>
+                  onError(e instanceof Error ? e.message : "Could not remove.")
+                )
+              }
+              className="cursor-pointer text-cream-500 transition-colors hover:text-red-400"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        </td>
+      )}
+    </tr>
   );
 }
 

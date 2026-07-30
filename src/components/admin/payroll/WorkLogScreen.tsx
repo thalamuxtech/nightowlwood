@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   collection,
   limit,
@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   ClipboardList,
   Loader2,
+  PenLine,
   Plus,
   Printer,
   ShieldAlert,
@@ -34,6 +35,7 @@ import {
   deleteWorkLog,
   fromDateInputValue,
   toDateInputValue,
+  updateWorkLog,
 } from "@/lib/erp/workLogs";
 import {
   Button,
@@ -60,6 +62,7 @@ interface LogRow {
   workType: WageWorkType;
   units: number;
   workDateMs: number | null;
+  assistantIds: string[];
   assistantNames: string[];
   assistantCount: number;
   jobNumber?: string;
@@ -83,18 +86,10 @@ export function WorkLogScreen() {
   const [rates, setRates] = useState<WageRate[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [printing, setPrinting] = useState(false);
-
-  // Form state
-  const [operator, setOperator] = useState<PickedStaff | null>(null);
-  const [workType, setWorkType] = useState<WageWorkType | "">("");
-  const [units, setUnits] = useState("");
-  const [workDate, setWorkDate] = useState(toDateInputValue(new Date()));
-  const [assistantIds, setAssistantIds] = useState<string[]>([]);
-  const [jobNumber, setJobNumber] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(getDb(), COL.staff), orderBy("name", "asc"));
@@ -153,6 +148,7 @@ export function WorkLogScreen() {
               workType: (x.workType as WageWorkType) ?? "board",
               units: x.units ?? 0,
               workDateMs: x.workDate?.toMillis?.() ?? null,
+              assistantIds: (x.assistantIds as string[]) ?? [],
               assistantNames: (x.assistantNames as string[]) ?? [],
               assistantCount: x.assistantCount ?? 0,
               jobNumber: x.jobNumber ?? undefined,
@@ -178,77 +174,6 @@ export function WorkLogScreen() {
   );
 
   const assistantPool = useMemo(() => staff.filter((s) => s.isAssistant), [staff]);
-
-  /** Indicative value of the entry being typed, admin only. */
-  const estimate = useMemo(() => {
-    if (!isAdmin || !workType || !Number(units)) return null;
-    const resolved = resolveRates(rates, fromDateInputValue(workDate).getTime());
-    const rate = resolved.get(workType);
-    if (!rate) return { missing: true, operatorKobo: 0, assistantKobo: 0 };
-    const n = Number(units);
-    return {
-      missing: false,
-      operatorKobo: Math.round(n * rate.operatorRateKobo),
-      assistantKobo: Math.round(n * rate.assistantRateKobo) * assistantIds.length,
-    };
-  }, [isAdmin, workType, units, workDate, rates, assistantIds.length]);
-
-  function toggleAssistant(id: string) {
-    setAssistantIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  }
-
-  async function submit() {
-    const chosen = canLogForOthers
-      ? operator
-      : session.staffId
-        ? { id: session.staffId, name: session.displayName }
-        : null;
-
-    if (!chosen) {
-      setError(
-        canLogForOthers
-          ? "Select who did the work."
-          : "Your login is not linked to a staff record, so work cannot be attributed. Ask an admin to link it."
-      );
-      return;
-    }
-    if (!workType) {
-      setError("Select the type of work.");
-      return;
-    }
-    if (!Number(units)) {
-      setError("Enter the number of units.");
-      return;
-    }
-
-    setBusy(true);
-    setError("");
-    try {
-      await createWorkLog(getDb(), actor, {
-        staffId: chosen.id,
-        staffName: chosen.name,
-        workType,
-        units: Number(units),
-        workDate: fromDateInputValue(workDate),
-        assistantIds,
-        assistantNames: assistantIds.map(
-          (id) => staff.find((s) => s.id === id)?.name ?? id
-        ),
-        jobNumber: jobNumber.trim() || undefined,
-      });
-      setWorkType("");
-      setUnits("");
-      setAssistantIds([]);
-      setJobNumber("");
-      setAdding(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save the work log.");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   if (!session.ready) {
     return (
@@ -339,150 +264,18 @@ export function WorkLogScreen() {
       )}
 
       {adding && (
-        <section className="mt-6 rounded-3xl border border-brass-500/30 print:hidden bg-night-900/40 p-6">
-          <h2 className="flex items-center gap-2 font-display text-lg text-cream-100">
-            <ClipboardList size={18} className="text-brass-400" /> New work log
-          </h2>
-
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            {canLogForOthers ? (
-              <StaffPicker
-                value={operator}
-                onChange={setOperator}
-                createdBy={actor.uid}
-                label="Work done by"
-                required
-              />
-            ) : (
-              <TextField
-                id="wl-self"
-                label="Work done by"
-                value={session.displayName}
-                disabled
-              />
-            )}
-            <div>
-              <label htmlFor="wl-date" className="mb-1.5 block text-sm text-cream-300">
-                Date <span className="ml-1 text-brass-400">*</span>
-              </label>
-              <input
-                id="wl-date"
-                type="date"
-                value={workDate}
-                max={toDateInputValue(new Date())}
-                onChange={(e) => setWorkDate(e.target.value)}
-                className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
-              />
-            </div>
-            <SelectField
-              id="wl-type"
-              label="Work type"
-              value={workType}
-              onChange={(v) => setWorkType(v as WageWorkType)}
-              placeholder="Select…"
-              required
-              options={WAGE_WORK_TYPES.map((w) => ({
-                value: w,
-                label: WAGE_WORK_TYPE_LABELS[w],
-              }))}
-            />
-            <NumberField
-              id="wl-units"
-              label="Units"
-              value={units}
-              onChange={setUnits}
-              required
-              hint={workType === "grooving" ? "millimetres" : undefined}
-            />
-            <div className="sm:col-span-2">
-              <TextField
-                id="wl-job"
-                label="Job number (optional)"
-                value={jobNumber}
-                onChange={setJobNumber}
-                placeholder="JOB-2026-0142"
-              />
-            </div>
-          </div>
-
-          {/* Assistants: named, not counted */}
-          <fieldset className="mt-6">
-            <legend className="mb-2 flex items-center gap-2 text-sm text-cream-300">
-              <Users size={15} className="text-brass-400" /> Assistants on this work
-            </legend>
-            {assistantPool.length === 0 ? (
-              <p className="text-xs text-cream-500">
-                No staff are marked as assistants yet. Set the assistant flag on a
-                staff record to list them here.
-              </p>
-            ) : (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  {assistantPool.map((a) => {
-                    const on = assistantIds.includes(a.id);
-                    return (
-                      <button
-                        key={a.id}
-                        type="button"
-                        onClick={() => toggleAssistant(a.id)}
-                        aria-pressed={on}
-                        className={`cursor-pointer rounded-full border px-4 py-2 text-xs font-medium transition-all duration-300 ${
-                          on
-                            ? "border-brass-500 bg-brass-500 text-night-950"
-                            : "border-night-600 text-cream-300 hover:border-brass-500/60 hover:text-brass-300"
-                        }`}
-                      >
-                        {a.name}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="mt-2 text-xs text-cream-500">
-                  Each assistant selected earns the assistant rate on these units.
-                  Naming them is what lets the wage run pay the right people.
-                </p>
-              </>
-            )}
-          </fieldset>
-
-          {estimate && (
-            <div className="mt-5 rounded-2xl border border-night-700/60 bg-night-950/40 p-4 text-sm">
-              {estimate.missing ? (
-                <p className="flex items-start gap-2 text-amber-300">
-                  <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-                  No rate is in force for this work type, so it will be excluded
-                  from the wage run until one is set.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-6">
-                  <span className="text-cream-400">
-                    Operator:{" "}
-                    <span className="text-cream-100">
-                      {formatNaira(estimate.operatorKobo)}
-                    </span>
-                  </span>
-                  {estimate.assistantKobo > 0 && (
-                    <span className="text-cream-400">
-                      Assistants:{" "}
-                      <span className="text-cream-100">
-                        {formatNaira(estimate.assistantKobo)}
-                      </span>
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="mt-6 flex gap-3">
-            <Button onClick={submit} busy={busy}>
-              Save log
-            </Button>
-            <Button variant="ghost" onClick={() => setAdding(false)}>
-              Cancel
-            </Button>
-          </div>
-        </section>
+        <WorkLogForm
+          actor={actor}
+          staff={staff}
+          assistantPool={assistantPool}
+          rates={rates}
+          isAdmin={isAdmin}
+          canLogForOthers={canLogForOthers}
+          selfStaffId={session.staffId}
+          selfName={session.displayName}
+          onClose={() => setAdding(false)}
+          onError={setError}
+        />
       )}
 
       <section className="mt-8 print:hidden">
@@ -510,7 +303,8 @@ export function WorkLogScreen() {
               </thead>
               <tbody className="divide-y divide-night-800">
                 {rows.map((r) => (
-                  <tr key={r.id}>
+                  <Fragment key={r.id}>
+                  <tr>
                     <td className="px-5 py-4 text-cream-400">
                       {r.workDateMs
                         ? new Date(r.workDateMs).toLocaleDateString("en-GB", {
@@ -545,28 +339,62 @@ export function WorkLogScreen() {
                     </td>
                     {isAdmin && (
                       <td className="px-5 py-4 text-right">
-                        <button
-                          type="button"
-                          aria-label="Delete log"
-                          onClick={() =>
-                            deleteWorkLog(
-                              getDb(),
-                              actor,
-                              r.id,
-                              `${r.staffName} ${r.units} × ${r.workType}`
-                            ).catch((e) =>
-                              setError(
-                                e instanceof Error ? e.message : "Could not delete."
+                        <div className="flex justify-end gap-3">
+                          <button
+                            type="button"
+                            aria-label="Edit log"
+                            onClick={() =>
+                              setEditingId(editingId === r.id ? null : r.id)
+                            }
+                            className="cursor-pointer text-cream-500 transition-colors hover:text-brass-300"
+                          >
+                            <PenLine size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Delete log"
+                            onClick={() =>
+                              deleteWorkLog(
+                                getDb(),
+                                actor,
+                                r.id,
+                                `${r.staffName} ${r.units} × ${r.workType}`
+                              ).catch((e) =>
+                                setError(
+                                  e instanceof Error ? e.message : "Could not delete."
+                                )
                               )
-                            )
-                          }
-                          className="cursor-pointer text-cream-500 transition-colors hover:text-red-400"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                            }
+                            className="cursor-pointer text-cream-500 transition-colors hover:text-red-400"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
+                  {isAdmin && editingId === r.id && (
+                    <tr>
+                      {/* Corrections sit under the row they change, so the entry
+                          being restated stays in view while it is retyped. */}
+                      <td colSpan={6} className="px-5 pb-5">
+                        <WorkLogForm
+                          actor={actor}
+                          staff={staff}
+                          assistantPool={assistantPool}
+                          rates={rates}
+                          isAdmin={isAdmin}
+                          canLogForOthers={canLogForOthers}
+                          selfStaffId={session.staffId}
+                          selfName={session.displayName}
+                          editing={r}
+                          onClose={() => setEditingId(null)}
+                          onError={setError}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -574,5 +402,280 @@ export function WorkLogScreen() {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * The one work log form, used to log and to correct.
+ *
+ * A correction has to offer every field the entry carries, including the named
+ * assistants: an assistant left off the original entry is somebody who was not
+ * paid, and reaching them means retyping the same form rather than a reduced one.
+ */
+function WorkLogForm({
+  actor,
+  staff,
+  assistantPool,
+  rates,
+  isAdmin,
+  canLogForOthers,
+  selfStaffId,
+  selfName,
+  editing,
+  onClose,
+  onError,
+}: {
+  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  staff: StaffOption[];
+  assistantPool: StaffOption[];
+  rates: WageRate[];
+  isAdmin: boolean;
+  canLogForOthers: boolean;
+  selfStaffId: string | null;
+  selfName: string;
+  editing?: LogRow;
+  onClose: () => void;
+  onError: (m: string) => void;
+}) {
+  const [operator, setOperator] = useState<PickedStaff | null>(
+    editing ? { id: editing.staffId, name: editing.staffName } : null
+  );
+  const [workType, setWorkType] = useState<WageWorkType | "">(editing?.workType ?? "");
+  const [units, setUnits] = useState(editing ? String(editing.units) : "");
+  const [workDate, setWorkDate] = useState(
+    toDateInputValue(editing?.workDateMs ? new Date(editing.workDateMs) : new Date())
+  );
+  const [assistantIds, setAssistantIds] = useState<string[]>(editing?.assistantIds ?? []);
+  const [jobNumber, setJobNumber] = useState(editing?.jobNumber ?? "");
+  const [busy, setBusy] = useState(false);
+
+  // Field ids are suffixed per entry, since a correction can be open while the
+  // create form is showing and duplicate ids would misdirect the labels.
+  const key = editing ? editing.id : "new";
+
+  /** Indicative value of the entry being typed, admin only. */
+  const estimate = useMemo(() => {
+    if (!isAdmin || !workType || !Number(units)) return null;
+    const resolved = resolveRates(rates, fromDateInputValue(workDate).getTime());
+    const rate = resolved.get(workType);
+    if (!rate) return { missing: true, operatorKobo: 0, assistantKobo: 0 };
+    const n = Number(units);
+    return {
+      missing: false,
+      operatorKobo: Math.round(n * rate.operatorRateKobo),
+      assistantKobo: Math.round(n * rate.assistantRateKobo) * assistantIds.length,
+    };
+  }, [isAdmin, workType, units, workDate, rates, assistantIds.length]);
+
+  function toggleAssistant(id: string) {
+    setAssistantIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  async function submit() {
+    const chosen = canLogForOthers
+      ? operator
+      : selfStaffId
+        ? { id: selfStaffId, name: selfName }
+        : null;
+
+    if (!chosen) {
+      onError(
+        canLogForOthers
+          ? "Select who did the work."
+          : "Your login is not linked to a staff record, so work cannot be attributed. Ask an admin to link it."
+      );
+      return;
+    }
+    if (!workType) {
+      onError("Select the type of work.");
+      return;
+    }
+    if (!Number(units)) {
+      onError("Enter the number of units.");
+      return;
+    }
+
+    setBusy(true);
+    onError("");
+    try {
+      const input = {
+        staffId: chosen.id,
+        staffName: chosen.name,
+        workType,
+        units: Number(units),
+        workDate: fromDateInputValue(workDate),
+        assistantIds,
+        // Names are stored alongside the ids so the printed sheet and the wage
+        // run do not depend on the staff list still holding the record. An
+        // assistant already on the entry keeps the name it was saved with.
+        assistantNames: assistantIds.map(
+          (id) =>
+            staff.find((s) => s.id === id)?.name ??
+            editing?.assistantNames[editing.assistantIds.indexOf(id)] ??
+            id
+        ),
+        jobNumber: jobNumber.trim() || undefined,
+      };
+      if (editing) {
+        await updateWorkLog(getDb(), actor, editing.id, input);
+      } else {
+        await createWorkLog(getDb(), actor, input);
+      }
+      onClose();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not save the work log.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-3xl border border-brass-500/30 print:hidden bg-night-900/40 p-6">
+      <h2 className="flex items-center gap-2 font-display text-lg text-cream-100">
+        <ClipboardList size={18} className="text-brass-400" />{" "}
+        {editing ? "Correct this work log" : "New work log"}
+      </h2>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        {canLogForOthers ? (
+          <StaffPicker
+            value={operator}
+            onChange={setOperator}
+            createdBy={actor.uid}
+            label="Work done by"
+            required
+          />
+        ) : (
+          <TextField
+            id={`wl-self-${key}`}
+            label="Work done by"
+            value={selfName}
+            disabled
+          />
+        )}
+        <div>
+          <label htmlFor={`wl-date-${key}`} className="mb-1.5 block text-sm text-cream-300">
+            Date <span className="ml-1 text-brass-400">*</span>
+          </label>
+          <input
+            id={`wl-date-${key}`}
+            type="date"
+            value={workDate}
+            max={toDateInputValue(new Date())}
+            onChange={(e) => setWorkDate(e.target.value)}
+            className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
+          />
+        </div>
+        <SelectField
+          id={`wl-type-${key}`}
+          label="Work type"
+          value={workType}
+          onChange={(v) => setWorkType(v as WageWorkType)}
+          placeholder="Selectâ€¦"
+          required
+          options={WAGE_WORK_TYPES.map((w) => ({
+            value: w,
+            label: WAGE_WORK_TYPE_LABELS[w],
+          }))}
+        />
+        <NumberField
+          id={`wl-units-${key}`}
+          label="Units"
+          value={units}
+          onChange={setUnits}
+          required
+          hint={workType === "grooving" ? "millimetres" : undefined}
+        />
+        <div className="sm:col-span-2">
+          <TextField
+            id={`wl-job-${key}`}
+            label="Job number (optional)"
+            value={jobNumber}
+            onChange={setJobNumber}
+            placeholder="JOB-2026-0142"
+          />
+        </div>
+      </div>
+
+      {/* Assistants: named, not counted */}
+      <fieldset className="mt-6">
+        <legend className="mb-2 flex items-center gap-2 text-sm text-cream-300">
+          <Users size={15} className="text-brass-400" /> Assistants on this work
+        </legend>
+        {assistantPool.length === 0 ? (
+          <p className="text-xs text-cream-500">
+            No staff are marked as assistants yet. Set the assistant flag on a
+            staff record to list them here.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {assistantPool.map((a) => {
+                const on = assistantIds.includes(a.id);
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => toggleAssistant(a.id)}
+                    aria-pressed={on}
+                    className={`cursor-pointer rounded-full border px-4 py-2 text-xs font-medium transition-all duration-300 ${
+                      on
+                        ? "border-brass-500 bg-brass-500 text-night-950"
+                        : "border-night-600 text-cream-300 hover:border-brass-500/60 hover:text-brass-300"
+                    }`}
+                  >
+                    {a.name}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-cream-500">
+              Each assistant selected earns the assistant rate on these units.
+              Naming them is what lets the wage run pay the right people.
+            </p>
+          </>
+        )}
+      </fieldset>
+
+      {estimate && (
+        <div className="mt-5 rounded-2xl border border-night-700/60 bg-night-950/40 p-4 text-sm">
+          {estimate.missing ? (
+            <p className="flex items-start gap-2 text-amber-300">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+              No rate is in force for this work type, so it will be excluded
+              from the wage run until one is set.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-6">
+              <span className="text-cream-400">
+                Operator:{" "}
+                <span className="text-cream-100">
+                  {formatNaira(estimate.operatorKobo)}
+                </span>
+              </span>
+              {estimate.assistantKobo > 0 && (
+                <span className="text-cream-400">
+                  Assistants:{" "}
+                  <span className="text-cream-100">
+                    {formatNaira(estimate.assistantKobo)}
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-6 flex gap-3">
+        <Button onClick={submit} busy={busy}>
+          {editing ? "Save changes" : "Save log"}
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </section>
   );
 }

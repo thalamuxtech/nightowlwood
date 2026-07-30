@@ -197,6 +197,71 @@ export async function addJobLine(
   });
 }
 
+/**
+ * Corrects a line item in place.
+ *
+ * A mis-keyed quantity or price was previously fixable only by deleting the line
+ * and adding it again, which reads in the audit trail as a removal and an unrelated
+ * new charge rather than as the correction it was. This adjusts the job total by
+ * the difference, in the same transaction as the line write, so the two can never
+ * disagree.
+ */
+export async function updateJobLine(
+  db: Firestore,
+  actor: AuditActor,
+  jobId: string,
+  lineId: string,
+  next: Omit<ServiceJobLine, "id" | "amountKobo">
+): Promise<void> {
+  if (next.quantity <= 0) throw new Error("Quantity must be more than zero.");
+  if (next.unitPriceKobo < 0) throw new Error("A unit price cannot be negative.");
+
+  const jobRef = doc(db, COL.serviceJobs, jobId);
+  const lineRef = doc(db, `${jobLinesPath(jobId)}/${lineId}`);
+  const nextAmount = lineAmountKobo(next.quantity, next.unitPriceKobo);
+
+  const before = await runTransaction(db, async (tx) => {
+    const [jobSnap, lineSnap] = await Promise.all([tx.get(jobRef), tx.get(lineRef)]);
+    if (!jobSnap.exists()) throw new Error("Job not found.");
+    if (!lineSnap.exists()) throw new Error("That line no longer exists.");
+
+    const job = jobSnap.data();
+    const prev = lineSnap.data();
+    const prevAmount = (prev.amountKobo as number) ?? 0;
+
+    // Re-read inside the transaction rather than trusting an amount passed from
+    // the client: a stale figure would silently corrupt the job total.
+    const nextTotal = Math.max(0, (job.totalKobo ?? 0) - prevAmount + nextAmount);
+    const paid = job.paidKobo ?? 0;
+
+    tx.update(lineRef, { ...next, amountKobo: nextAmount });
+    tx.update(jobRef, {
+      totalKobo: nextTotal,
+      balanceKobo: nextTotal - paid,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+
+    return { serviceType: prev.serviceType, quantity: prev.quantity, amountKobo: prevAmount };
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.serviceJobs,
+    docId: jobId,
+    summary:
+      `Corrected a line: ${next.serviceType} ×${next.quantity} ` +
+      `(was ${before.serviceType} ×${before.quantity})`,
+    before,
+    after: {
+      serviceType: next.serviceType,
+      quantity: next.quantity,
+      amountKobo: nextAmount,
+    },
+  });
+}
+
 /** Removes a line item and rolls the totals back. */
 export async function removeJobLine(
   db: Firestore,

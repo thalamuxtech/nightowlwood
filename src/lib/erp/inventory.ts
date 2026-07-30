@@ -45,6 +45,117 @@ export interface NewInventoryItem {
   sku?: string;
 }
 
+/**
+ * Corrects an inventory item's details.
+ *
+ * `quantityOnHand` is deliberately absent. Stock level is the running total of the
+ * movement ledger, and typing over it would leave the item claiming a quantity no
+ * movement accounts for; the ledger would no longer explain the balance. Use
+ * recordMovement for that, which is what an adjustment actually is.
+ */
+export async function updateInventoryItem(
+  db: Firestore,
+  actor: AuditActor,
+  itemId: string,
+  input: Omit<NewInventoryItem, "quantityOnHand">
+): Promise<void> {
+  if (!input.name.trim()) throw new Error("An item needs a name.");
+  if (input.reorderLevel < 0) throw new Error("A reorder level cannot be negative.");
+  if (input.unitCostKobo < 0) throw new Error("A unit cost cannot be negative.");
+
+  const ref = doc(db, COL.inventoryCompany, itemId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("That item no longer exists.");
+  const prev = snap.data();
+
+  await updateDoc(ref, {
+    name: input.name.trim(),
+    category: input.category,
+    unit: input.unit,
+    reorderLevel: input.reorderLevel,
+    unitCostKobo: input.unitCostKobo,
+    supplier: input.supplier ?? null,
+    sku: input.sku ?? null,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.inventoryCompany,
+    docId: itemId,
+    summary: `Edited inventory item "${prev.name ?? ""}"`,
+    before: {
+      name: prev.name ?? "",
+      reorderLevel: prev.reorderLevel ?? 0,
+      unitCostKobo: prev.unitCostKobo ?? 0,
+    },
+    after: {
+      name: input.name.trim(),
+      reorderLevel: input.reorderLevel,
+      unitCostKobo: input.unitCostKobo,
+    },
+  });
+}
+
+/**
+ * Retires an inventory item without deleting it.
+ *
+ * Deletion would orphan its movement ledger and break the history of stock that
+ * genuinely passed through the workshop. Inactive items drop out of the pickers
+ * but their record stays intact.
+ */
+export async function setInventoryItemActive(
+  db: Firestore,
+  actor: AuditActor,
+  itemId: string,
+  active: boolean,
+  name: string
+): Promise<void> {
+  await updateDoc(doc(db, COL.inventoryCompany, itemId), {
+    active,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.inventoryCompany,
+    docId: itemId,
+    summary: `${active ? "Restored" : "Retired"} inventory item "${name}"`,
+    after: { active },
+  });
+}
+
+/** Corrects a supplier's contact details. */
+export async function updateSupplier(
+  db: Firestore,
+  actor: AuditActor,
+  supplierId: string,
+  input: { name: string; phone?: string; categories?: string[]; active?: boolean }
+): Promise<void> {
+  if (!input.name.trim()) throw new Error("A supplier needs a name.");
+
+  await updateDoc(doc(db, COL.suppliers, supplierId), {
+    name: input.name.trim(),
+    phone: input.phone?.trim() || null,
+    ...(input.categories ? { categories: input.categories } : {}),
+    ...(input.active === undefined ? {} : { active: input.active }),
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.suppliers,
+    docId: supplierId,
+    summary: `Edited supplier "${input.name.trim()}"`,
+    after: { name: input.name.trim(), active: input.active ?? true },
+  });
+}
+
 export async function createInventoryItem(
   db: Firestore,
   actor: AuditActor,

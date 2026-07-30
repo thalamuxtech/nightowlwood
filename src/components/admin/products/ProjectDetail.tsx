@@ -10,6 +10,7 @@ import {
   ChevronRight,
   FileText,
   Loader2,
+  PenLine,
   Plus,
   Trash2,
 } from "lucide-react";
@@ -31,6 +32,7 @@ import {
   computeEstimateTotals,
   createEstimate,
   removeComponent,
+  updateComponent,
   removeFeature,
   saveFeature,
   setProjectStatus,
@@ -38,6 +40,7 @@ import {
 import { DEFAULT_INVOICE_SETTINGS, SETTINGS_DOC } from "@/lib/erp/settings";
 import { PROJECT_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
+import { ProjectDetailsEditor } from "@/components/admin/products/ProjectDetailsEditor";
 import {
   Button,
   CheckboxField,
@@ -94,6 +97,7 @@ export function ProjectDetail() {
   const canApprove = session.can("estimate.approve");
 
   const [project, setProject] = useState<ProjectDoc | null>(null);
+  const [editingDetails, setEditingDetails] = useState(false);
   const [components, setComponents] = useState<ComponentRow[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -251,19 +255,44 @@ export function ProjectDetail() {
         <ArrowLeft size={15} /> All projects
       </Link>
 
-      <header className="mt-4">
-        <p className="text-eyebrow">{project.customerName}</p>
-        <h1 className="text-title mt-2 text-cream-50">{project.title}</h1>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <StatusPill tone={PROJECT_STATUS_TONE[project.status]}>
-            {PROJECT_STATUS_LABELS[project.status]}
-          </StatusPill>
-          <span className="text-xs text-cream-500">
-            {project.projectNumber}
-            {project.location ? ` · ${project.location}` : ""}
-          </span>
+      <header className="mt-4 flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-eyebrow">{project.customerName}</p>
+          <h1 className="text-title mt-2 text-cream-50">{project.title}</h1>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <StatusPill tone={PROJECT_STATUS_TONE[project.status]}>
+              {PROJECT_STATUS_LABELS[project.status]}
+            </StatusPill>
+            <span className="text-xs text-cream-500">
+              {project.projectNumber}
+              {project.location ? ` · ${project.location}` : ""}
+            </span>
+            {project.targetDateMs && (
+              <span className="text-xs text-cream-500">
+                Target {new Date(project.targetDateMs).toLocaleDateString("en-GB")}
+              </span>
+            )}
+          </div>
         </div>
+        {canEdit && (
+          <Button variant="secondary" onClick={() => setEditingDetails((v) => !v)}>
+            <span className="flex items-center gap-1.5">
+              <PenLine size={14} /> Edit details
+            </span>
+          </Button>
+        )}
       </header>
+
+      {editingDetails && canEdit && (
+        <ProjectDetailsEditor
+          projectId={projectId}
+          projectNumber={project.projectNumber}
+          project={project}
+          actor={actor}
+          onClose={() => setEditingDetails(false)}
+          onError={setError}
+        />
+      )}
 
       {error && (
         <p role="alert" className="mt-6 text-sm text-red-400">
@@ -522,6 +551,9 @@ function ComponentPanel({
 }) {
   const [features, setFeatures] = useState<FeatureRow[]>([]);
   const [showAll, setShowAll] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(component.name);
+  const [savingName, setSavingName] = useState(false);
   const [newItem, setNewItem] = useState("");
 
   // Only the open component subscribes: a templated project carries well over a
@@ -595,6 +627,18 @@ function ComponentPanel({
               {canEdit && (
                 <button
                   type="button"
+                  onClick={() => {
+                    setRenaming((v) => !v);
+                    setDraftName(component.name);
+                  }}
+                  className="cursor-pointer text-xs text-cream-400 transition-colors hover:text-brass-300"
+                >
+                  Rename
+                </button>
+              )}
+              {canEdit && (
+                <button
+                  type="button"
                   onClick={() =>
                     removeComponent(getDb(), actor, projectId, component.id).catch((e) =>
                       onError(e instanceof Error ? e.message : "Could not remove.")
@@ -607,6 +651,38 @@ function ComponentPanel({
               )}
             </div>
           </div>
+
+          {renaming && canEdit && (
+            <div className="mt-4 flex flex-wrap items-end gap-2 rounded-2xl border border-brass-500/30 bg-night-900/50 p-4">
+              <span className="min-w-[14rem] flex-1">
+                <TextField
+                  id={`rename-${component.id}`}
+                  label="Component name"
+                  value={draftName}
+                  onChange={setDraftName}
+                />
+              </span>
+              <Button
+                busy={savingName}
+                onClick={() => {
+                  setSavingName(true);
+                  updateComponent(getDb(), actor, projectId, component.id, {
+                    name: draftName,
+                  })
+                    .then(() => setRenaming(false))
+                    .catch((e) =>
+                      onError(e instanceof Error ? e.message : "Could not rename.")
+                    )
+                    .finally(() => setSavingName(false));
+                }}
+              >
+                Save
+              </Button>
+              <Button variant="ghost" onClick={() => setRenaming(false)}>
+                Cancel
+              </Button>
+            </div>
+          )}
 
           {visible.length === 0 ? (
             <p className="mt-4 text-sm text-cream-500">
@@ -688,6 +764,7 @@ function FeatureRowEditor({
   actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
   onError: (m: string) => void;
 }) {
+  const [item, setItem] = useState(feature.item);
   const [qty, setQty] = useState(feature.quantity ? String(feature.quantity) : "");
   const [price, setPrice] = useState(
     feature.unitPriceKobo ? String(toNaira(feature.unitPriceKobo)) : ""
@@ -696,20 +773,30 @@ function FeatureRowEditor({
 
   // Re-sync when the document changes underneath, e.g. another user edits it.
   useEffect(() => {
+    setItem(feature.item);
     setQty(feature.quantity ? String(feature.quantity) : "");
     setPrice(feature.unitPriceKobo ? String(toNaira(feature.unitPriceKobo)) : "");
-  }, [feature.quantity, feature.unitPriceKobo]);
+  }, [feature.item, feature.quantity, feature.unitPriceKobo]);
 
   const amount = (Number(qty) || 0) * parseNairaInput(price);
 
   async function commit() {
     const nextQty = Number(qty) || 0;
     const nextPrice = parseNairaInput(price);
-    if (nextQty === feature.quantity && nextPrice === feature.unitPriceKobo) return;
+    // A blank label falls back to the stored one: templated rows are named for a
+    // reason, and an accidental clear should not leave a nameless line.
+    const nextItem = item.trim() || feature.item;
+    if (
+      nextQty === feature.quantity &&
+      nextPrice === feature.unitPriceKobo &&
+      nextItem === feature.item
+    )
+      return;
 
     setSaving(true);
     try {
       await saveFeature(getDb(), actor, projectId, componentId, feature.id, {
+        item: nextItem,
         quantity: nextQty,
         unitPriceKobo: nextPrice,
       });
@@ -722,10 +809,18 @@ function FeatureRowEditor({
 
   return (
     <div className="grid items-end gap-3 rounded-xl border border-night-700/40 bg-night-950/30 p-3 sm:grid-cols-[1fr_5rem_7rem_7rem_2rem]">
-      <div className="min-w-0">
-        <p className="truncate text-sm text-cream-200">{feature.item}</p>
+      {/* The label sits in the same onBlur wrapper as the figures, so renaming a
+          line commits on the way out just as pricing it does. */}
+      <div className="min-w-0" onBlur={commit}>
+        <TextField
+          id={`i-${feature.id}`}
+          label="Item"
+          value={item}
+          onChange={setItem}
+          disabled={!canEdit}
+        />
         {feature.kind === "derived" && (
-          <p className="text-xs text-cream-600">Lump sum or percentage</p>
+          <p className="mt-1 text-xs text-cream-600">Lump sum or percentage</p>
         )}
       </div>
       {/* onBlur here rather than on the inputs: NumberField does not expose it,
