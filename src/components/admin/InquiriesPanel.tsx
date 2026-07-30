@@ -32,10 +32,15 @@ export function InquiriesPanel() {
 
   useEffect(() => {
     const q = query(collection(getDb(), "inquiries"), orderBy("createdAt", "desc"));
-    return onSnapshot(q, (snap) => {
-      setInquiries(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Inquiry));
-      setLoading(false);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        setInquiries(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Inquiry));
+        setLoading(false);
+      },
+      // A denial must clear `loading`, or the panel spins with no explanation.
+      () => setLoading(false)
+    );
   }, []);
 
   const filtered = useMemo(

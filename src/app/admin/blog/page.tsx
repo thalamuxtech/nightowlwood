@@ -47,10 +47,15 @@ export default function BlogAdminPage() {
 
   useEffect(() => {
     const q = query(collection(getDb(), "posts"), orderBy("createdAt", "desc"));
-    return onSnapshot(q, (snap) => {
-      setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Post));
-      setLoading(false);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Post));
+        setLoading(false);
+      },
+      // A denial must clear `loading`, or the page spins with no explanation.
+      () => setLoading(false)
+    );
   }, []);
 
   async function togglePublished(post: Post) {

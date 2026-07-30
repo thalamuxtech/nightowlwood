@@ -98,16 +98,21 @@ export function WorkLogScreen() {
 
   useEffect(() => {
     const q = query(collection(getDb(), COL.staff), orderBy("name", "asc"));
-    return onSnapshot(q, (snap) =>
-      setStaff(
-        snap.docs
-          .filter((d) => d.data().active !== false)
-          .map((d) => ({
-            id: d.id,
-            name: (d.data().name as string) ?? "",
-            isAssistant: d.data().isAssistant === true,
-          }))
-      )
+    return onSnapshot(
+      q,
+      (snap) =>
+        setStaff(
+          snap.docs
+            .filter((d) => d.data().active !== false)
+            .map((d) => ({
+              id: d.id,
+              name: (d.data().name as string) ?? "",
+              isAssistant: d.data().isAssistant === true,
+            }))
+        ),
+      // Secondary lookup: an operator without staff read access simply gets no
+      // assistant list, which the fieldset already explains.
+      () => {}
     );
   }, []);
 

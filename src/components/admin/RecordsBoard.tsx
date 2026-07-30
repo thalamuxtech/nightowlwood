@@ -62,13 +62,23 @@ export function RecordsBoard({
   const [filter, setFilter] = useState<RecordStatus | "all">("all");
   const [selected, setSelected] = useState<BaseRecord | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const q = query(collection(getDb(), collectionName), orderBy("createdAt", "desc"));
-    return onSnapshot(q, (snap) => {
-      setRecords(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as BaseRecord));
-      setLoading(false);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        setRecords(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as BaseRecord));
+        setLoading(false);
+      },
+      // Without this a rules denial never clears `loading`, so the screen spins
+      // forever with nothing explaining why.
+      (err) => {
+        setError(err.message);
+        setLoading(false);
+      }
+    );
   }, [collectionName]);
 
   const filtered = useMemo(
@@ -123,7 +133,15 @@ export function RecordsBoard({
             </tr>
           </thead>
           <tbody className="divide-y divide-night-700/40">
-            {loading && (
+            {error && (
+        <p
+          role="alert"
+          className="mb-4 rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-400"
+        >
+          {error}
+        </p>
+      )}
+      {loading && (
               <tr>
                 <td colSpan={columns.length + 3} className="px-6 py-8 text-center text-cream-500">
                   Loading…

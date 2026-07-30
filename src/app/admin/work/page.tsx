@@ -39,10 +39,15 @@ export default function WorkManagerPage() {
 
   useEffect(() => {
     const q = query(collection(getDb(), "workItems"), orderBy("order", "asc"));
-    return onSnapshot(q, (snap) => {
-      setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PortfolioItem));
-      setLoading(false);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PortfolioItem));
+        setLoading(false);
+      },
+      // A denial must clear `loading`, or the page spins with no explanation.
+      () => setLoading(false)
+    );
   }, []);
 
   async function togglePublished(item: PortfolioItem) {

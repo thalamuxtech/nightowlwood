@@ -13,10 +13,15 @@ export function SubscribersPanel() {
 
   useEffect(() => {
     const q = query(collection(getDb(), "subscribers"), orderBy("createdAt", "desc"));
-    return onSnapshot(q, (snap) => {
-      setSubscribers(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Subscriber));
-      setLoading(false);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        setSubscribers(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Subscriber));
+        setLoading(false);
+      },
+      // A denial must still clear `loading`, or the panel spins indefinitely.
+      () => setLoading(false)
+    );
   }, []);
 
   function exportCsv() {
