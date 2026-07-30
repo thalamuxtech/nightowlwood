@@ -40,6 +40,7 @@ import {
   SelectField,
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { TOOLTIP_PROPS } from "@/components/admin/ui/chartTheme";
 
 interface ReadingRow {
   id: string;
@@ -322,13 +323,7 @@ export function MetersScreen() {
                 />
                 <YAxis tick={{ fill: "#8e8781", fontSize: 11 }} stroke="#2a2520" />
                 <Tooltip
-                  contentStyle={{
-                    background: "#17130f",
-                    border: "1px solid #2a2520",
-                    borderRadius: 12,
-                    color: "#f5efe6",
-                    fontSize: 12,
-                  }}
+                  {...TOOLTIP_PROPS}
                   formatter={(v: number, key) =>
                     key === "cost" ? formatNaira(Number(v) * 100) : `${v} units`
                   }

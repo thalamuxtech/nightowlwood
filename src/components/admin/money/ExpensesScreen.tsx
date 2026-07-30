@@ -30,6 +30,7 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { TOOLTIP_PROPS } from "@/components/admin/ui/chartTheme";
 
 /** Brand-derived series, reused from the dashboard palette. */
 const SERIES = ["#c08a3e", "#8a6a45", "#d9b678", "#5c3f22", "#e0c99a", "#a08050"];
@@ -249,13 +250,7 @@ export function ExpensesScreen() {
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{
-                      background: "#17130f",
-                      border: "1px solid #2a2520",
-                      borderRadius: 12,
-                      color: "#f5efe6",
-                      fontSize: 12,
-                    }}
+                    {...TOOLTIP_PROPS}
                     formatter={(v: number) => formatNaira(Number(v) * 100)}
                   />
                 </PieChart>

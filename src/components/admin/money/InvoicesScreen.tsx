@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   BadgeCheck,
-  FileDown,
   FileText,
   Loader2,
-  Printer,
   Send,
   ShieldAlert,
 } from "lucide-react";
@@ -26,7 +24,6 @@ import {
   issueInvoice,
   recordInvoicePayment,
 } from "@/lib/erp/invoices";
-import { DEFAULT_COMPANY_SETTINGS, SETTINGS_DOC } from "@/lib/erp/settings";
 import { INVOICE_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import {
@@ -35,8 +32,7 @@ import {
   NumberField,
   SelectField,
 } from "@/components/admin/ui/Fields";
-import { PrintPreview } from "@/components/admin/ui/PrintPreview";
-import { InvoiceSheet, type CompanyLike, type InvoiceLike } from "@/components/admin/print/InvoiceSheet";
+import { type InvoiceLike } from "@/components/admin/print/InvoiceSheet";
 import { InvoicePdfModal } from "@/components/admin/money/InvoicePdfModal";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 
@@ -67,7 +63,6 @@ export function InvoicesScreen() {
   const canCreate = session.can("invoice.create");
 
   const [rows, setRows] = useState<InvoiceRow[]>([]);
-  const [company, setCompany] = useState<CompanyLike>(DEFAULT_COMPANY_SETTINGS);
   const [jobs, setJobs] = useState<SourceOption[]>([]);
   const [projects, setProjects] = useState<SourceOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,8 +71,6 @@ export function InvoicesScreen() {
   const [notice, setNotice] = useState("");
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | "all">("all");
   const [source, setSource] = useState("");
-  const [previewing, setPreviewing] = useState<InvoiceRow | null>(null);
-  const [printing, setPrinting] = useState<InvoiceRow | null>(null);
   /** The invoice whose server-rendered PDF is open for review, download or email. */
   const [pdfFor, setPdfFor] = useState<InvoiceRow | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -121,14 +114,6 @@ export function InvoicesScreen() {
         setLoading(false);
       }
     );
-  }, []);
-
-  useEffect(() => {
-    getDoc(doc(getDb(), COL.settings, SETTINGS_DOC.company))
-      .then((snap) => {
-        if (snap.exists()) setCompany({ ...DEFAULT_COMPANY_SETTINGS, ...snap.data() } as CompanyLike);
-      })
-      .catch(() => {});
   }, []);
 
   // Sources for a new invoice: collected jobs with a balance, and approved or
@@ -265,32 +250,6 @@ export function InvoicesScreen() {
         />
       )}
 
-      {previewing && (
-        <PrintPreview
-          title={`Invoice ${previewing.invoiceNumber}`}
-          paper="a4-portrait"
-          onPrint={() => setPrinting(previewing)}
-          onClose={() => setPreviewing(null)}
-        >
-          <InvoiceSheet
-            invoice={previewing}
-            company={company}
-            autoPrint={false}
-            onDone={() => {}}
-          />
-        </PrintPreview>
-      )}
-      {printing && (
-        <InvoiceSheet
-          invoice={printing}
-          company={company}
-          onDone={() => {
-            setPrinting(null);
-            setPreviewing(null);
-          }}
-        />
-      )}
-
       <div className="print:hidden">
         <header>
           <p className="text-eyebrow">Money</p>
@@ -419,17 +378,13 @@ export function InvoicesScreen() {
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Button variant="secondary" onClick={() => setPreviewing(r)}>
-                      <span className="flex items-center gap-1.5">
-                        <Printer size={14} /> Print
-                      </span>
-                    </Button>
-
-                    {/* The PDF is the document that leaves the building: reviewed,
-                        downloaded and emailed from one place, all the same file. */}
+                    {/* One action for the document: view it, download it, or email
+                        it, all the same server-rendered PDF. The old print-only
+                        route offered no way to keep or send a copy, and the PDF
+                        viewer can print anyway. */}
                     <Button variant="secondary" onClick={() => setPdfFor(r)}>
                       <span className="flex items-center gap-1.5">
-                        <FileDown size={14} /> PDF
+                        <FileText size={14} /> View &amp; download
                       </span>
                     </Button>
 

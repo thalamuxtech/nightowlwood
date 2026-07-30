@@ -45,8 +45,7 @@ import {
   type ReportRange,
 } from "@/lib/erp/ranges";
 import { OperatorDashboard } from "@/components/admin/dashboards/OperatorDashboard";
-
-/** Selectable windows for the revenue chart. */
+import { LEGEND_STYLE, TOOLTIP_PROPS } from "@/components/admin/ui/chartTheme";
 
 
 /** Brand palette. Ordered so adjacent slices stay distinguishable. */
@@ -415,10 +414,10 @@ export function OverviewDashboard() {
                   width={58}
                 />
                 <Tooltip
-                  contentStyle={TOOLTIP}
+                  {...TOOLTIP_PROPS}
                   formatter={(v: number, name) => [formatNaira(Number(v) * 100), name]}
                 />
-                <Legend wrapperStyle={{ fontSize: 12, color: "#8e8781" }} />
+                <Legend wrapperStyle={LEGEND_STYLE} />
                 <Area
                   type="monotone"
                   dataKey="revenue"
@@ -459,8 +458,8 @@ export function OverviewDashboard() {
                       <Cell key={i} fill={SERIES[i % SERIES.length]} stroke="none" />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={TOOLTIP} />
-                  <Legend wrapperStyle={{ fontSize: 12, color: "#8e8781" }} />
+                  <Tooltip {...TOOLTIP_PROPS} />
+                  <Legend wrapperStyle={LEGEND_STYLE} />
                 </PieChart>
               </ResponsiveContainer>
             </Panel>
@@ -493,7 +492,7 @@ export function OverviewDashboard() {
                       width={120}
                     />
                     <Tooltip
-                      contentStyle={TOOLTIP}
+                      {...TOOLTIP_PROPS}
                       formatter={(v: number) => formatNaira(Number(v) * 100)}
                     />
                     <Bar dataKey="value" radius={[0, 6, 6, 0]} animationDuration={900}>
@@ -545,14 +544,6 @@ export function OverviewDashboard() {
     </div>
   );
 }
-
-const TOOLTIP = {
-  background: "#14100b",
-  border: "1px solid #3a332b",
-  borderRadius: 12,
-  color: "#faf7f2",
-  fontSize: 12,
-} as const;
 
 function greeting(): string {
   const h = Number(
