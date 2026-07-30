@@ -19,7 +19,7 @@ import {
   YAxis,
 } from "recharts";
 import { ArrowRight, Loader2, TrendingUp } from "lucide-react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, orderBy, query } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { JOB_STATUS_LABELS, type JobStatus } from "@/lib/erp/enums";
@@ -27,18 +27,18 @@ import { formatNaira, formatNairaCompact } from "@/lib/erp/money";
 import { LiveCounter } from "@/components/admin/ui/LiveCounter";
 import { InsightsPanel } from "@/components/admin/InsightsPanel";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import {
+  bucketFor,
+  bucketKey,
+  bucketLabel,
+  DEFAULT_RANGES,
+  DEFAULT_RANGE_KEY,
+  type ReportRange,
+} from "@/lib/erp/ranges";
 import { OperatorDashboard } from "@/components/admin/dashboards/OperatorDashboard";
 
 /** Selectable windows for the revenue chart. */
-const RANGES = [
-  { key: "1d", label: "Today", days: 1 },
-  { key: "7d", label: "7 days", days: 7 },
-  { key: "30d", label: "30 days", days: 30 },
-  { key: "90d", label: "90 days", days: 90 },
-  { key: "1y", label: "12 months", days: 365 },
-] as const;
 
-type RangeKey = (typeof RANGES)[number]["key"];
 
 /** Brand palette. Ordered so adjacent slices stay distinguishable. */
 const SERIES = ["#dba95f", "#8b6a3f", "#c9a227", "#6b8f71", "#7a6ea8", "#a8705a"];
@@ -81,7 +81,13 @@ export function OverviewDashboard() {
   const [jobs, setJobs] = useState<JobPoint[]>([]);
   const [expenses, setExpenses] = useState<ExpensePoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState<RangeKey>("30d");
+  const [range, setRange] = useState<string>(DEFAULT_RANGE_KEY);
+  /**
+   * Ranges come from settings so an admin can add their own. The presets are the
+   * starting set, not the limit: with five years of records "12 months" would
+   * otherwise be the widest view available.
+   */
+  const [ranges, setRanges] = useState<ReportRange[]>(DEFAULT_RANGES);
 
   // An operator's view is a different screen, not a subset of this one: almost
   // every panel here is company-wide and none of it is theirs to see.
@@ -127,8 +133,22 @@ export function OverviewDashboard() {
     );
   }, []);
 
-  const days = RANGES.find((r) => r.key === range)?.days ?? 30;
+  useEffect(() => {
+    getDoc(doc(getDb(), COL.settings, "reporting"))
+      .then((snap) => {
+        const saved = snap.data()?.ranges as ReportRange[] | undefined;
+        if (saved?.length) setRanges(saved);
+      })
+      .catch(() => {
+        // Settings is staff-readable; a denial just leaves the presets in place.
+      });
+  }, []);
+
+  const activeRange = ranges.find((r) => r.key === range) ?? ranges[0] ?? DEFAULT_RANGES[2];
+  const days = activeRange?.days ?? null;
   const since = useMemo(() => {
+    // null days means all time, so nothing is filtered out.
+    if (days === null) return 0;
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     d.setDate(d.getDate() - (days - 1));
@@ -140,46 +160,68 @@ export function OverviewDashboard() {
     [jobs, since]
   );
 
-  /** Revenue and expenses bucketed by day, or by month for the year view. */
+  /**
+   * Revenue and expenses, bucketed to suit the span.
+   *
+   * Granularity follows the range rather than being fixed: five years by day
+   * would be about 1,800 points, which is unreadable and slow. bucketFor picks
+   * days, weeks, months or quarters accordingly.
+   */
   const series = useMemo(() => {
-    const byMonth = days > 120;
-    const buckets = new Map<string, { label: string; revenue: number; expenses: number }>();
+    const bucket = bucketFor(days);
+    const buckets = new Map<string, { label: string; revenue: number; expenses: number; at: number }>();
 
-    const keyOf = (ms: number) => {
-      const d = new Date(ms);
-      if (byMonth) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-        d.getDate()
-      ).padStart(2, "0")}`;
-    };
-    const labelOf = (ms: number) =>
-      new Intl.DateTimeFormat("en-GB", byMonth ? { month: "short" } : { day: "numeric", month: "short" }).format(
-        new Date(ms)
-      );
+    // Pre-seed each bucket across the window so a quiet period reads as zero
+    // rather than vanishing, which would make the line misleadingly smooth.
+    // For all-time the seed starts at the oldest record rather than a fixed span.
+    const earliest =
+      days === null
+        ? Math.min(
+            ...[
+              ...jobs.map((j) => j.receivedAtMs ?? Infinity),
+              ...expenses.map((e) => e.dateMs ?? Infinity),
+              Date.now(),
+            ]
+          )
+        : since;
 
-    // Pre-seed every bucket so a quiet day shows as zero rather than vanishing,
-    // which would otherwise make the line misleadingly smooth.
-    const step = byMonth ? 30 : 1;
-    for (let i = days - 1; i >= 0; i -= step) {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - i);
-      const k = keyOf(d.getTime());
-      if (!buckets.has(k)) buckets.set(k, { label: labelOf(d.getTime()), revenue: 0, expenses: 0 });
+    const stepDays = bucket === "day" ? 1 : bucket === "week" ? 7 : bucket === "month" ? 28 : 90;
+    for (let cursor = earliest; cursor <= Date.now(); cursor += stepDays * 86_400_000) {
+      const k = bucketKey(cursor, bucket);
+      if (!buckets.has(k)) {
+        buckets.set(k, { label: bucketLabel(cursor, bucket), revenue: 0, expenses: 0, at: cursor });
+      }
     }
 
     for (const j of jobs) {
       if (j.receivedAtMs === null || j.receivedAtMs < since) continue;
-      const b = buckets.get(keyOf(j.receivedAtMs));
-      if (b) b.revenue += j.totalKobo / 100;
+      const k = bucketKey(j.receivedAtMs, bucket);
+      const b =
+        buckets.get(k) ??
+        buckets
+          .set(k, {
+            label: bucketLabel(j.receivedAtMs, bucket),
+            revenue: 0,
+            expenses: 0,
+            at: j.receivedAtMs,
+          })
+          .get(k)!;
+      b.revenue += j.totalKobo / 100;
     }
     for (const e of expenses) {
       if (e.dateMs === null || e.dateMs < since) continue;
-      const b = buckets.get(keyOf(e.dateMs));
-      if (b) b.expenses += e.amountKobo / 100;
+      const k = bucketKey(e.dateMs, bucket);
+      const b =
+        buckets.get(k) ??
+        buckets
+          .set(k, { label: bucketLabel(e.dateMs, bucket), revenue: 0, expenses: 0, at: e.dateMs })
+          .get(k)!;
+      b.expenses += e.amountKobo / 100;
     }
 
-    return [...buckets.values()];
+    // Sorted by time: map insertion order is not chronological once a record
+    // lands in a bucket that was not pre-seeded.
+    return [...buckets.values()].sort((a, b) => a.at - b.at);
   }, [jobs, expenses, since, days]);
 
   const totals = useMemo(() => {
@@ -264,7 +306,7 @@ export function OverviewDashboard() {
 
           {/* Range selector */}
           <div className="mt-8 flex flex-wrap items-center gap-2">
-            {RANGES.map((r) => (
+            {ranges.map((r) => (
               <button
                 key={r.key}
                 type="button"
@@ -315,7 +357,7 @@ export function OverviewDashboard() {
           {canSeeFinance && (
           <Panel
             title="Revenue and spend"
-            hint={days === 1 ? "Today" : `Last ${days} days`}
+            hint={days === null ? "All time" : days === 1 ? "Today" : `Last ${days} days`}
             delay={0.05}
           >
             <ResponsiveContainer width="100%" height={280}>

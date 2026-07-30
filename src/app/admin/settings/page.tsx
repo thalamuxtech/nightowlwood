@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2, Save } from "lucide-react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import { EmailTester } from "@/components/admin/EmailTester";
+import { ReportRangesEditor } from "@/components/admin/ReportRangesEditor";
 import type { SiteSettings } from "@/lib/types";
 
 const DEFAULTS: SiteSettings = {
@@ -105,6 +106,10 @@ export default function SettingsPage() {
           </div>
         </form>
       )}
+
+      <div className="mt-8">
+        <ReportRangesEditor />
+      </div>
 
       <div className="mt-8">
         <EmailTester />

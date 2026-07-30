@@ -48,7 +48,7 @@ export function Footer() {
               <li key={link.href}>
                 <Link
                   href={link.href}
-                  className="link-lined text-cream-200 transition-colors duration-300 hover:text-cream-50"
+                  className="link-lined tap-target text-cream-200 transition-colors duration-300 hover:text-cream-50"
                 >
                   {link.label}
                 </Link>
@@ -65,7 +65,7 @@ export function Footer() {
                 href={SITE.whatsappHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-3 transition-colors duration-300 hover:text-brass-300"
+                className="tap-target flex items-center gap-3 transition-colors duration-300 hover:text-brass-300"
               >
                 <MessageCircle size={16} className="text-brass-500" />
                 WhatsApp {SITE.whatsappNumber}
@@ -74,7 +74,7 @@ export function Footer() {
             <li>
               <a
                 href={`mailto:${SITE.email}`}
-                className="flex items-center gap-3 transition-colors duration-300 hover:text-brass-300"
+                className="tap-target flex items-center gap-3 transition-colors duration-300 hover:text-brass-300"
               >
                 <Mail size={16} className="text-brass-500" /> {SITE.email}
               </a>
@@ -128,7 +128,7 @@ export function Footer() {
               href="https://thalamux-tech.web.app"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-cream-400 transition-colors duration-300 hover:text-brass-300"
+              className="tap-target text-cream-400 transition-colors duration-300 hover:text-brass-300"
             >
               Thalamuxtech
             </a>

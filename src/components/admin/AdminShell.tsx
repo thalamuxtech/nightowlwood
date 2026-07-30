@@ -39,6 +39,7 @@ import type { Capability } from "@/lib/erp/permissions";
 import { ROLE_LABELS } from "@/lib/erp/enums";
 import { AdminClock } from "@/components/admin/ui/AdminClock";
 import { DemoDataButton } from "@/components/admin/DemoDataButton";
+import { GroupTabs } from "@/components/admin/ui/GroupTabs";
 
 const AdminUserContext = createContext<User | null>(null);
 export const useAdminUser = () => useContext(AdminUserContext);
@@ -48,7 +49,7 @@ export const useAdminUser = () => useContext(AdminUserContext);
  * entries without one are visible to any signed-in staff member. This is
  * presentation only, the screens and Firestore rules enforce access.
  */
-interface NavItem {
+export interface NavItem {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
@@ -66,15 +67,15 @@ interface NavItem {
  * Expenses and Loans sit together under Finance even though they are unrelated
  * collections, because whoever opens one is usually reaching for another.
  */
-interface NavGroup {
+export interface NavGroup {
   title: string | null;
   items: NavItem[];
 }
 
-const NAV_GROUPS: NavGroup[] = [
+export const NAV_GROUPS: NavGroup[] = [
   {
     title: null,
-    items: [{ href: "/admin/", label: "Overview", icon: LayoutDashboard }],
+    items: [{ href: "/admin/", label: "Dashboard", icon: LayoutDashboard }],
   },
   {
     title: "Operations",
@@ -158,10 +159,40 @@ export function AdminShell({ children }: { children: ReactNode }) {
             <DemoDataButton />
           </div>
           <NoRoleNotice email={user.email ?? ""} />
+          <ActiveGroupTabs />
           {children}
         </main>
       </div>
     </AdminUserContext.Provider>
+  );
+}
+
+/**
+ * Tabs for the group that owns the current route.
+ *
+ * Rendered in the shell rather than in each screen, so adding a screen to a group
+ * gives it tabs without touching the screen itself. Nothing renders on the
+ * dashboard, which sits outside any group.
+ */
+function ActiveGroupTabs() {
+  const pathname = usePathname();
+  const { can, ready } = useErpSession();
+
+  const group = NAV_GROUPS.find(
+    (g) => g.title && g.items.some((i) => i.href === pathname)
+  );
+  if (!group?.title) return null;
+
+  const tabs = group.items.filter(
+    (i) => !i.capability || (ready && can(i.capability))
+  );
+
+  return (
+    <GroupTabs
+      groupKey={group.title}
+      title={group.title}
+      tabs={tabs.map(({ href, label, icon }) => ({ href, label, icon }))}
+    />
   );
 }
 

@@ -196,7 +196,7 @@ function AboutTeaser() {
         <Reveal delay={0.3}>
           <Link
             href="/about/"
-            className="link-lined mt-9 inline-flex items-center gap-2 text-sm font-medium text-brass-300"
+            className="link-lined tap-target mt-9 inline-flex items-center gap-2 text-sm font-medium text-brass-300"
           >
             More about the studio <ArrowRight size={16} />
           </Link>
@@ -252,7 +252,7 @@ function WorkStrip() {
           <Reveal delay={0.2}>
             <Link
               href="/work/"
-              className="link-lined inline-flex items-center gap-2 text-sm font-medium text-brass-300"
+              className="link-lined tap-target inline-flex items-center gap-2 text-sm font-medium text-brass-300"
             >
               View all work <ArrowRight size={16} />
             </Link>
@@ -501,7 +501,7 @@ function AwardTeaser() {
           <Reveal delay={0.2}>
             <Link
               href="/about/#award"
-              className="link-lined mt-8 inline-flex items-center gap-2 text-sm font-medium text-brass-300"
+              className="link-lined tap-target mt-8 inline-flex items-center gap-2 text-sm font-medium text-brass-300"
             >
               Read the story <ArrowRight size={16} />
             </Link>

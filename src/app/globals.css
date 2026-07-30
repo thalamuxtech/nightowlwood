@@ -40,12 +40,24 @@ html {
   scroll-behavior: smooth;
 }
 
+/* The clip belongs on html as well as body.
+   With it only on body, position:fixed children are laid out against the
+   viewport rather than the body box, so they escape the clip entirely. That let
+   the header and splash render 441px wide on a 390px phone, and the page could be
+   swiped sideways. max-width belts it: a stray wide child then shrinks rather
+   than widening the document. */
+html {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   background-color: var(--color-night-950);
   color: var(--color-cream-100);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
+  max-width: 100%;
 }
 
 ::selection {
@@ -438,5 +450,21 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Touch target floor.
+   Inline text links render at their line height, about 20px, well under the 44px
+   Apple and Google both recommend.
+
+   A pseudo-element band was tried first and abandoned: it cannot extend an
+   inline-flex link, and the :not() chain needed to avoid double-padding ended up
+   guessing at utility classes. The affected links now carry real vertical padding
+   from a utility class, which is explicit and visible at the call site.
+
+   Applied only for coarse pointers so mouse hit areas stay exact. */
+@media (pointer: coarse) {
+  .tap-target {
+    padding-block: 0.6rem;
   }
 }

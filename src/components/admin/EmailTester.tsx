@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { CheckCircle2, Eye, Mail, ShieldAlert, X, XCircle } from "lucide-react";
 import { getFirebaseApp } from "@/lib/firebase";
@@ -74,11 +74,6 @@ export function EmailTester() {
       <h2 className="flex items-center gap-2 font-display text-lg text-cream-100">
         <Mail size={18} className="text-brass-400" /> Transactional email
       </h2>
-      <p className="mt-2 text-sm text-cream-400">
-        Verifies the Brevo path used for invoices, estimate review links and stock
-        alerts. The API key lives in Secret Manager and is never sent to the browser.
-      </p>
-
       <div className="mt-5">
         <Button variant="secondary" onClick={preview} busy={previewing}>
           <span className="flex items-center gap-2">
@@ -101,6 +96,10 @@ export function EmailTester() {
         </Button>
       </div>
 
+      {previewHtml !== null && (
+        <EmailPreviewModal html={previewHtml} onClose={() => setPreviewHtml(null)} />
+      )}
+
       {result && (
         <p
           role="status"
@@ -117,6 +116,67 @@ export function EmailTester() {
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * Shows the rendered email exactly as it will be delivered.
+ *
+ * The email carries its own <html> and inline styles, so it goes into an iframe
+ * via srcDoc rather than the page: injected directly, its rules would leak into
+ * the dashboard and the dashboard's reset would leak back. `sandbox` with no
+ * allow-scripts also means nothing in the template can execute.
+ */
+function EmailPreviewModal({ html, onClose }: { html: string; onClose: () => void }) {
+  // Escape closes, which is expected for an overlay this size.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Email preview"
+      onClick={onClose}
+      className="fixed inset-0 z-[80] flex flex-col items-center justify-center bg-night-950/90 p-3 backdrop-blur-sm sm:p-8"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-night-700/60 bg-night-900"
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-night-700/60 px-5 py-3">
+          <div>
+            <p className="text-sm text-cream-100">Email preview</p>
+            <p className="text-xs text-cream-500">
+              Rendered from the same template the send uses.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close preview"
+            className="cursor-pointer text-cream-400 transition-colors hover:text-brass-300"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <iframe
+          title="Email preview"
+          srcDoc={html}
+          sandbox=""
+          className="h-full min-h-[60vh] w-full flex-1 bg-white"
+        />
+      </div>
+    </div>
   );
 }
 
