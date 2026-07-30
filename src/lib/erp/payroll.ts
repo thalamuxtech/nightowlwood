@@ -1,4 +1,5 @@
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -14,7 +15,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { COL, loanRepaymentsPath, wageRunLinesPath } from "./collections";
-import type { WageWorkType } from "./enums";
+import type { ExpenseCategory, WageWorkType } from "./enums";
 import { sumKobo } from "./money";
 import type { Loan, WageRate, WorkLog } from "./types";
 import { writeAudit, type AuditActor } from "./audit";
@@ -480,15 +481,101 @@ export async function deleteDraftWageRun(
 }
 
 /** Marks an approved run as paid. */
+/**
+ * Books a paid payroll run into the expense ledger.
+ *
+ * Shared by the weekly wage run and the monthly salary run, so labour cost reaches
+ * the books the same way regardless of how someone is paid.
+ *
+ * Idempotent by construction: the expense carries the run that produced it, and an
+ * existing entry for that run short-circuits the write. Marking a run paid twice
+ * would otherwise book the payroll twice and quietly halve the reported profit.
+ */
+export async function recordPayrollExpense(
+  db: Firestore,
+  actor: AuditActor,
+  input: {
+    amountKobo: number;
+    date: Date;
+    purpose: string;
+    sourceCollection: string;
+    sourceId: string;
+  }
+): Promise<void> {
+  if (input.amountKobo <= 0) return;
+
+  const existing = await getDocs(
+    query(
+      collection(db, COL.expenses),
+      where("sourceCollection", "==", input.sourceCollection),
+      where("sourceId", "==", input.sourceId)
+    )
+  );
+  if (!existing.empty) return;
+
+  await addDoc(collection(db, COL.expenses), {
+    date: Timestamp.fromDate(input.date),
+    payeeType: "staff",
+    payeeName: "Payroll",
+    purpose: input.purpose,
+    category: "wages" satisfies ExpenseCategory,
+    amountKobo: input.amountKobo,
+    receiptUrl: null,
+    // The link back to the run is what makes this idempotent, and what lets an
+    // auditor trace an expense line to the payroll that justifies it.
+    sourceCollection: input.sourceCollection,
+    sourceId: input.sourceId,
+    createdAt: serverTimestamp(),
+    createdBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "create",
+    collectionName: COL.expenses,
+    docId: input.sourceId,
+    summary: `Booked ${input.purpose} to expenses: ${input.amountKobo} kobo`,
+    after: { amountKobo: input.amountKobo, category: "wages" },
+  });
+}
+
 export async function markWageRunPaid(
   db: Firestore,
   actor: AuditActor,
   runId: string
 ): Promise<void> {
-  await updateDoc(doc(db, COL.wageRuns, runId), {
+  const ref = doc(db, COL.wageRuns, runId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Wage run not found.");
+  const run = snap.data();
+  if (run.status === "paid") throw new Error("This run is already marked paid.");
+  if (run.status !== "approved") {
+    throw new Error("Approve the run before marking it paid.");
+  }
+
+  await updateDoc(ref, {
     status: "paid",
     paidAt: serverTimestamp(),
     updatedBy: actor.uid,
+  });
+
+  // Wages are the workshop's largest cost, so paying a run has to reach the
+  // expense ledger or the dashboard reports revenue with the labour that earned
+  // it missing, and every profit figure is overstated.
+  //
+  // Written at the point of payment rather than approval, because approval commits
+  // the figure while payment is when the money actually leaves. The net is used,
+  // not the gross: a loan repayment deducted from pay never leaves the business,
+  // and booking the gross would double-count money already recorded as lent.
+  await recordPayrollExpense(db, actor, {
+    amountKobo: run.netPayableKobo ?? 0,
+    date: new Date(),
+    purpose: `Wage run ${fmtPeriod(
+      run.periodStart?.toDate?.() ?? new Date(),
+      run.periodEnd?.toDate?.() ?? new Date()
+    )}`,
+    sourceCollection: COL.wageRuns,
+    sourceId: runId,
   });
 
   await writeAudit(db, {

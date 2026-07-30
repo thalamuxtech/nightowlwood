@@ -40,6 +40,7 @@ export const DEMO_COLLECTIONS = [
   COL.expenses,
   COL.loans,
   COL.wageRuns,
+  COL.salaryRuns,
   COL.inventoryCompany,
   COL.inventoryService,
   COL.consumableCycles,
@@ -65,13 +66,33 @@ const CUSTOMERS = [
   { name: "Engr. Musa Abdullahi", phone: "0703 559 2210", service: true, product: true },
 ];
 
-const STAFF = [
+/**
+ * Staff, of both kinds.
+ *
+ * The workshop pays two ways, so the demo has to contain both or the salary side
+ * of payroll looks broken rather than merely empty: the screen would show no
+ * salaried staff, no figures to review, and nothing to run.
+ *
+ * `salaryNaira` set means monthly salaried; absent means piece-rate, which is
+ * what the wage run reads.
+ */
+const STAFF: Array<{
+  name: string;
+  title: string;
+  op: boolean;
+  as: boolean;
+  salaryNaira?: number;
+}> = [
   { name: "Salahu Ibrahim", title: "Senior machine operator", op: true, as: false },
   { name: "Amir Yusuf", title: "Machine operator", op: true, as: false },
   { name: "Baba Shasan", title: "Operator", op: true, as: true },
   { name: "Dauda Sani", title: "Assistant", op: false, as: true },
   { name: "Kabiru Lawal", title: "Assistant", op: false, as: true },
   { name: "Nuhu Garba", title: "Assistant", op: false, as: true },
+  // Salaried: the office and supervisory roles that are not paid per piece.
+  { name: "Hauwa Bello", title: "Workshop manager", op: false, as: false, salaryNaira: 280_000 },
+  { name: "Idris Mohammed", title: "Store and procurement", op: false, as: false, salaryNaira: 165_000 },
+  { name: "Zainab Aliyu", title: "Accounts and admin", op: false, as: false, salaryNaira: 190_000 },
 ];
 
 /** Service work priced from the observed rate card. */
@@ -299,18 +320,36 @@ export async function seedDemoData(
     written += 1;
   }
 
-  const staffIds: Array<{ id: string; name: string; op: boolean; as: boolean }> = [];
+  const staffIds: Array<{
+    id: string;
+    name: string;
+    op: boolean;
+    as: boolean;
+    /** Null for piece-rate staff, who are paid from work logs instead. */
+    salaryKobo: number | null;
+  }> = [];
   for (const s of STAFF) {
     const ref = doc(collection(db, COL.staff));
+    const salaryKobo = s.salaryNaira ? toKobo(s.salaryNaira) : null;
     batch.set(ref, {
       ...base,
       name: s.name,
       jobTitle: s.title,
       isOperator: s.op,
       isAssistant: s.as,
+      // Both fields are written together so a salaried employee on zero this month
+      // is still distinguishable from a piece-rate worker.
+      monthlySalaryKobo: salaryKobo,
+      isSalaried: salaryKobo !== null,
       active: true,
     });
-    staffIds.push({ id: ref.id, name: s.name, op: s.op, as: s.as });
+    staffIds.push({
+      id: ref.id,
+      name: s.name,
+      op: s.op,
+      as: s.as,
+      salaryKobo,
+    });
     written += 1;
   }
   await batch.commit();
@@ -783,7 +822,8 @@ export async function seedDemoData(
     const deductions = week === 2 ? toKobo(2000) : 0;
     const status = week === 1 ? "draft" : week === 2 ? "approved" : "paid";
 
-    batch.set(doc(collection(db, COL.wageRuns)), {
+    const wageRunRef = doc(collection(db, COL.wageRuns));
+    batch.set(wageRunRef, {
       ...base,
       periodStart: Timestamp.fromDate(start),
       periodEnd: Timestamp.fromDate(end),
@@ -816,8 +856,125 @@ export async function seedDemoData(
       paidAt: status === "paid" ? Timestamp.fromDate(end) : null,
     });
     written += 1;
+
+    // A paid run books its cost, matching what markWageRunPaid does in the app.
+    // The net is used, not the gross: the loan repayment deducted from pay never
+    // left the business.
+    if (status === "paid") {
+      batch.set(doc(collection(db, COL.expenses)), {
+        ...base,
+        date: Timestamp.fromDate(end),
+        payeeType: "staff",
+        payeeName: "Payroll",
+        purpose: `Wage run to ${end.toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+        })}`,
+        category: "wages",
+        amountKobo: gross - deductions,
+        receiptUrl: null,
+        sourceCollection: COL.wageRuns,
+        sourceId: wageRunRef.id,
+      });
+      written += 1;
+    }
   }
   await batch.commit();
+
+  // --- Salary runs, the monthly counterpart to the weekly wage runs ---------
+  //
+  // Seeded so the salary screen has something to show. Without these the two
+  // payroll paths look unequal: wages have three runs to inspect and salaries
+  // have an empty list, which reads as unfinished rather than as a month not yet
+  // run.
+  onProgress("Salary runs");
+  batch = writeBatch(db);
+  const salaried = staffIds.filter((s) => s.salaryKobo !== null);
+
+  if (salaried.length > 0) {
+    // Three months back to front, ending with the current month as a draft so
+    // there is something to adjust and approve.
+    for (let back = 2; back >= 0; back -= 1) {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth() - back, 1);
+      const end = new Date(now.getFullYear(), now.getMonth() - back + 1, 0);
+      const status = back === 0 ? "draft" : back === 1 ? "approved" : "paid";
+
+      const lines = salaried.map((s, k) => {
+        const baseKobo = s.salaryKobo ?? 0;
+        // One unpaid day in the middle month, and a bonus in the oldest, so the
+        // adjustment columns are not uniformly zero on screen.
+        const unpaidDays = back === 1 && k === 1 ? 2 : 0;
+        const workingDays = 26;
+        const unpaidKobo =
+          unpaidDays > 0 ? Math.round((baseKobo * unpaidDays) / workingDays) : 0;
+        const bonusKobo = back === 2 && k === 0 ? toKobo(40_000) : 0;
+        const grossKobo = Math.max(0, baseKobo - unpaidKobo + bonusKobo);
+        // A modest deduction on one person, to show the loan path reaching salary.
+        const deductionKobo = k === 2 ? toKobo(15_000) : 0;
+        return {
+          staffId: s.id,
+          staffName: s.name,
+          baseKobo,
+          unpaidDays,
+          workingDays,
+          unpaidKobo,
+          bonusKobo,
+          bonusNote: bonusKobo > 0 ? "Agreed at the quarter review" : null,
+          grossKobo,
+          deductionKobo,
+          netKobo: Math.max(0, grossKobo - deductionKobo),
+        };
+      });
+
+      const sum = (pick: (l: (typeof lines)[number]) => number) =>
+        lines.reduce((t, l) => t + pick(l), 0);
+      const grossTotal = sum((l) => l.grossKobo);
+      const deductions = sum((l) => l.deductionKobo);
+
+      const runRef = doc(collection(db, COL.salaryRuns));
+      batch.set(runRef, {
+        ...base,
+        periodStart: Timestamp.fromDate(start),
+        periodEnd: Timestamp.fromDate(end),
+        status,
+        lines,
+        baseTotalKobo: sum((l) => l.baseKobo),
+        bonusTotalKobo: sum((l) => l.bonusKobo),
+        unpaidTotalKobo: sum((l) => l.unpaidKobo),
+        grossTotalKobo: grossTotal,
+        deductionsKobo: deductions,
+        netPayableKobo: Math.max(0, grossTotal - deductions),
+        staffCount: lines.length,
+        approvedAt: status !== "draft" ? Timestamp.fromDate(end) : null,
+        paidAt: status === "paid" ? Timestamp.fromDate(end) : null,
+      });
+      written += 1;
+
+      // A paid run books its cost, exactly as markSalaryRunPaid does in the app.
+      // Without this the demo would show revenue with no labour against it, which
+      // is the very thing the expense link exists to prevent.
+      if (status === "paid") {
+        batch.set(doc(collection(db, COL.expenses)), {
+          ...base,
+          date: Timestamp.fromDate(end),
+          payeeType: "staff",
+          payeeName: "Payroll",
+          purpose: `Salaries, ${start.toLocaleDateString("en-GB", {
+            month: "long",
+            year: "numeric",
+          })}`,
+          category: "wages",
+          amountKobo: Math.max(0, grossTotal - deductions),
+          receiptUrl: null,
+          sourceCollection: COL.salaryRuns,
+          sourceId: runRef.id,
+        });
+        written += 1;
+      }
+    }
+    await batch.commit();
+  }
 
   onProgress("Done");
   return { written };

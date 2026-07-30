@@ -16,6 +16,7 @@ import {
 import { COL } from "./collections";
 import { sumKobo } from "./money";
 import { applyDeductions } from "./wages";
+import { recordPayrollExpense } from "./payroll";
 import type { Loan, Staff } from "./types";
 import { writeAudit, type AuditActor } from "./audit";
 
@@ -457,10 +458,26 @@ export async function markSalaryRunPaid(
     throw new Error("Approve the run before marking it paid.");
   }
 
+  const run = snap.data();
+
   await updateDoc(ref, {
     status: "paid",
     paidAt: serverTimestamp(),
     updatedBy: actor.uid,
+  });
+
+  // Salaries reach the expense ledger exactly as wages do, through the same
+  // helper, so labour cost lands in the books the same way whichever way a person
+  // is paid. Net rather than gross: a loan repayment deducted from a salary never
+  // leaves the business.
+  const fmt = (d: Date) =>
+    d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  await recordPayrollExpense(db, actor, {
+    amountKobo: run.netPayableKobo ?? 0,
+    date: new Date(),
+    purpose: `Salaries, ${fmt(run.periodStart?.toDate?.() ?? new Date())}`,
+    sourceCollection: COL.salaryRuns,
+    sourceId: runId,
   });
 
   await writeAudit(db, {
