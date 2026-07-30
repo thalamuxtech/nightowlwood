@@ -31,7 +31,11 @@ import {
 } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
-import { JOB_STATUS_LABELS, type JobStatus } from "@/lib/erp/enums";
+import {
+  JOB_STATUS_LABELS,
+  type JobStatus,
+  type ProjectStatus,
+} from "@/lib/erp/enums";
 import { formatNaira, formatNairaCompact } from "@/lib/erp/money";
 import { LiveCounter } from "@/components/admin/ui/LiveCounter";
 import { InsightsPanel } from "@/components/admin/InsightsPanel";
@@ -68,6 +72,38 @@ interface ExpensePoint {
 }
 
 /**
+ * A project, as the dashboard needs it.
+ *
+ * Earned value is the contract figure where one was agreed, and the estimate
+ * otherwise. An estimate is what the business expects to charge before the client
+ * has signed, so using it keeps a project in the picture during pricing rather
+ * than having it appear from nowhere on approval.
+ */
+interface ProjectPoint {
+  id: string;
+  status: ProjectStatus;
+  valueKobo: number;
+  startedAtMs: number | null;
+  customerName: string;
+}
+
+/**
+ * Which revenue line the figures cover.
+ *
+ * The dashboard read only service jobs, so project earnings were invisible and the
+ * headline revenue understated the business by whatever Products had brought in.
+ * The two lines are genuinely different trades with different rhythms, so they are
+ * worth seeing apart as well as together.
+ */
+type LineFilter = "all" | "service" | "product";
+
+const LINE_TABS: Array<{ key: LineFilter; label: string }> = [
+  { key: "all", label: "All revenue" },
+  { key: "service", label: "Services" },
+  { key: "product", label: "Products" },
+];
+
+/**
  * Admin overview.
  *
  * Chart-led rather than a grid of counters: the useful questions are about
@@ -87,8 +123,11 @@ export function OverviewDashboard() {
    */
   const canSeeFinance = session.can("dashboard.view.finance");
   const [jobs, setJobs] = useState<JobPoint[]>([]);
+  const [projects, setProjects] = useState<ProjectPoint[]>([]);
   const [expenses, setExpenses] = useState<ExpensePoint[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Which revenue line the charts and tiles cover. */
+  const [line, setLine] = useState<LineFilter>("all");
   const [range, setRange] = useState<string>(DEFAULT_RANGE_KEY);
   /**
    * Ranges come from settings so an admin can add their own. The presets are the
@@ -153,6 +192,45 @@ export function OverviewDashboard() {
   }, [since]);
 
   useEffect(() => {
+    // Projects, the other half of the business. Bounded the same way as jobs.
+    //
+    // Cancelled projects are dropped: they were never earned, and leaving them in
+    // would inflate revenue with work that will not happen. The filter is applied
+    // client-side because excluding one value server-side needs a composite index
+    // for a saving of a handful of documents.
+    const projRef = collection(getDb(), COL.projects);
+    const q =
+      since > 0
+        ? query(
+            projRef,
+            where("startDate", ">=", Timestamp.fromMillis(since)),
+            orderBy("startDate", "desc")
+          )
+        : query(projRef, orderBy("startDate", "desc"));
+    return onSnapshot(
+      q,
+      (snap) =>
+        setProjects(
+          snap.docs
+            .filter((d) => d.data().status !== "cancelled")
+            .map((d) => {
+              const x = d.data();
+              return {
+                id: d.id,
+                status: (x.status as ProjectStatus) ?? "enquiry",
+                // The agreed contract figure where there is one, the current
+                // estimate otherwise.
+                valueKobo: x.contractValueKobo ?? x.estimatedCostKobo ?? 0,
+                startedAtMs: x.startDate?.toMillis?.() ?? null,
+                customerName: x.customerName ?? "",
+              };
+            })
+        ),
+      () => {}
+    );
+  }, [since]);
+
+  useEffect(() => {
     const expensesRef = collection(getDb(), COL.expenses);
     const q =
       since > 0
@@ -188,6 +266,26 @@ export function OverviewDashboard() {
     [jobs, since]
   );
 
+  const projectsInRange = useMemo(
+    () => projects.filter((p) => p.startedAtMs !== null && p.startedAtMs >= since),
+    [projects, since]
+  );
+
+  /**
+   * The earning events the selected line covers, reduced to a common shape.
+   *
+   * Both trades are flattened to {at, kobo} so the chart and the tiles read from one
+   * list. A service job earns when the boards come in; a project earns from its
+   * start date, which is the closest thing it has to a comparable moment.
+   */
+  const earnings = useMemo(() => {
+    const svc = inRange.map((j) => ({ at: j.receivedAtMs!, kobo: j.totalKobo }));
+    const prd = projectsInRange.map((p) => ({ at: p.startedAtMs!, kobo: p.valueKobo }));
+    if (line === "service") return svc;
+    if (line === "product") return prd;
+    return [...svc, ...prd];
+  }, [inRange, projectsInRange, line]);
+
   /**
    * Revenue and expenses, bucketed to suit the span.
    *
@@ -206,7 +304,7 @@ export function OverviewDashboard() {
       days === null
         ? Math.min(
             ...[
-              ...jobs.map((j) => j.receivedAtMs ?? Infinity),
+              ...earnings.map((e) => e.at),
               ...expenses.map((e) => e.dateMs ?? Infinity),
               Date.now(),
             ]
@@ -221,20 +319,20 @@ export function OverviewDashboard() {
       }
     }
 
-    for (const j of jobs) {
-      if (j.receivedAtMs === null || j.receivedAtMs < since) continue;
-      const k = bucketKey(j.receivedAtMs, bucket);
+    for (const e of earnings) {
+      if (e.at < since) continue;
+      const k = bucketKey(e.at, bucket);
       const b =
         buckets.get(k) ??
         buckets
           .set(k, {
-            label: bucketLabel(j.receivedAtMs, bucket),
+            label: bucketLabel(e.at, bucket),
             revenue: 0,
             expenses: 0,
-            at: j.receivedAtMs,
+            at: e.at,
           })
           .get(k)!;
-      b.revenue += j.totalKobo / 100;
+      b.revenue += e.kobo / 100;
     }
     for (const e of expenses) {
       if (e.dateMs === null || e.dateMs < since) continue;
@@ -250,17 +348,30 @@ export function OverviewDashboard() {
     // Sorted by time: map insertion order is not chronological once a record
     // lands in a bucket that was not pre-seeded.
     return [...buckets.values()].sort((a, b) => a.at - b.at);
-  }, [jobs, expenses, since, days]);
+  }, [earnings, expenses, since, days]);
 
   const totals = useMemo(() => {
-    const revenue = inRange.reduce((s, j) => s + j.totalKobo, 0);
+    const revenue = earnings.reduce((s, e) => s + e.kobo, 0);
+
+    // Collected and outstanding come from service jobs only, whatever line is
+    // selected, and the tiles say so. A project has no payment ledger of its own:
+    // money against a project arrives through its invoice, so counting it here
+    // would either miss it or double it depending on which side was read.
     const collected = inRange.reduce((s, j) => s + j.paidKobo, 0);
     const outstanding = jobs.reduce((s, j) => s + j.balanceKobo, 0);
     const spend = expenses
       .filter((e) => e.dateMs !== null && e.dateMs >= since)
       .reduce((s, e) => s + e.amountKobo, 0);
-    return { revenue, collected, outstanding, spend, jobCount: inRange.length };
-  }, [inRange, jobs, expenses, since]);
+    return {
+      revenue,
+      collected,
+      outstanding,
+      spend,
+      jobCount: inRange.length,
+      projectCount: projectsInRange.length,
+      earningCount: earnings.length,
+    };
+  }, [earnings, inRange, projectsInRange, jobs, expenses, since]);
 
   const statusMix = useMemo(() => {
     const counts = new Map<JobStatus, number>();
@@ -307,7 +418,10 @@ export function OverviewDashboard() {
     );
   }
 
-  const hasData = jobs.length > 0 || expenses.length > 0;
+  // Projects count as data too. Without them a workshop that had only taken on
+  // project work would be told the dashboard was empty while its revenue sat in
+  // the Products pipeline.
+  const hasData = jobs.length > 0 || projects.length > 0 || expenses.length > 0;
 
   return (
     <div className="mx-auto max-w-7xl pb-16">
@@ -332,8 +446,36 @@ export function OverviewDashboard() {
         <>
           <InsightsPanel />
 
+          {/* Revenue line selector. Sits above the range chips because it changes
+              what is being measured, not merely over what period. */}
+          {canSeeFinance && (
+            <div className="mt-8 flex items-center gap-1 border-b border-night-700/60">
+              {LINE_TABS.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setLine(t.key)}
+                  aria-pressed={line === t.key}
+                  className={`relative cursor-pointer px-4 py-2.5 text-sm font-medium transition-colors duration-300 ${
+                    line === t.key
+                      ? "text-brass-300"
+                      : "text-cream-400 hover:text-cream-200"
+                  }`}
+                >
+                  {t.label}
+                  {line === t.key && (
+                    <motion.span
+                      layoutId="line-tab-underline"
+                      className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-brass-500"
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Range selector */}
-          <div className="mt-8 flex flex-wrap items-center gap-2">
+          <div className="mt-5 flex flex-wrap items-center gap-2">
             {ranges.map((r) => (
               <button
                 key={r.key}
@@ -360,25 +502,38 @@ export function OverviewDashboard() {
             {canSeeFinance && (
               <>
                 <Figure
-                  label="Revenue"
+                  label={
+                    line === "service"
+                      ? "Service revenue"
+                      : line === "product"
+                        ? "Product revenue"
+                        : "Revenue, both lines"
+                  }
                   value={totals.revenue}
                   format={(n) => formatNaira(n)}
                   accent
                 />
+                {/* Both of these read the service payment ledger regardless of the
+                    selected line, so the label says so rather than appearing to
+                    change with the tab and quietly not doing. */}
                 <Figure
-                  label="Collected"
+                  label="Collected, services"
                   value={totals.collected}
                   format={(n) => formatNaira(n)}
                 />
                 <Figure
-                  label="Outstanding"
+                  label="Outstanding, services"
                   value={totals.outstanding}
                   format={(n) => formatNaira(n)}
                   warn={totals.outstanding > 0}
                 />
               </>
             )}
-            <Figure label="Jobs" value={totals.jobCount} format={(n) => String(Math.round(n))} />
+            <Figure
+              label={line === "product" ? "Projects" : "Jobs"}
+              value={line === "product" ? totals.projectCount : totals.jobCount}
+              format={(n) => String(Math.round(n))}
+            />
           </div>
 
           {/* Revenue vs expenses */}
