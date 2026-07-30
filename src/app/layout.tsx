@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Jost } from "next/font/google";
 import { SITE } from "@/lib/content";
 import "./globals.css";
+import { ChunkErrorRecovery } from "@/components/site/ChunkErrorRecovery";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -92,6 +93,7 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_JSON_LD) }}
         />
+        <ChunkErrorRecovery />
         {children}
       </body>
     </html>
