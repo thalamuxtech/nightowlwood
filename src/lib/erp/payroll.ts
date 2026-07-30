@@ -152,6 +152,21 @@ export async function saveDraftWageRun(
   input: GenerateRunInput,
   preview: RunPreview
 ): Promise<string> {
+  // One batch, so a partial run never appears. That atomicity is worth more than
+  // supporting an arbitrarily large run, but it means the 500-operation limit is
+  // a real ceiling: the run document plus one line per (staff, role, work type).
+  // Lines are aggregated rather than per-log, so this is bounded by the workforce
+  // and not by how busy the period was, and the limit is far off in practice.
+  // Checked explicitly because Firestore's own error names neither the limit nor
+  // payroll, and a failed wage run needs to say what to do about it.
+  const MAX_BATCH_OPS = 500;
+  if (preview.lines.length + 1 > MAX_BATCH_OPS) {
+    throw new Error(
+      `This run has ${preview.lines.length} pay lines, over the ${MAX_BATCH_OPS - 1} that can be ` +
+        "saved at once. Split the period into two shorter runs."
+    );
+  }
+
   const runRef = doc(collection(db, COL.wageRuns));
   const batch = writeBatch(db);
 

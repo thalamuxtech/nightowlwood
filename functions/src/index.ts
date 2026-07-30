@@ -126,7 +126,6 @@ async function buildTestEmail(sentByEmail: string): Promise<{ subject: string; h
       detailTable([
         ["Sent by", sentByEmail],
         ["Sent at", sentAt],
-        ["Provider", "Brevo"],
         ["Sender domain", SENDER.email.split("@")[1] ?? ""],
       ]) +
       paragraph(

@@ -19,7 +19,16 @@ import {
   YAxis,
 } from "recharts";
 import { ArrowRight, Loader2, TrendingUp } from "lucide-react";
-import { collection, doc, getDoc, onSnapshot, orderBy, query } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  orderBy,
+  query,
+  Timestamp,
+  where,
+} from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { JOB_STATUS_LABELS, type JobStatus } from "@/lib/erp/enums";
@@ -93,8 +102,33 @@ export function OverviewDashboard() {
   // every panel here is company-wide and none of it is theirs to see.
   const isOperator = session.ready && session.role === "operator";
 
+  // Derived above the subscriptions because they now query by this window. A
+  // `const` read from an effect declared earlier in the file would sit in the
+  // temporal dead zone on first render.
+  const activeRange = ranges.find((r) => r.key === range) ?? ranges[0] ?? DEFAULT_RANGES[2];
+  const days = activeRange?.days ?? null;
+  const since = useMemo(() => {
+    // null days means all time, so nothing is filtered out.
+    if (days === null) return 0;
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (days - 1));
+    return d.getTime();
+  }, [days]);
+
   useEffect(() => {
-    const q = query(collection(getDb(), COL.serviceJobs), orderBy("receivedAt", "desc"));
+    // Bounded to the selected range rather than reading every job ever recorded.
+    // "All time" still asks for everything, because that is what it means, but the
+    // day-to-day views no longer pay for history they do not display.
+    const jobsRef = collection(getDb(), COL.serviceJobs);
+    const q =
+      since > 0
+        ? query(
+            jobsRef,
+            where("receivedAt", ">=", Timestamp.fromMillis(since)),
+            orderBy("receivedAt", "desc")
+          )
+        : query(jobsRef, orderBy("receivedAt", "desc"));
     return onSnapshot(
       q,
       (snap) => {
@@ -116,11 +150,17 @@ export function OverviewDashboard() {
       },
       () => setLoading(false)
     );
-  }, []);
+    // Re-subscribes when the range changes, so the query window follows it.
+  }, [since]);
 
   useEffect(() => {
+    const expensesRef = collection(getDb(), COL.expenses);
+    const q =
+      since > 0
+        ? query(expensesRef, where("date", ">=", Timestamp.fromMillis(since)))
+        : query(expensesRef);
     return onSnapshot(
-      collection(getDb(), COL.expenses),
+      q,
       (snap) =>
         setExpenses(
           snap.docs.map((d) => ({
@@ -131,7 +171,7 @@ export function OverviewDashboard() {
         ),
       () => {}
     );
-  }, []);
+  }, [since]);
 
   useEffect(() => {
     getDoc(doc(getDb(), COL.settings, "reporting"))
@@ -143,17 +183,6 @@ export function OverviewDashboard() {
         // Settings is staff-readable; a denial just leaves the presets in place.
       });
   }, []);
-
-  const activeRange = ranges.find((r) => r.key === range) ?? ranges[0] ?? DEFAULT_RANGES[2];
-  const days = activeRange?.days ?? null;
-  const since = useMemo(() => {
-    // null days means all time, so nothing is filtered out.
-    if (days === null) return 0;
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - (days - 1));
-    return d.getTime();
-  }, [days]);
 
   const inRange = useMemo(
     () => jobs.filter((j) => j.receivedAtMs !== null && j.receivedAtMs >= since),

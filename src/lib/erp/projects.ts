@@ -3,10 +3,12 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  query,
   runTransaction,
   serverTimestamp,
   Timestamp,
   updateDoc,
+  where,
   writeBatch,
   type Firestore,
 } from "firebase/firestore";
@@ -377,10 +379,16 @@ export async function createEstimate(
   }
   const lines: Line[] = [];
 
-  for (const comp of compSnap.docs) {
-    const category = comp.data().category as ProductCategory;
-    const featSnap = await getDocs(collection(db, featuresPath(projectId, comp.id)));
-    for (const f of featSnap.docs) {
+  // Feature reads are issued together. A kitchen project carries a component per
+  // room and each holds its own template rows, so serial reads made estimate
+  // creation slower the more complete the project was.
+  const featSnaps = await Promise.all(
+    compSnap.docs.map((comp) => getDocs(collection(db, featuresPath(projectId, comp.id))))
+  );
+
+  for (let i = 0; i < compSnap.docs.length; i++) {
+    const category = compSnap.docs[i].data().category as ProductCategory;
+    for (const f of featSnaps[i].docs) {
       const d = f.data();
       // Skip untouched template rows: an estimate listing 178 zero-value lines
       // is unreadable, and the client only needs what was actually priced.
@@ -405,11 +413,19 @@ export async function createEstimate(
   );
 
   // Supersede any live estimate for this project before adding the new one.
-  const existing = await getDocs(collection(db, COL.estimates));
-  const mine = existing.docs.filter(
-    (d) => d.data().projectId === projectId && d.data().status !== "superseded"
+  //
+  // Filtered server-side. Reading every estimate in the business to find one
+  // project's was billed against the whole collection, so the cost of issuing an
+  // estimate grew with every estimate ever issued.
+  const existing = await getDocs(
+    query(collection(db, COL.estimates), where("projectId", "==", projectId))
   );
-  const version = mine.length + 1;
+  const mine = existing.docs.filter((d) => d.data().status !== "superseded");
+
+  // Versions count every estimate for the project, including superseded ones.
+  // Counting only live ones reused version numbers: supersede v1, and the next
+  // estimate was v1 again, so two different documents shared a number.
+  const version = existing.size + 1;
 
   const estRef = doc(collection(db, COL.estimates));
   let batch = writeBatch(db);

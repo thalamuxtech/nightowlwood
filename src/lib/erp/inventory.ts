@@ -530,11 +530,23 @@ export async function refreshSupplierScorecard(
   );
   const purchases = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Purchase[];
 
+  // One round trip per purchase, but issued together rather than in series. A
+  // supplier with 40 purchases waited on 40 sequential reads before; the document
+  // count is the same, the latency is now that of the slowest single read.
+  //
+  // A collectionGroup query would be one read instead of N, but purchase lines do
+  // not carry supplierId, so there is nothing to filter on. Denormalising it onto
+  // every line to save this one admin-triggered call is not worth the write cost.
+  const lineSnaps = await Promise.all(
+    purchases.map((p) => getDocs(collection(db, purchaseLinesPath(p.id))))
+  );
   const linesByPurchase: Record<string, PurchaseLine[]> = {};
-  for (const p of purchases) {
-    const ls = await getDocs(collection(db, purchaseLinesPath(p.id)));
-    linesByPurchase[p.id] = ls.docs.map((d) => ({ id: d.id, ...d.data() })) as PurchaseLine[];
-  }
+  purchases.forEach((p, i) => {
+    linesByPurchase[p.id] = lineSnaps[i].docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    })) as PurchaseLine[];
+  });
 
   const score = scoreSupplier(purchases, linesByPurchase);
 

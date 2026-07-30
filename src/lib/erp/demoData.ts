@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getCountFromServer,
   getDocs,
   query,
   serverTimestamp,
@@ -910,9 +911,15 @@ export async function clearDemoData(
 
 /** Counts demo documents, so the UI can show whether any exist. */
 export async function countDemoData(db: Firestore): Promise<number> {
+  // Counted on the server. Downloading every demo document to call `.size` on the
+  // snapshot billed a read per document for a number shown in a settings panel;
+  // an aggregation query is billed as one read regardless of how many it counts.
   const counts = await Promise.all(
     DEMO_COLLECTIONS.map((name) =>
-      getDocs(query(collection(db, name), where(DEMO_FLAG, "==", true))).then((s) => s.size)
+      getCountFromServer(query(collection(db, name), where(DEMO_FLAG, "==", true)))
+        .then((s) => s.data().count)
+        // An aggregation denied by rules must not fail the whole count.
+        .catch(() => 0)
     )
   );
   return counts.reduce((a, b) => a + b, 0);

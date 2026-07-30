@@ -317,11 +317,14 @@ export function buildInsights(input: InsightInput): Insight[] {
   if (completed.length >= 5) {
     const turnarounds = completed.map((j) => (j.completedAtMs! - j.receivedAtMs!) / DAY);
     const avg = mean(turnarounds)!;
+    // "Recent" is stated because the caller supplies a recent window rather than
+    // the full history. An unqualified "average turnaround" would read as an
+    // all-time figure and quietly mean something else.
     out.push({
       id: "turnaround",
       tone: avg <= 3 ? "good" : "info",
-      title: `Average turnaround is ${avg.toFixed(1)} days`,
-      detail: `Across ${completed.length} completed jobs, from boards in to collected.`,
+      title: `Recent average turnaround is ${avg.toFixed(1)} days`,
+      detail: `Across the last ${completed.length} completed jobs, from boards in to collected.`,
     });
   }
 

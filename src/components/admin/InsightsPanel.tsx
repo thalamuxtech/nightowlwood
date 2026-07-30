@@ -9,10 +9,32 @@ import {
   Lightbulb,
   TriangleAlert,
 } from "lucide-react";
-import { collection, onSnapshot } from "firebase/firestore";
+import {
+  collection,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  Timestamp,
+  where,
+} from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { buildInsights, type Insight, type InsightTone } from "@/lib/erp/insights";
+
+/**
+ * How far back the dated checks look.
+ *
+ * The longest window any check uses is 21 days (customer boards held), and the
+ * expense-concentration check wants a representative recent sample rather than
+ * the whole ledger. 120 days covers both with room to spare, while keeping the
+ * dashboard's read cost flat as the records build up instead of growing with
+ * every job the business has ever done.
+ */
+const WINDOW_DAYS = 120;
+
+/** Caps the unbounded-by-nature reads, so one runaway collection cannot dominate. */
+const MAX_DOCS = 500;
 
 const TONE_STYLE: Record<InsightTone, { border: string; text: string; icon: typeof Info }> = {
   danger: { border: "border-red-500/40 bg-red-500/5", text: "text-red-300", icon: TriangleAlert },
@@ -50,11 +72,33 @@ export function InsightsPanel() {
   const ms = (v: { toMillis?: () => number } | null | undefined) => v?.toMillis?.() ?? null;
 
   useEffect(() => {
+    const db = getDb();
+    const since = Timestamp.fromMillis(Date.now() - WINDOW_DAYS * 86_400_000);
+
+    /**
+     * Recent documents by a date field.
+     *
+     * Every one of these listeners previously read its entire collection on each
+     * change. The checks only ever look at open state or a recent window, so the
+     * unbounded read bought nothing and its cost rose forever.
+     */
+    const recent = (name: string, dateField: string) =>
+      query(
+        collection(db, name),
+        where(dateField, ">=", since),
+        orderBy(dateField, "desc"),
+        limit(MAX_DOCS)
+      );
+
+    /** Documents in one of a set of states, for checks that only see open items. */
+    const inStates = (name: string, states: string[]) =>
+      query(collection(db, name), where("status", "in", states), limit(MAX_DOCS));
+
     // A read denied by rules (a manager on an admin-only collection) resolves to
     // an empty list rather than an error, so the panel degrades to fewer
     // observations instead of failing.
     const subs = [
-      onSnapshot(collection(getDb(), COL.serviceJobs), (s) =>
+      onSnapshot(recent(COL.serviceJobs, "receivedAt"), (s) =>
         setJobs(
           s.docs.map((d) => {
             const x = d.data();
@@ -69,7 +113,7 @@ export function InsightsPanel() {
             };
           })
         ), () => {}),
-      onSnapshot(collection(getDb(), COL.expenses), (s) =>
+      onSnapshot(recent(COL.expenses, "date"), (s) =>
         setExpenses(
           s.docs.map((d) => ({
             amountKobo: d.data().amountKobo ?? 0,
@@ -77,7 +121,11 @@ export function InsightsPanel() {
             category: d.data().category ?? "other",
           }))
         ), () => {}),
-      onSnapshot(collection(getDb(), COL.wageRuns), (s) =>
+      // The wage-to-revenue ratio compares the most recent runs, so the newest
+      // dozen is all it can use.
+      onSnapshot(
+        query(collection(db, COL.wageRuns), orderBy("periodEnd", "desc"), limit(12)),
+        (s) =>
         setWageRuns(
           s.docs
             .map((d) => ({
@@ -88,7 +136,9 @@ export function InsightsPanel() {
             }))
             .sort((a, b) => (b.periodEndMs ?? 0) - (a.periodEndMs ?? 0))
         ), () => {}),
-      onSnapshot(collection(getDb(), COL.invoices), (s) =>
+      // Only unsettled invoices matter: the check wants overdue balances, and a
+      // paid or void invoice can never contribute one.
+      onSnapshot(inStates(COL.invoices, ["draft", "sent", "partial"]), (s) =>
         setInvoices(
           s.docs.map((d) => ({
             totalKobo: d.data().totalKobo ?? 0,
@@ -99,7 +149,11 @@ export function InsightsPanel() {
             customerName: d.data().customerName ?? "",
           }))
         ), () => {}),
-      onSnapshot(collection(getDb(), COL.inventoryCompany), (s) =>
+      // Capped rather than filtered: the low-stock check compares quantityOnHand
+      // against each item's own reorderLevel, and Firestore cannot compare two
+      // fields of the same document. The item list is bounded by what the workshop
+      // actually stocks, so the cap is a safety net rather than a real limit.
+      onSnapshot(query(collection(db, COL.inventoryCompany), limit(MAX_DOCS)), (s) =>
         setInventory(
           s.docs.map((d) => ({
             name: d.data().name ?? "",
@@ -107,7 +161,8 @@ export function InsightsPanel() {
             reorderLevel: d.data().reorderLevel ?? 0,
           }))
         ), () => {}),
-      onSnapshot(collection(getDb(), COL.loans), (s) =>
+      // Only live debt. Settled and rejected loans contribute nothing outstanding.
+      onSnapshot(inStates(COL.loans, ["disbursed", "repaying"]), (s) =>
         setLoans(
           s.docs.map((d) => ({
             staffName: d.data().staffName ?? "",
@@ -115,7 +170,11 @@ export function InsightsPanel() {
             status: d.data().status ?? "requested",
           }))
         ), () => {}),
-      onSnapshot(collection(getDb(), COL.consumableCycles), (s) =>
+      // Blade-life comparison needs retired cycles across brands, so this is
+      // history rather than a recent window. Newest first, capped.
+      onSnapshot(
+        query(collection(db, COL.consumableCycles), orderBy("endDate", "desc"), limit(MAX_DOCS)),
+        (s) =>
         setCycles(
           s.docs.map((d) => ({
             brandName: d.data().brandName ?? d.data().model,
@@ -126,7 +185,8 @@ export function InsightsPanel() {
             endDateMs: ms(d.data().endDate),
           }))
         ), () => {}),
-      onSnapshot(collection(getDb(), COL.toolRequests), (s) =>
+      // Only tools still out can be overdue for return.
+      onSnapshot(inStates(COL.toolRequests, ["issued", "partially_returned"]), (s) =>
         setTools(
           s.docs.map((d) => ({
             jobName: d.data().jobName ?? "",
@@ -134,7 +194,8 @@ export function InsightsPanel() {
             expectedReturnMs: ms(d.data().expectedReturnDate),
           }))
         ), () => {}),
-      onSnapshot(collection(getDb(), COL.inventoryService), (s) =>
+      // Only boards still held can be held too long.
+      onSnapshot(inStates(COL.inventoryService, ["held"]), (s) =>
         setSvcInv(
           s.docs.map((d) => ({
             customerName: d.data().customerName ?? "",
