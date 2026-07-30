@@ -296,6 +296,13 @@ service cloud.firestore {
       }
     }
 
+    // Monthly salaries. Admin only for the same reason as wage runs: a run states
+    // what a person is paid. Lines live on the document itself rather than in a
+    // subcollection, because there is one row per salaried employee.
+    match /salaryRuns/{runId} {
+      allow read, write: if isAdmin();
+    }
+
     match /loans/{loanId} {
       // A staff member may see their own loans; approval is admin-only.
       allow read: if isAdmin()

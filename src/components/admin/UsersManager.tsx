@@ -11,7 +11,7 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import { Loader2, ShieldAlert, ShieldCheck, UserPlus } from "lucide-react";
+import { Loader2, PenLine, ShieldAlert, ShieldCheck, UserPlus } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { ROLES, ROLE_LABELS, type Role } from "@/lib/erp/enums";
@@ -45,6 +45,9 @@ export function UsersManager() {
   const [rows, setRows] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** The account whose name is being edited inline. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
   const [error, setError] = useState("");
 
   const isAdmin = session.role === "admin";
@@ -89,6 +92,49 @@ export function UsersManager() {
     }),
     [session.user, session.role]
   );
+
+  /**
+   * Renames an account.
+   *
+   * An admin may rename anyone; anyone may rename themselves. The name is only a
+   * label, unlike role and active status which are the security boundary, so the
+   * rules already allow a user to change their own without admin rights and this
+   * only adds the missing way to do it.
+   */
+  async function saveName(row: UserRow) {
+    const name = draftName.trim();
+    if (!name) {
+      setError("A name cannot be empty.");
+      return;
+    }
+    if (name === row.name) {
+      setEditingId(null);
+      return;
+    }
+    setBusyId(row.id);
+    setError("");
+    try {
+      await updateDoc(doc(getDb(), COL.users, row.id), {
+        name,
+        updatedAt: serverTimestamp(),
+        updatedBy: actor.uid,
+      });
+      await writeAudit(getDb(), {
+        actor,
+        action: "update",
+        collectionName: COL.users,
+        docId: row.id,
+        summary: `Renamed ${row.email}: "${row.name}" → "${name}"`,
+        before: { name: row.name },
+        after: { name },
+      });
+      setEditingId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save the name.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function changeRole(row: UserRow, role: Role) {
     if (role === row.role) return;
@@ -291,8 +337,58 @@ export function UsersManager() {
                   return (
                     <tr key={row.id} className={row.active ? "" : "opacity-55"}>
                       <td className="px-5 py-4 text-cream-100">
-                        {row.name}
-                        {isSelf && <span className="ml-2 text-xs text-brass-400">(you)</span>}
+                        {editingId === row.id ? (
+                          <span className="flex flex-wrap items-center gap-2">
+                            <input
+                              value={draftName}
+                              onChange={(e) => setDraftName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveName(row);
+                                if (e.key === "Escape") setEditingId(null);
+                              }}
+                              aria-label={`Name for ${row.email}`}
+                              autoFocus
+                              className="w-40 rounded-lg border border-brass-500/50 bg-night-950/60 px-2.5 py-1.5 text-sm text-cream-100 outline-none focus:border-brass-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => saveName(row)}
+                              disabled={busyId === row.id}
+                              className="cursor-pointer text-xs text-brass-300 transition-colors hover:text-brass-200 disabled:opacity-50"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingId(null)}
+                              className="cursor-pointer text-xs text-cream-500 transition-colors hover:text-cream-300"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2">
+                            {row.name || <span className="text-cream-500">unnamed</span>}
+                            {isSelf && (
+                              <span className="text-xs text-brass-400">(you)</span>
+                            )}
+                            {/* Renaming is allowed for an admin or for your own
+                                account, matching what the rules permit. */}
+                            {(isAdmin || isSelf) && (
+                              <button
+                                type="button"
+                                aria-label={`Rename ${row.email}`}
+                                onClick={() => {
+                                  setEditingId(row.id);
+                                  setDraftName(row.name);
+                                }}
+                                className="cursor-pointer text-cream-500 transition-colors hover:text-brass-300"
+                              >
+                                <PenLine size={13} />
+                              </button>
+                            )}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-4 text-cream-400">{row.email}</td>
                       <td className="px-5 py-4">

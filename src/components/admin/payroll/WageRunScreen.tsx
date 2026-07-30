@@ -5,7 +5,6 @@ import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestor
 import {
   AlertTriangle,
   CheckCircle2,
-  FileText,
   Loader2,
   PenLine,
   RefreshCw,
@@ -31,8 +30,6 @@ import { WAGE_RUN_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { Button, EmptyState, NumberField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
-import { PayslipSheet } from "./PayslipSheet";
-import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 
 interface RunRow {
   id: string;
@@ -82,8 +79,6 @@ export function WageRunScreen() {
   /** The draft whose per-staff figures are open for adjustment. */
   const [editRunId, setEditRunId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [previewRun, setPreviewRun] = useState<RunRow | null>(null);
-  const [printRun, setPrintRun] = useState<RunRow | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -221,34 +216,7 @@ export function WageRunScreen() {
 
   return (
     <div className="mx-auto max-w-6xl pb-20">
-      {previewRun && (
-        <PrintPreview
-          title="Payslips"
-          paper="a4-portrait"
-          onPrint={() => setPrintRun(previewRun)}
-          onClose={() => setPreviewRun(null)}
-        >
-          <PayslipSheet
-            periodStartMs={previewRun.periodStartMs}
-            periodEndMs={previewRun.periodEndMs}
-            perStaff={previewRun.perStaff}
-            autoPrint={false}
-            onDone={() => {}}
-          />
-        </PrintPreview>
-      )}
 
-      {printRun && (
-        <PayslipSheet
-          periodStartMs={printRun.periodStartMs}
-          periodEndMs={printRun.periodEndMs}
-          perStaff={printRun.perStaff}
-          onDone={() => {
-            setPrintRun(null);
-            setPreviewRun(null);
-          }}
-        />
-      )}
 
       <div className="print:hidden">
         <header>
@@ -354,11 +322,6 @@ export function WageRunScreen() {
                       <StatusPill tone={WAGE_RUN_STATUS_TONE[r.status]}>
                         {r.status}
                       </StatusPill>
-                      <Button variant="secondary" onClick={() => setPreviewRun(r)}>
-                        <span className="flex items-center gap-1.5">
-                          <FileText size={14} /> Payslips
-                        </span>
-                      </Button>
                       {/* Only a draft is editable: approving is the point at which
                           the figures become a decision already taken. */}
                       {r.status === "draft" && (

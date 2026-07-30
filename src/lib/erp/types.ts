@@ -61,6 +61,10 @@ export interface Staff extends AuditFields {
   active: boolean;
   /** Monthly salaried staff; piece-rate workers leave this unset. */
   monthlySalaryKobo?: number;
+  /** True when this person is paid a monthly salary rather than per piece. Kept
+   *  alongside the figure so a salaried employee on zero this month is still
+   *  distinguishable from a piece-rate worker. */
+  isSalaried?: boolean;
   bankName?: string;
   bankAccount?: string;
   /** Linked login, if this staff member has admin access. */

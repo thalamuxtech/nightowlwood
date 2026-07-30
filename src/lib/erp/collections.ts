@@ -29,6 +29,9 @@ export const COL = {
   // Payroll
   wageRates: "wageRates",
   wageRuns: "wageRuns",
+  // Monthly salaried staff are paid on their own cycle, so a salary run is a
+  // separate record from a weekly wage run rather than a variant of it.
+  salaryRuns: "salaryRuns",
   loans: "loans",
 
   // Inventory

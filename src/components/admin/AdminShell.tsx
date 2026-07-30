@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  CalendarClock,
   ChevronDown,
   ClipboardList,
   Contact,
@@ -103,6 +104,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/expenses/", label: "Expenses", icon: Receipt, capability: "expense.view" },
       { href: "/admin/meters/", label: "Power Meters", icon: Gauge, capability: "expense.view" },
       { href: "/admin/payroll/", label: "Payroll", icon: Wallet, capability: "wage.run" },
+      // Sits next to Payroll because the two are the same monthly/weekly decision
+      // split by how a person is paid, not two unrelated screens.
+      { href: "/admin/salaries/", label: "Salaries", icon: CalendarClock, capability: "wage.run" },
       { href: "/admin/wage-rates/", label: "Piece Rates", icon: Coins, capability: "wage.editRates" },
       { href: "/admin/loans/", label: "Loans & Advances", icon: HandCoins, capability: "loan.request" },
     ],
