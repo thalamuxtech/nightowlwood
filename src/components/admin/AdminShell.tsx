@@ -246,7 +246,13 @@ function Sidebar({ email }: { email: string }) {
           {!collapsed && <span>Collapse</span>}
         </button>
 
-        <nav className="mt-4 flex flex-1 flex-col gap-1.5" aria-label="Admin">
+        {/* min-h-0 is required: a flex child will not shrink below its content
+            height without it, so overflow-y-auto would never engage and the
+            footer would stay pushed off screen. */}
+        <nav
+          className="mt-4 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-color:#3a332c_transparent] [scrollbar-width:thin]"
+          aria-label="Admin"
+        >
           {visibleNav.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
@@ -266,7 +272,7 @@ function Sidebar({ email }: { email: string }) {
             </Link>
           ))}
         </nav>
-        <div className="border-t border-night-700/60 pt-4">
+        <div className="shrink-0 border-t border-night-700/60 pt-4">
           {!collapsed && (
             <>
               <p className="truncate text-xs text-cream-500">{email}</p>
