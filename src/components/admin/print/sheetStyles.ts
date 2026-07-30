@@ -256,13 +256,37 @@ export function sheetCss(options: {
 ${root} { display: none; }
 
 @media print {
-  body > * { display: none !important; }
+  /* Hide the dashboard, but never an ancestor of the sheet.
+     Hiding every top-level child printed a blank page: the sheet renders deep
+     inside the admin shell, so the wrapper above it was hidden and the sheet
+     collapsed with it. display:block on the sheet cannot resurrect it once an
+     ancestor is gone. :has() hides only the branches that do not contain the
+     sheet, so the chain down to it survives. Those ancestors are then flattened
+     to plain blocks, because the shell's flex layout, padding and sticky
+     sidebar would otherwise inset and clip the printed page. */
+  body > *:not(:has(${root})):not(${root}) { display: none !important; }
   body { background: #fff !important; }
+
+  body :has(${root}) {
+    display: block !important;
+    position: static !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    background: #fff !important;
+    border: 0 !important;
+  }
+
+  /* Anything alongside the sheet inside those ancestors still goes, or the
+     dashboard's own chrome prints above it. */
+  body :has(${root}) > *:not(:has(${root})):not(${root}) { display: none !important; }
+
   ${root}, ${root} * { display: revert; }
   ${root} {
     display: block !important;
-    position: absolute;
-    inset: 0;
+    position: static !important;
     ${rootRules}
   }
   @page { size: ${page}; margin: 13mm; }

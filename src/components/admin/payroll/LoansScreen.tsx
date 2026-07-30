@@ -2,12 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
-import { HandCoins, Loader2, Plus, ShieldAlert } from "lucide-react";
+import { HandCoins, Loader2, PenLine, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { LOAN_STATUS_LABELS, LOAN_TYPES, type LoanStatus, type LoanType } from "@/lib/erp/enums";
 import { formatNaira, parseNairaInput } from "@/lib/erp/money";
-import { approveLoan, rejectLoan, requestLoan } from "@/lib/erp/payroll";
+import {
+  approveLoan,
+  cancelLoanRequest,
+  rejectLoan,
+  requestLoan,
+  updateLoanRequest,
+} from "@/lib/erp/payroll";
 import { LOAN_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import {
@@ -51,6 +57,8 @@ export function LoansScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
+  /** The pending request being corrected, or null when raising a new one. */
+  const [editing, setEditing] = useState<LoanRow | null>(null);
 
   const [staff, setStaff] = useState<PickedStaff | null>(null);
   const [type, setType] = useState<LoanType>("advance");
@@ -113,22 +121,53 @@ export function LoansScreen() {
       setError("Enter an amount.");
       return;
     }
-    setBusyId("new");
+    setBusyId(editing?.id ?? "new");
     setError("");
     try {
-      await requestLoan(getDb(), actor, {
+      const input = {
         staffId: staff.id,
         staffName: staff.name,
         type,
         amountKobo: kobo,
         purpose: purpose.trim() || "Not stated",
-      });
+      };
+      // The same form serves both paths, so a correction cannot drift from what a
+      // new request accepts.
+      if (editing) {
+        await updateLoanRequest(getDb(), actor, editing.id, input);
+      } else {
+        await requestLoan(getDb(), actor, input);
+      }
       setStaff(null);
       setAmount("");
       setPurpose("");
       setAdding(false);
+      setEditing(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the request.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** Loads a pending request back into the form. */
+  function beginEdit(row: LoanRow) {
+    setEditing(row);
+    setStaff({ id: row.staffId, name: row.staffName });
+    setType(row.type);
+    setAmount(String(row.amountKobo / 100));
+    setPurpose(row.purpose === "Not stated" ? "" : row.purpose);
+    setAdding(true);
+    setError("");
+  }
+
+  async function withdraw(row: LoanRow) {
+    setBusyId(row.id);
+    setError("");
+    try {
+      await cancelLoanRequest(getDb(), actor, row.id, row.staffName);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not withdraw the request.");
     } finally {
       setBusyId(null);
     }
@@ -190,7 +229,8 @@ export function LoansScreen() {
       {adding && (
         <section className="mt-6 rounded-3xl border border-brass-500/30 bg-night-900/40 p-6">
           <h2 className="flex items-center gap-2 font-display text-lg text-cream-100">
-            <HandCoins size={18} className="text-brass-400" /> New request
+            <HandCoins size={18} className="text-brass-400" />{" "}
+            {editing ? `Edit request from ${editing.staffName}` : "New request"}
           </h2>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <StaffPicker
@@ -229,10 +269,16 @@ export function LoansScreen() {
             request does not appear as a deduction on the next wage run.
           </p>
           <div className="mt-5 flex gap-3">
-            <Button onClick={submit} busy={busyId === "new"}>
+            <Button onClick={submit} busy={busyId === (editing?.id ?? "new")}>
               Submit request
             </Button>
-            <Button variant="ghost" onClick={() => setAdding(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setAdding(false);
+                setEditing(null);
+              }}
+            >
               Cancel
             </Button>
           </div>
@@ -298,7 +344,7 @@ export function LoansScreen() {
                     {isAdmin && (
                       <td className="px-5 py-4">
                         {r.status === "requested" && (
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <Button onClick={() => decide(r, true)} busy={busyId === r.id}>
                               Approve
                             </Button>
@@ -309,6 +355,25 @@ export function LoansScreen() {
                             >
                               Reject
                             </Button>
+                            {/* Only a pending request is editable. Once disbursed the
+                                amount is a fact about money that has moved, and the
+                                lib refuses it. */}
+                            <button
+                              type="button"
+                              aria-label="Edit request"
+                              onClick={() => beginEdit(r)}
+                              className="cursor-pointer text-cream-500 transition-colors hover:text-brass-300"
+                            >
+                              <PenLine size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Withdraw request"
+                              onClick={() => withdraw(r)}
+                              className="cursor-pointer text-cream-500 transition-colors hover:text-red-400"
+                            >
+                              <Trash2 size={15} />
+                            </button>
                           </div>
                         )}
                       </td>

@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   runTransaction,
@@ -256,6 +257,29 @@ export async function approveWageRun(
       deductionKobo: number;
     }>;
 
+    // Every loan this run might touch, read up front.
+    //
+    // Firestore requires all reads in a transaction to precede all writes. Reading
+    // each loan as it was applied put the second staff member's tx.get after the
+    // first one's tx.update, which fails with "transactions require all reads to be
+    // executed before all writes". The reads are therefore hoisted out of the loop
+    // and the applying pass below is pure computation over what was read.
+    const relevantIds = [
+      ...new Set(
+        perStaff
+          .filter((s) => (s.deductionKobo ?? 0) > 0)
+          .flatMap((s) => candidatesByStaff.get(s.staffId) ?? [])
+      ),
+    ];
+    const loanSnaps = await Promise.all(
+      relevantIds.map((id) => tx.get(doc(db, COL.loans, id)))
+    );
+    const loansById = new Map<string, Loan>();
+    relevantIds.forEach((id, i) => {
+      const snap = loanSnaps[i];
+      if (snap.exists()) loansById.set(id, snap.data() as Loan);
+    });
+
     // Apply each staff member's deduction across their outstanding loans,
     // oldest first, so the ledger closes loans in the order they were taken.
     for (const s of perStaff) {
@@ -269,10 +293,8 @@ export async function approveWageRun(
       for (const loanId of ids) {
         if (remaining <= 0) break;
 
-        const loanRef = doc(db, COL.loans, loanId);
-        const loanSnap = await tx.get(loanRef);
-        if (!loanSnap.exists()) continue;
-        const loan = loanSnap.data() as Loan;
+        const loan = loansById.get(loanId);
+        if (!loan) continue;
 
         // Status may have changed since the pre-query; skip anything settled.
         if (loan.status !== "disbursed" && loan.status !== "repaying") continue;
@@ -282,7 +304,7 @@ export async function approveWageRun(
 
         const nextOutstanding = (loan.outstandingKobo ?? 0) - take;
 
-        tx.update(loanRef, {
+        tx.update(doc(db, COL.loans, loanId), {
           repaidKobo: (loan.repaidKobo ?? 0) + take,
           outstandingKobo: nextOutstanding,
           status: nextOutstanding <= 0 ? "settled" : "repaying",
@@ -296,6 +318,16 @@ export async function approveWageRun(
           amountKobo: take,
           at: serverTimestamp(),
           recordedBy: actor.uid,
+        });
+
+        // Written back so a second staff member sharing this loan (or the same
+        // person's next deduction) sees the reduced balance rather than the
+        // original, which would double-apply the repayment.
+        loansById.set(loanId, {
+          ...loan,
+          repaidKobo: (loan.repaidKobo ?? 0) + take,
+          outstandingKobo: nextOutstanding,
+          status: nextOutstanding <= 0 ? "settled" : "repaying",
         });
 
         remaining -= take;
@@ -410,6 +442,101 @@ export async function approveLoan(
     docId: loanId,
     summary: `Approved and disbursed ${amountKobo} kobo to ${staffName}`,
     after: { status: "disbursed", outstandingKobo: amountKobo },
+  });
+}
+
+/**
+ * Corrects a loan or advance that has not been disbursed.
+ *
+ * Only while it is still `requested`. Once money has left, the amount owed is a
+ * fact about a payment that has happened, and editing it would silently change what
+ * the next wage run deducts from someone's pay without any repayment having been
+ * made. A disbursed loan is corrected by recording repayments, not by retyping it.
+ */
+export async function updateLoanRequest(
+  db: Firestore,
+  actor: AuditActor,
+  loanId: string,
+  input: {
+    staffId: string;
+    staffName: string;
+    type: "loan" | "advance";
+    amountKobo: number;
+    purpose: string;
+  }
+): Promise<void> {
+  if (input.amountKobo <= 0) throw new Error("An amount is required.");
+
+  const ref = doc(db, COL.loans, loanId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("That request no longer exists.");
+  const prev = snap.data();
+
+  if (prev.status !== "requested") {
+    throw new Error(
+      `This is already ${prev.status}, so it can no longer be edited. ` +
+        "Record a repayment instead."
+    );
+  }
+
+  await updateDoc(ref, {
+    staffId: input.staffId,
+    staffName: input.staffName,
+    type: input.type,
+    amountKobo: input.amountKobo,
+    purpose: input.purpose,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.loans,
+    docId: loanId,
+    summary:
+      `Edited ${input.type} request for ${input.staffName}: ` +
+      `${prev.amountKobo ?? 0} → ${input.amountKobo} kobo`,
+    before: { amountKobo: prev.amountKobo ?? 0, staffName: prev.staffName ?? "" },
+    after: { amountKobo: input.amountKobo, staffName: input.staffName },
+  });
+}
+
+/**
+ * Withdraws a request that should not have been raised.
+ *
+ * Kept as a status rather than a delete so the request still appears in the
+ * history: a withdrawn request and one that was never made are different facts,
+ * and staff do ask why a request vanished.
+ */
+export async function cancelLoanRequest(
+  db: Firestore,
+  actor: AuditActor,
+  loanId: string,
+  staffName: string
+): Promise<void> {
+  const ref = doc(db, COL.loans, loanId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("That request no longer exists.");
+  if (snap.data().status !== "requested") {
+    throw new Error("Only a pending request can be withdrawn.");
+  }
+
+  await updateDoc(ref, {
+    status: "rejected",
+    rejectedAt: serverTimestamp(),
+    withdrawn: true,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "loan_reject",
+    collectionName: COL.loans,
+    docId: loanId,
+    summary: `Withdrew the request from ${staffName}`,
+    after: { status: "rejected", withdrawn: true },
   });
 }
 
