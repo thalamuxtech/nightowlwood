@@ -15,6 +15,13 @@ export interface MailAddress {
   name?: string;
 }
 
+/** A file sent with the message, e.g. the invoice PDF. */
+export interface MailAttachment {
+  /** Filename the recipient sees. Include the extension. */
+  name: string;
+  content: Buffer;
+}
+
 export interface SendMailInput {
   to: MailAddress[];
   subject: string;
@@ -24,6 +31,7 @@ export interface SendMailInput {
   replyTo?: MailAddress;
   /** Tags for provider-side reporting, e.g. ["invoice"]. */
   tags?: string[];
+  attachments?: MailAttachment[];
 }
 
 export interface SendMailResult {
@@ -97,6 +105,17 @@ export class BrevoMailer implements Mailer {
           textContent: input.text ?? htmlToText(input.html),
           ...(input.replyTo ? { replyTo: input.replyTo } : {}),
           ...(input.tags?.length ? { tags: input.tags } : {}),
+          // Brevo takes attachments as base64 under `attachment`. A 10MB total
+          // message cap applies; an invoice PDF is a few tens of KB, so the
+          // limit only matters if this is ever reused for something larger.
+          ...(input.attachments?.length
+            ? {
+                attachment: input.attachments.map((a) => ({
+                  name: a.name,
+                  content: a.content.toString("base64"),
+                })),
+              }
+            : {}),
         }),
       });
 
@@ -131,6 +150,7 @@ export class ConsoleMailer implements Mailer {
     console.log("[mail:dry-run]", {
       to: input.to.map((t) => t.email),
       subject: input.subject,
+      attachments: input.attachments?.map((a) => `${a.name} (${a.content.length}B)`),
     });
     return { ok: true, messageId: "dry-run" };
   }

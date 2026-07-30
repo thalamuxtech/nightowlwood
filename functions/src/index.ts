@@ -279,6 +279,14 @@ export {
 export { markInvoicePaid } from "./invoicePayment";
 
 // ---------------------------------------------------------------------------
+// Invoice documents
+// ---------------------------------------------------------------------------
+
+// Rendered server-side so the emailed PDF and the downloaded one are the same
+// bytes from the same code path. See invoiceDocument.ts.
+export { getInvoicePdf, emailInvoice } from "./invoiceDocument";
+
+// ---------------------------------------------------------------------------
 // Scheduled alerts
 // ---------------------------------------------------------------------------
 

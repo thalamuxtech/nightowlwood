@@ -5,6 +5,7 @@ import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from "fire
 import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   BadgeCheck,
+  FileDown,
   FileText,
   Loader2,
   Printer,
@@ -36,6 +37,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 import { InvoiceSheet, type CompanyLike, type InvoiceLike } from "@/components/admin/print/InvoiceSheet";
+import { InvoicePdfModal } from "@/components/admin/money/InvoicePdfModal";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 
 const REGION = "europe-west1";
@@ -76,6 +78,8 @@ export function InvoicesScreen() {
   const [source, setSource] = useState("");
   const [previewing, setPreviewing] = useState<InvoiceRow | null>(null);
   const [printing, setPrinting] = useState<InvoiceRow | null>(null);
+  /** The invoice whose server-rendered PDF is open for review, download or email. */
+  const [pdfFor, setPdfFor] = useState<InvoiceRow | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState("");
 
@@ -245,6 +249,22 @@ export function InvoicesScreen() {
 
   return (
     <div className="mx-auto max-w-6xl pb-20">
+      {pdfFor && (
+        <InvoicePdfModal
+          invoiceId={pdfFor.id}
+          invoiceNumber={pdfFor.invoiceNumber}
+          customerEmail={pdfFor.customerEmail}
+          // A draft is not a request for payment and a void invoice is not owed,
+          // so neither may be sent. The server enforces this too.
+          canEmail={isAdmin && pdfFor.status !== "draft" && pdfFor.status !== "void"}
+          onClose={() => setPdfFor(null)}
+          onEmailed={(to) => {
+            setNotice(`${pdfFor.invoiceNumber} emailed to ${to}.`);
+            setTimeout(() => setNotice(""), 6000);
+          }}
+        />
+      )}
+
       {previewing && (
         <PrintPreview
           title={`Invoice ${previewing.invoiceNumber}`}
@@ -401,7 +421,15 @@ export function InvoicesScreen() {
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => setPreviewing(r)}>
                       <span className="flex items-center gap-1.5">
-                        <Printer size={14} /> Preview
+                        <Printer size={14} /> Print
+                      </span>
+                    </Button>
+
+                    {/* The PDF is the document that leaves the building: reviewed,
+                        downloaded and emailed from one place, all the same file. */}
+                    <Button variant="secondary" onClick={() => setPdfFor(r)}>
+                      <span className="flex items-center gap-1.5">
+                        <FileDown size={14} /> PDF
                       </span>
                     </Button>
 

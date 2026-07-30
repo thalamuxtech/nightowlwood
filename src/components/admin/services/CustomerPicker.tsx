@@ -11,6 +11,9 @@ export interface PickedCustomer {
   id: string;
   name: string;
   phone?: string;
+  /** Carried onto invoices so they can be emailed. Optional: walk-in trade often
+   *  has no address, and requiring one would block intake at the counter. */
+  email?: string;
 }
 
 interface CustomerOption extends PickedCustomer {
@@ -40,6 +43,7 @@ export function CustomerPicker({
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newPhone, setNewPhone] = useState("");
+  const [newEmail, setNewEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const boxRef = useRef<HTMLDivElement>(null);
@@ -54,6 +58,7 @@ export function CustomerPicker({
             id: d.id,
             name: (d.data().name as string) ?? "",
             phone: d.data().phone as string | undefined,
+            email: d.data().email as string | undefined,
             altPhone: d.data().altPhone as string | undefined,
           }))
         ),
@@ -95,20 +100,35 @@ export function CustomerPicker({
       setError("Enter a customer name first.");
       return;
     }
+    const email = newEmail.trim();
+    // Checked here rather than on send: a typo caught at the counter costs a
+    // moment, whereas one found later means an invoice that silently never
+    // arrived and a customer wondering why they were chased for it.
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError("That email address does not look right.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const ref = await addDoc(collection(getDb(), COL.customers), {
         name,
         phone: newPhone.trim() || null,
+        email: email || null,
         isServiceCustomer: true,
         isProductClient: false,
         createdAt: serverTimestamp(),
         createdBy,
       });
-      onChange({ id: ref.id, name, phone: newPhone.trim() || undefined });
+      onChange({
+        id: ref.id,
+        name,
+        phone: newPhone.trim() || undefined,
+        email: email || undefined,
+      });
       setCreating(false);
       setNewPhone("");
+      setNewEmail("");
       setOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create the customer.");
@@ -190,7 +210,7 @@ export function CustomerPicker({
                   <button
                     type="button"
                     onClick={() => {
-                      onChange({ id: c.id, name: c.name, phone: c.phone });
+                      onChange({ id: c.id, name: c.name, phone: c.phone, email: c.email });
                       setOpen(false);
                     }}
                     className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-night-800"
@@ -219,6 +239,14 @@ export function CustomerPicker({
                     value={newPhone}
                     onChange={setNewPhone}
                     placeholder="080…"
+                  />
+                  <TextField
+                    id="new-customer-email"
+                    label="Email (optional)"
+                    value={newEmail}
+                    onChange={setNewEmail}
+                    placeholder="name@example.com"
+                    hint="Needed to email invoices and receipts"
                   />
                   <div className="flex gap-2">
                     <Button onClick={createCustomer} busy={busy}>

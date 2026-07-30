@@ -66,6 +66,31 @@ async function invoiceSettings(db: Firestore) {
 }
 
 /**
+ * The customer's email, read from the customer record at invoice time.
+ *
+ * Not taken from the job or project: those hold a name-and-phone snapshot from
+ * intake, and an address added or corrected later would never reach the invoice.
+ * The customer record is the one place it is maintained.
+ *
+ * Absence is normal, not an error. Walk-in trade often has no address, and an
+ * invoice without one is still a valid invoice, it simply cannot be emailed.
+ */
+async function customerEmail(
+  db: Firestore,
+  customerId: unknown
+): Promise<string | undefined> {
+  if (typeof customerId !== "string" || !customerId) return undefined;
+  try {
+    const snap = await getDoc(doc(db, COL.customers, customerId));
+    const email = snap.data()?.email;
+    return typeof email === "string" && email ? email : undefined;
+  } catch {
+    // A missing or unreadable customer must not stop an invoice being raised.
+    return undefined;
+  }
+}
+
+/**
  * Builds an invoice from a service job.
  *
  * The job's own payments are carried over as `amountPaidKobo`, so an invoice
@@ -112,6 +137,7 @@ export async function createInvoiceFromJob(
     customerId: job.customerId ?? "",
     customerName: job.customerName ?? "",
     customerPhone: job.customerPhone ?? undefined,
+    customerEmail: await customerEmail(db, job.customerId),
     jobId,
     reference: job.jobNumber ?? undefined,
     lines,
@@ -180,6 +206,7 @@ export async function createInvoiceFromProject(
     type: "project",
     customerId: project.customerId ?? "",
     customerName: project.customerName ?? "",
+    customerEmail: await customerEmail(db, project.customerId),
     projectId,
     reference: project.projectNumber ?? undefined,
     lines,
@@ -198,6 +225,7 @@ async function persist(
     customerId: string;
     customerName: string;
     customerPhone?: string;
+    customerEmail?: string;
     jobId?: string;
     projectId?: string;
     reference?: string;
@@ -222,6 +250,7 @@ async function persist(
     customerId: input.customerId,
     customerName: input.customerName,
     customerPhone: input.customerPhone ?? null,
+    customerEmail: input.customerEmail ?? null,
     jobId: input.jobId ?? null,
     projectId: input.projectId ?? null,
     reference: input.reference ?? null,
