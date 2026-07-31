@@ -106,22 +106,14 @@ export function PrintPreview({
       return;
     }
 
-    // The sheet's own CSS hides its root outside print media, so the window would
-    // show a blank page until the print dialog opened. `.print-preview<root>` is the
-    // selector that reveals it on screen, and the class is already on the body, but
-    // the root element itself needs it too because that selector takes both classes
-    // on one element. Rather than guess the root class, every element in the copied
-    // body is revealed.
-    //
-    // `:where()` keeps the selector at zero specificity so the sheet's own scoped
-    // rules still decide layout, while `display` is forced with !important because
-    // the only thing being overridden is the blanket hide.
+    // `.print-preview` on the body is what reveals the sheet: sheetCss emits a
+    // `.print-preview <root>` rule for exactly this case, so no selector needs to be
+    // invented here and the root class does not have to be guessed.
     win.document.write(
       `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>` +
         `<style>${styles}\n` +
         `@page { size: ${paper === "a4-landscape" ? "A4 landscape" : "A4"}; margin: 13mm; }\n` +
         `html,body { margin:0; padding:0; background:#fff; }\n` +
-        `:where(body.print-preview > *) { display: block !important; }\n` +
         `@media screen { body { padding: 12mm; } }\n` +
         `</style></head><body class="print-preview">${markup}</body></html>`
     );

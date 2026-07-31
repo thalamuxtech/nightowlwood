@@ -188,7 +188,15 @@ function scopeCss(css: string, root: string): string {
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean)
-      .map((p) => (p === root ? `.print-preview${root}` : `.print-preview ${p}`));
+      // The root itself is matched both as the `.print-preview` element and as a
+      // descendant of it. PrintPreview puts the class on a wrapper and renders the
+      // sheet inside it, while the download window puts it on <body>; requiring
+      // both classes on one element matched neither.
+      .flatMap((p) =>
+        p === root
+          ? [`.print-preview${root}`, `.print-preview ${root}`]
+          : [`.print-preview ${p}`]
+      );
     return `${parts.join(", ")} {`;
   };
 
@@ -308,9 +316,20 @@ ${root} { display: none; }
 ${body}
 }
 
-/* On-screen preview: same measurements, scoped so nothing reaches the dashboard. */
-.print-preview${root} {
-  display: block;
+/* On-screen preview: same measurements, scoped so nothing reaches the dashboard.
+
+   Both selectors are needed, and the missing one is what made every preview-based
+   download come out blank. PrintPreview puts the print-preview class on a wrapper
+   div and renders the sheet inside it, so the both-classes-on-one-element form
+   never matched, and the sheet stayed at the display:none declared at the top of
+   this stylesheet. The download window puts the class on the body element, so the
+   descendant form is the one that matters there.
+
+   Forced, because the hide rule above sits at equal specificity and appears
+   earlier; adding the descendant selector alone would still lose on position. */
+.print-preview${root},
+.print-preview ${root} {
+  display: block !important;
   ${rootRules}
 }
 ${scoped}
