@@ -1001,8 +1001,7 @@ function FeatureRowEditor({
                     actor,
                     projectId,
                     componentId,
-                    feature.id,
-                    feature.amountKobo
+                    feature.id
                   ).catch((e) =>
                     onError(e instanceof Error ? e.message : "Could not remove.")
                   )

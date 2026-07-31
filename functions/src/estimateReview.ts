@@ -455,9 +455,16 @@ export const submitEstimateReview = onCall(
     }
 
     const errorMarginPercent = est.errorMarginPercent ?? 0;
-    const nightowlPercent = est.nightowlChargesKobo && est.subtotalKobo
-      ? Math.round((est.nightowlChargesKobo / est.subtotalKobo) * 100)
-      : 0;
+    // The stored rate is preferred. Falling back to the ratio was rounding to a
+    // whole percent, so a 7.5% charge came back from review as 8% — the reviewer
+    // cannot touch this rate, yet submitting silently reset it. Estimates issued
+    // before the rate was stored still need the ratio, just not the rounding.
+    const nightowlPercent =
+      typeof est.nightowlChargePercent === "number"
+        ? est.nightowlChargePercent
+        : est.subtotalKobo
+          ? ((est.nightowlChargesKobo ?? 0) / est.subtotalKobo) * 100
+          : 0;
     // Both percentages apply to the subtotal only, never to each other, matching
     // computeEstimateTotals on the client.
     const errorMarginKobo = Math.round((subtotal * errorMarginPercent) / 100);
@@ -467,6 +474,8 @@ export const submitEstimateReview = onCall(
       status: "reviewed",
       subtotalKobo: subtotal,
       errorMarginKobo,
+      // Persisted so the rate survives a later edit that empties the subtotal.
+      nightowlChargePercent: nightowlPercent,
       nightowlChargesKobo,
       totalKobo: subtotal + errorMarginKobo + nightowlChargesKobo,
       reviewedAt: FieldValue.serverTimestamp(),

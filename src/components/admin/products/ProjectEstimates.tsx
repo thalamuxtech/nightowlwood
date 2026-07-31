@@ -23,7 +23,7 @@ import { COL, estimateLinesPath } from "@/lib/erp/collections";
 import { ESTIMATE_STATUS_LABELS, type EstimateStatus } from "@/lib/erp/enums";
 import { ESTIMATE_STATUS_TONE } from "@/lib/erp/statusTone";
 import { formatNaira } from "@/lib/erp/money";
-import { approveEstimate } from "@/lib/erp/projects";
+import { approveEstimate, resolveNightowlPercent } from "@/lib/erp/projects";
 import type { AuditActor } from "@/lib/erp/audit";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { Button } from "@/components/admin/ui/Fields";
@@ -50,6 +50,7 @@ interface EstimateRow {
   status: EstimateStatus;
   subtotalKobo: number;
   errorMarginPercent: number;
+  nightowlChargePercent: number;
   nightowlChargesKobo: number;
   totalKobo: number;
   createdAtMs: number | null;
@@ -119,6 +120,10 @@ export function ProjectEstimates({
             status: (x.status as EstimateStatus) ?? "draft",
             subtotalKobo: x.subtotalKobo ?? 0,
             errorMarginPercent: x.errorMarginPercent ?? 0,
+            // Rounded for the editor's input box: the fallback ratio is a float,
+            // and a rate of "15.000000000000002" is not one anyone typed.
+            nightowlChargePercent:
+              Math.round(resolveNightowlPercent(x) * 10) / 10,
             nightowlChargesKobo: x.nightowlChargesKobo ?? 0,
             totalKobo: x.totalKobo ?? 0,
             createdAtMs: ms(x.createdAt),
@@ -375,11 +380,7 @@ export function ProjectEstimates({
                     actor={actor}
                     locked={r.status === "approved" || !canEditLines}
                     errorMarginPercent={r.errorMarginPercent}
-                    nightowlChargePercent={
-                      r.subtotalKobo > 0
-                        ? Math.round((r.nightowlChargesKobo / r.subtotalKobo) * 1000) / 10
-                        : 0
-                    }
+                    nightowlChargePercent={r.nightowlChargePercent}
                     onError={onError}
                     onNotice={onNotice}
                   />

@@ -232,6 +232,16 @@ export interface Estimate extends AuditFields {
   subtotalKobo: number;
   errorMarginPercent: number;
   errorMarginKobo: number;
+  /**
+   * The rate the charge was quoted at.
+   *
+   * Stored rather than back-derived from `nightowlChargesKobo / subtotalKobo`.
+   * That ratio is unrecoverable once the subtotal reaches zero — remove the last
+   * line and both operands are zero — so an estimate emptied and refilled came
+   * back charging nothing. Optional because estimates issued before this field
+   * existed do not carry it; readers fall back to the ratio for those.
+   */
+  nightowlChargePercent?: number;
   nightowlChargesKobo: number;
   totalKobo: number;
   /** External-reviewer access. Only hashes are stored, never the raw token. */

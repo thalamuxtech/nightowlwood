@@ -35,9 +35,17 @@ import { writeAudit, type AuditActor } from "./audit";
  *
  * The tick is the answer where it exists. Rows written before the flag was
  * introduced have no `included` field, and for those a non-zero amount is the
- * only record of intent, so they stay in. Written once and shared by the editor,
- * the rollups and estimate creation, because three copies of this rule would
- * drift and the totals would stop agreeing with the ticks on screen.
+ * only record of intent, so they stay in — a project priced last month keeps the
+ * total it had. Written once and shared by the editor, the rollups and estimate
+ * creation, because three copies of this rule would drift and the totals would
+ * stop agreeing with the ticks on screen.
+ *
+ * Note that a legacy row keeps deciding by price until somebody actually ticks it:
+ * `saveFeature` only writes the flag when a tick was passed, never when this
+ * fallback was consulted. Persisting the fallback verdict froze it — pricing a
+ * legacy row at zero to correct a typo wrote `included: false`, and restoring the
+ * price then left the line off the estimate with the box still showing a tick's
+ * worth of ambiguity.
  */
 export function isIncluded(feature: {
   included?: boolean | null;
@@ -309,26 +317,10 @@ export async function saveFeature(
     included?: boolean;
   }
 ): Promise<void> {
-  const lineTotal = lineAmountKobo(values.quantity, values.unitPriceKobo);
+  const amountKobo = lineAmountKobo(values.quantity, values.unitPriceKobo);
   const featureRef = doc(db, `${featuresPath(projectId, componentId)}/${featureId}`);
   const compRef = doc(db, `${componentsPath(projectId)}/${componentId}`);
   const projRef = doc(db, COL.projects, projectId);
-
-  // Sibling amounts are read outside the transaction: a feature edit by someone
-  // else is caught by the transaction's own conflict check on the component doc.
-  const siblings = await getDocs(collection(db, featuresPath(projectId, componentId)));
-  const othersTotal = sumKobo(
-    siblings.docs
-      .filter((d) => d.id !== featureId && isIncluded(d.data()))
-      .map((d) => d.data().amountKobo as number)
-  );
-
-  // The tick being saved wins; absent, the row's stored state decides. Read from
-  // the sibling snapshot already in hand rather than a second fetch.
-  const own = siblings.docs.find((d) => d.id === featureId)?.data() ?? {};
-  const nextIncluded =
-    values.included ?? isIncluded({ included: own.included, amountKobo: lineTotal });
-  const amountKobo = lineTotal;
 
   await runTransaction(db, async (tx) => {
     const compSnap = await tx.get(compRef);
@@ -336,16 +328,48 @@ export async function saveFeature(
     const projSnap = await tx.get(projRef);
     if (!projSnap.exists()) throw new Error("Project not found.");
 
+    /*
+     * Adjusted by this row's own delta, never by re-summing its siblings.
+     *
+     * Summing the siblings was how this lost money. That read cannot go inside the
+     * transaction — the client SDK's `tx.get` takes a document reference, not a
+     * query — and outside it the rows are not in the transaction's read set. So when
+     * two people ticked two rows of the same component, the second transaction did
+     * retry (it reads compRef, which the first had just changed) but the retry
+     * re-ran only this callback: the sibling sum was a stale closure value taken
+     * before the first tick landed, and committing it erased the first row's
+     * contribution.
+     *
+     * A delta has no such dependency. Only this row's before and after are needed,
+     * both read here, and two rows changing concurrently each move the total by
+     * their own difference. It is also one document read instead of a whole
+     * component's worth.
+     */
+    const ownSnap = await tx.get(featureRef);
+    if (!ownSnap.exists()) throw new Error("That line no longer exists.");
+    const own = ownSnap.data();
+
+    // The tick being saved wins; absent, the row's stored state decides.
+    const nextIncluded =
+      values.included ?? isIncluded({ included: own.included, amountKobo });
+    const wasIncluded = isIncluded(own);
+
+    const before = wasIncluded ? ((own.amountKobo as number) ?? 0) : 0;
+    const after = nextIncluded ? amountKobo : 0;
+    const delta = after - before;
+
     const previousComponentTotal = (compSnap.data().estimatedCostKobo as number) ?? 0;
-    // An excluded line contributes nothing, however it is priced.
-    const nextComponentTotal = othersTotal + (nextIncluded ? amountKobo : 0);
+    const nextComponentTotal = Math.max(0, previousComponentTotal + delta);
     const projectTotal = (projSnap.data().estimatedCostKobo as number) ?? 0;
 
     tx.update(featureRef, {
       quantity: values.quantity,
       unitPriceKobo: values.unitPriceKobo,
       amountKobo,
-      included: nextIncluded,
+      // Only written when a tick was actually passed. Writing the fallback's verdict
+      // would convert a legacy row's "decide by price" into a fixed answer the first
+      // time anyone edited its quantity, which is not a decision the user made.
+      ...(values.included === undefined ? {} : { included: values.included }),
       actualQuantity: values.actualQuantity ?? null,
       notes: values.notes ?? null,
       // Only written when supplied: an absent label must not overwrite the
@@ -399,17 +423,20 @@ export async function addFeature(
 /**
  * Removes a feature and rolls the totals back.
  *
- * The caller's `amountKobo` is ignored for an excluded line: an unticked row was
- * never added to the subtotals, so subtracting its price would take the totals
- * below what the remaining lines justify.
+ * What the row contributed is read from the document inside the transaction, not
+ * taken from the caller. Two reasons. An unticked row was never added to the
+ * subtotals, so subtracting its price would pull the totals below what the
+ * remaining lines justify. And the caller's figure comes from a live listener,
+ * which can be a repricing behind: deleting a row someone else had just changed
+ * subtracted the amount the deleter's screen happened to show and left the
+ * component permanently out by the difference.
  */
 export async function removeFeature(
   db: Firestore,
   actor: AuditActor,
   projectId: string,
   componentId: string,
-  featureId: string,
-  amountKobo: number
+  featureId: string
 ): Promise<void> {
   const featureRef = doc(db, `${featuresPath(projectId, componentId)}/${featureId}`);
   const compRef = doc(db, `${componentsPath(projectId)}/${componentId}`);
@@ -421,8 +448,12 @@ export async function removeFeature(
     if (!compSnap.exists() || !projSnap.exists()) throw new Error("Not found.");
 
     const featSnap = await tx.get(featureRef);
-    const contributed =
-      featSnap.exists() && isIncluded(featSnap.data()) ? amountKobo : 0;
+    // Already gone: another tab removed it, and its amount has been taken off the
+    // totals once already.
+    if (!featSnap.exists()) return;
+    const contributed = isIncluded(featSnap.data())
+      ? ((featSnap.data().amountKobo as number) ?? 0)
+      : 0;
 
     tx.delete(featureRef);
     tx.update(compRef, {
@@ -470,7 +501,6 @@ export async function setComponentInclusion(
   });
   if (targets.length === 0) return 0;
 
-  const changed = new Set(targets.map((d) => d.id));
   for (let i = 0; i < targets.length; i += 400) {
     const b = writeBatch(db);
     targets.slice(i, i + 400).forEach((d) =>
@@ -483,13 +513,21 @@ export async function setComponentInclusion(
     await b.commit();
   }
 
-  const nextComponentTotal = sumKobo(
-    feats.docs
-      .filter((d) =>
-        changed.has(d.id) ? included : isIncluded(d.data())
-      )
-      .map((d) => (d.data().amountKobo as number) ?? 0)
-  );
+  /*
+   * The change this bulk action made, as a single delta.
+   *
+   * Expressed as a delta for the same reason saveFeature is: the totals cannot be
+   * recomputed from a sibling query inside a transaction, because the client SDK's
+   * `tx.get` takes a document reference rather than a query, and a sum computed
+   * outside the transaction is not in its read set — so a concurrent single-row
+   * save would be silently overwritten by whichever wrote last.
+   *
+   * Every target moved in the same direction, so the delta is just their amounts,
+   * added on ticking and subtracted on clearing. Read from the same snapshot the
+   * targets were selected from, which is what the batch wrote against.
+   */
+  const moved = sumKobo(targets.map((d) => (d.data().amountKobo as number) ?? 0));
+  const delta = included ? moved : -moved;
 
   const compRef = doc(db, `${componentsPath(projectId)}/${componentId}`);
   const projRef = doc(db, COL.projects, projectId);
@@ -497,11 +535,12 @@ export async function setComponentInclusion(
     const compSnap = await tx.get(compRef);
     const projSnap = await tx.get(projRef);
     if (!compSnap.exists() || !projSnap.exists()) throw new Error("Not found.");
+
     const previous = (compSnap.data().estimatedCostKobo as number) ?? 0;
     const projectTotal = (projSnap.data().estimatedCostKobo as number) ?? 0;
-    tx.update(compRef, { estimatedCostKobo: nextComponentTotal });
+    tx.update(compRef, { estimatedCostKobo: Math.max(0, previous + delta) });
     tx.update(projRef, {
-      estimatedCostKobo: Math.max(0, projectTotal - previous + nextComponentTotal),
+      estimatedCostKobo: Math.max(0, projectTotal + delta),
       updatedAt: serverTimestamp(),
       updatedBy: actor.uid,
     });
@@ -680,6 +719,7 @@ export async function createEstimate(
     subtotalKobo: totals.subtotalKobo,
     errorMarginPercent: options.errorMarginPercent,
     errorMarginKobo: totals.errorMarginKobo,
+    nightowlChargePercent: options.nightowlChargePercent,
     nightowlChargesKobo: totals.nightowlChargesKobo,
     totalKobo: totals.totalKobo,
     createdAt: serverTimestamp(),
@@ -711,15 +751,32 @@ export async function createEstimate(
 }
 
 /**
+ * The Nightowl charge rate an estimate was quoted at.
+ *
+ * Prefers the stored rate. Estimates issued before that field existed fall back to
+ * the ratio of the charge to the subtotal, which is the only record they carry —
+ * and which is why the rate is now stored: the ratio cannot be recovered once the
+ * subtotal is zero, so emptying an old estimate loses its rate for good. Nothing
+ * can be done for those retroactively, but nothing new is created without it.
+ */
+export function resolveNightowlPercent(est: {
+  nightowlChargePercent?: number | null;
+  nightowlChargesKobo?: number | null;
+  subtotalKobo?: number | null;
+}): number {
+  if (typeof est.nightowlChargePercent === "number") return est.nightowlChargePercent;
+  const subtotal = est.subtotalKobo ?? 0;
+  if (subtotal <= 0) return 0;
+  return ((est.nightowlChargesKobo ?? 0) / subtotal) * 100;
+}
+
+/**
  * Recomputes an estimate's totals from its own lines.
  *
  * Called after any line edit. The percentages are read back off the estimate rather
  * than passed in, so a correction cannot quietly reprice the margin along with the
  * line: the rates were fixed when the estimate was issued, and only the lines are
  * being changed.
- *
- * The Nightowl percent is back-derived from the stored amount because only the
- * resulting figure is persisted. Matches how submitEstimateReview recovers it.
  */
 async function recomputeEstimate(
   db: Firestore,
@@ -734,10 +791,7 @@ async function recomputeEstimate(
   const lines = await getDocs(collection(db, estimateLinesPath(estimateId)));
   const subtotal = sumKobo(lines.docs.map((d) => (d.data().amountKobo as number) ?? 0));
 
-  const previousSubtotal = (est.subtotalKobo as number) ?? 0;
-  const previousCharges = (est.nightowlChargesKobo as number) ?? 0;
-  const nightowlPercent =
-    previousSubtotal > 0 ? (previousCharges / previousSubtotal) * 100 : 0;
+  const nightowlPercent = resolveNightowlPercent(est);
 
   const totals = computeEstimateTotals(
     subtotal,
@@ -748,6 +802,9 @@ async function recomputeEstimate(
   await updateDoc(estRef, {
     subtotalKobo: totals.subtotalKobo,
     errorMarginKobo: totals.errorMarginKobo,
+    // Written back so an estimate that predates the field gains it on first edit,
+    // rather than staying dependent on a ratio a later edit could erase.
+    nightowlChargePercent: nightowlPercent,
     nightowlChargesKobo: totals.nightowlChargesKobo,
     totalKobo: totals.totalKobo,
     updatedAt: serverTimestamp(),
@@ -893,6 +950,7 @@ export async function setEstimateMargins(
     subtotalKobo: totals.subtotalKobo,
     errorMarginPercent: options.errorMarginPercent,
     errorMarginKobo: totals.errorMarginKobo,
+    nightowlChargePercent: options.nightowlChargePercent,
     nightowlChargesKobo: totals.nightowlChargesKobo,
     totalKobo: totals.totalKobo,
     updatedAt: serverTimestamp(),

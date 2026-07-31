@@ -178,11 +178,15 @@ async function loadEstimate(estimateId: string): Promise<PdfEstimate> {
 
   const subtotalKobo = Number(d.subtotalKobo ?? 0);
   const nightowlChargesKobo = Number(d.nightowlChargesKobo ?? 0);
-  // Back-derived because only the resulting amount is stored, and the document
-  // should be able to state the rate it was charged at. Matches how
-  // submitEstimateReview recovers it.
+  // Prefers the stored rate; falls back to the ratio only for estimates issued
+  // before that field existed. Rounded to one decimal for display, because the
+  // fallback is a float and "15.000000000000002%" is not a rate anyone quoted.
   const nightowlChargePercent =
-    subtotalKobo > 0 ? Math.round((nightowlChargesKobo / subtotalKobo) * 1000) / 10 : 0;
+    typeof d.nightowlChargePercent === "number"
+      ? d.nightowlChargePercent
+      : subtotalKobo > 0
+        ? Math.round((nightowlChargesKobo / subtotalKobo) * 1000) / 10
+        : 0;
 
   return {
     projectNumber: String(d.projectNumber ?? ""),
