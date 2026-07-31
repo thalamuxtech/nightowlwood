@@ -82,6 +82,23 @@ export function PrintPreview({
       .map((s) => s.textContent ?? "")
       .join("\n");
 
+    /*
+     * The sheet's own <style> tags are stripped from the copied markup.
+     *
+     * They sit as siblings of the sheet root inside this container, so innerHTML
+     * carries them along, and they were landing in the new document's body *after*
+     * the identical rules written into its head. Each sheet's CSS opens with
+     * `<root> { display: none }` — the sheet is hidden until print media or the
+     * preview class reveals it — so that duplicate re-hid the sheet at equal
+     * specificity but a later position, and the downloaded page came out blank.
+     * The head copy is the one that matters, because the reveal rule below has to
+     * be able to override it.
+     */
+    const markup = [...sheet.children]
+      .filter((el) => el.tagName !== "STYLE")
+      .map((el) => el.outerHTML)
+      .join("");
+
     const win = window.open("", "_blank", "width=900,height=1200");
     if (!win) {
       // Pop-up blocked. Printing is still available, so say which one to use.
@@ -93,25 +110,47 @@ export function PrintPreview({
     // show a blank page until the print dialog opened. `.print-preview<root>` is the
     // selector that reveals it on screen, and the class is already on the body, but
     // the root element itself needs it too because that selector takes both classes
-    // on one element. Rather than guess the root class, every direct child of the
-    // copied body is revealed.
+    // on one element. Rather than guess the root class, every element in the copied
+    // body is revealed.
+    //
+    // `:where()` keeps the selector at zero specificity so the sheet's own scoped
+    // rules still decide layout, while `display` is forced with !important because
+    // the only thing being overridden is the blanket hide.
     win.document.write(
       `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>` +
         `<style>${styles}\n` +
         `@page { size: ${paper === "a4-landscape" ? "A4 landscape" : "A4"}; margin: 13mm; }\n` +
         `html,body { margin:0; padding:0; background:#fff; }\n` +
-        `body.print-preview > * { display: block !important; }\n` +
+        `:where(body.print-preview > *) { display: block !important; }\n` +
         `@media screen { body { padding: 12mm; } }\n` +
-        `</style></head><body class="print-preview">${sheet.innerHTML}</body></html>`
+        `</style></head><body class="print-preview">${markup}</body></html>`
     );
     win.document.close();
 
     // Waits for the copied images and fonts, or the PDF can be written before the
     // logo has loaded.
-    win.onload = () => {
+    //
+    // Guarded rather than relying on onload alone: document.write followed by
+    // close() can finish loading before this handler is attached, in which case
+    // onload never fires and the print dialog never opens. The readyState check
+    // catches that, and printOnce keeps the two paths from both firing.
+    let printed = false;
+    const printOnce = () => {
+      if (printed || win.closed) return;
+      printed = true;
       win.focus();
       win.print();
     };
+
+    if (win.document.readyState === "complete") {
+      // A frame's grace for the images the sheet just declared.
+      win.setTimeout(printOnce, 300);
+    } else {
+      win.onload = printOnce;
+      // Backstop: a logo that 404s can leave load pending indefinitely, and a
+      // document that never prints looks exactly like the blank-page bug.
+      win.setTimeout(printOnce, 2500);
+    }
   }
 
   return (

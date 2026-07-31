@@ -287,6 +287,14 @@ export { markInvoicePaid } from "./invoicePayment";
 export { getInvoicePdf, emailInvoice } from "./invoiceDocument";
 
 // ---------------------------------------------------------------------------
+// Estimate documents
+// ---------------------------------------------------------------------------
+
+// Same server-side pdfkit path as the invoice, for the same reason: one renderer
+// behind both the download and the emailed attachment. See estimateDocument.ts.
+export { getEstimatePdf, emailEstimate } from "./estimateDocument";
+
+// ---------------------------------------------------------------------------
 // Scheduled alerts
 // ---------------------------------------------------------------------------
 

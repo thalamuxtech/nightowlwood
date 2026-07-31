@@ -31,7 +31,9 @@ import {
   addFeature,
   computeEstimateTotals,
   createEstimate,
+  isIncluded,
   removeComponent,
+  setComponentInclusion,
   updateComponent,
   removeFeature,
   saveFeature,
@@ -41,6 +43,7 @@ import { DEFAULT_INVOICE_SETTINGS, SETTINGS_DOC } from "@/lib/erp/settings";
 import { PROJECT_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { ProjectDetailsEditor } from "@/components/admin/products/ProjectDetailsEditor";
+import { ProjectEstimates } from "@/components/admin/products/ProjectEstimates";
 import {
   Button,
   CheckboxField,
@@ -78,6 +81,7 @@ interface FeatureRow {
   quantity: number;
   unitPriceKobo: number;
   amountKobo: number;
+  included: boolean;
   order: number;
 }
 
@@ -95,6 +99,8 @@ export function ProjectDetail() {
   const session = useErpSession();
   const canEdit = session.can("project.edit");
   const canApprove = session.can("estimate.approve");
+  const canSendForReview = session.can("estimate.sendForReview");
+  const canEditEstimate = session.can("estimate.edit");
 
   const [project, setProject] = useState<ProjectDoc | null>(null);
   const [editingDetails, setEditingDetails] = useState(false);
@@ -161,6 +167,17 @@ export function ProjectDetail() {
       () => {}
     );
   }, [projectId]);
+
+  // Read for the "email to client" field on the estimate PDF. A missing customer or
+  // a customer with no email is normal, so this fails quietly.
+  const [customerEmail, setCustomerEmail] = useState<string | undefined>();
+  useEffect(() => {
+    const id = project?.customerId;
+    if (!id) return;
+    getDoc(doc(getDb(), COL.customers, id))
+      .then((snap) => setCustomerEmail(snap.data()?.email || undefined))
+      .catch(() => {});
+  }, [project?.customerId]);
 
   // Margins default from settings but stay editable per estimate.
   useEffect(() => {
@@ -408,6 +425,23 @@ export function ProjectDetail() {
         )}
       </section>
 
+      {/* Issued estimates: the versioned documents, and what happens to them */}
+      <ProjectEstimates
+        projectId={projectId}
+        projectNumber={project.projectNumber}
+        customerEmail={customerEmail}
+        actor={actor}
+        canSendForReview={canSendForReview}
+        canApprove={canApprove}
+        canEditLines={canEditEstimate}
+        isAdmin={session.role === "admin"}
+        onError={setError}
+        onNotice={(m) => {
+          setNotice(m);
+          setTimeout(() => setNotice(""), 6000);
+        }}
+      />
+
       {/* Status */}
       {canEdit && (
         <section className="mt-8 rounded-3xl border border-night-700/60 bg-night-900/30 p-6">
@@ -550,11 +584,13 @@ function ComponentPanel({
   onError: (m: string) => void;
 }) {
   const [features, setFeatures] = useState<FeatureRow[]>([]);
-  const [showAll, setShowAll] = useState(false);
+  /** "included" hides the untouched checklist; "all" is the working view. */
+  const [view, setView] = useState<"all" | "included">("all");
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(component.name);
   const [savingName, setSavingName] = useState(false);
   const [newItem, setNewItem] = useState("");
+  const [bulking, setBulking] = useState(false);
 
   // Only the open component subscribes: a templated project carries well over a
   // hundred feature rows, and listening to all of them at once is wasteful.
@@ -572,6 +608,7 @@ function ComponentPanel({
             quantity: d.data().quantity ?? 0,
             unitPriceKobo: d.data().unitPriceKobo ?? 0,
             amountKobo: d.data().amountKobo ?? 0,
+            included: isIncluded(d.data()),
             order: d.data().order ?? 0,
           }))
         ),
@@ -579,10 +616,30 @@ function ComponentPanel({
     );
   }, [open, projectId, component.id]);
 
+  const included = features.filter((f) => f.included);
   const priced = features.filter((f) => f.amountKobo > 0);
-  // Unpriced template rows are hidden by default: showing 33 zero lines buries
-  // the handful that have actually been costed.
-  const visible = showAll ? features : priced;
+  // Every row shows by default. The template is a checklist, and a checklist you
+  // cannot see is not one: hiding the unpriced rows meant the 33 items a kitchen
+  // is quoted from were only reachable through a toggle most people never found.
+  const visible = view === "all" ? features : included;
+
+  async function bulk(next: boolean, onlyPriced: boolean) {
+    setBulking(true);
+    try {
+      await setComponentInclusion(
+        getDb(),
+        actor,
+        projectId,
+        component.id,
+        next,
+        { onlyPriced }
+      );
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not update the lines.");
+    } finally {
+      setBulking(false);
+    }
+  }
 
   return (
     <div className="overflow-hidden rounded-3xl border border-night-700/60 bg-night-900/40">
@@ -614,16 +671,42 @@ function ComponentPanel({
         <div className="border-t border-night-700/60 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-cream-500">
-              {priced.length} of {features.length} items priced
+              {included.length} of {features.length} items included
+              {priced.length !== included.length && (
+                <span className="text-cream-600"> · {priced.length} priced</span>
+              )}
             </p>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={() => setShowAll((v) => !v)}
+                onClick={() => setView((v) => (v === "all" ? "included" : "all"))}
                 className="cursor-pointer text-xs text-cream-400 transition-colors hover:text-brass-300"
               >
-                {showAll ? "Show priced only" : `Show all ${features.length}`}
+                {view === "all"
+                  ? `Show included only (${included.length})`
+                  : `Show all ${features.length}`}
               </button>
+              {canEdit && features.length > 0 && (
+                <button
+                  type="button"
+                  disabled={bulking}
+                  onClick={() => bulk(true, true)}
+                  title="Tick every line that has an amount"
+                  className="cursor-pointer text-xs text-cream-400 transition-colors hover:text-brass-300 disabled:opacity-50"
+                >
+                  Include priced
+                </button>
+              )}
+              {canEdit && included.length > 0 && (
+                <button
+                  type="button"
+                  disabled={bulking}
+                  onClick={() => bulk(false, false)}
+                  className="cursor-pointer text-xs text-cream-400 transition-colors hover:text-brass-300 disabled:opacity-50"
+                >
+                  Clear all
+                </button>
+              )}
               {canEdit && (
                 <button
                   type="button"
@@ -686,7 +769,9 @@ function ComponentPanel({
 
           {visible.length === 0 ? (
             <p className="mt-4 text-sm text-cream-500">
-              Nothing priced yet. Use &ldquo;Show all&rdquo; to price the standard items.
+              {features.length === 0
+                ? "No line items. Add one below, or recreate the component with its template to pull in the standard checklist."
+                : "Nothing included yet. Tick the lines this job needs, or use “Show all” to work through the checklist."}
             </p>
           ) : (
             <div className="mt-4 space-y-2">
@@ -725,7 +810,7 @@ function ComponentPanel({
                   })
                     .then(() => {
                       setNewItem("");
-                      setShowAll(true);
+                      setView("all");
                     })
                     .catch((e) =>
                       onError(e instanceof Error ? e.message : "Could not add the item.")
@@ -748,6 +833,10 @@ function ComponentPanel({
  * Saving on blur rather than on every keystroke keeps a transaction per field
  * rather than per character, and the row shows its own amount so the effect of a
  * price is visible before the totals above catch up.
+ *
+ * The tick saves immediately instead of on blur. It is a single decision with no
+ * half-typed state to protect, and waiting for focus to leave a checkbox would
+ * leave the totals disagreeing with what the box plainly shows.
  */
 function FeatureRowEditor({
   projectId,
@@ -780,13 +869,14 @@ function FeatureRowEditor({
 
   const amount = (Number(qty) || 0) * parseNairaInput(price);
 
-  async function commit() {
+  async function commit(overrides: { included?: boolean } = {}) {
     const nextQty = Number(qty) || 0;
     const nextPrice = parseNairaInput(price);
     // A blank label falls back to the stored one: templated rows are named for a
     // reason, and an accidental clear should not leave a nameless line.
     const nextItem = item.trim() || feature.item;
     if (
+      overrides.included === undefined &&
       nextQty === feature.quantity &&
       nextPrice === feature.unitPriceKobo &&
       nextItem === feature.item
@@ -799,6 +889,7 @@ function FeatureRowEditor({
         item: nextItem,
         quantity: nextQty,
         unitPriceKobo: nextPrice,
+        ...overrides,
       });
     } catch (e) {
       onError(e instanceof Error ? e.message : "Could not save the line.");
@@ -808,10 +899,32 @@ function FeatureRowEditor({
   }
 
   return (
-    <div className="grid items-end gap-3 rounded-xl border border-night-700/40 bg-night-950/30 p-3 sm:grid-cols-[1fr_5rem_7rem_7rem_2rem]">
+    <div
+      className={`grid items-end gap-3 rounded-xl border p-3 transition-colors sm:grid-cols-[1.5rem_1fr_5rem_7rem_7rem_2rem] ${
+        feature.included
+          ? "border-brass-500/30 bg-night-950/50"
+          : "border-night-700/40 bg-night-950/20"
+      }`}
+    >
+      {/* The tick is the first thing in the row because it is the first decision:
+          whether this job needs the item at all, before what it costs. */}
+      <div className="flex items-center pb-3.5">
+        <input
+          id={`inc-${feature.id}`}
+          type="checkbox"
+          checked={feature.included}
+          disabled={!canEdit || saving}
+          onChange={(e) => commit({ included: e.target.checked })}
+          aria-label={`Include ${feature.item} in the estimate`}
+          title={
+            feature.included ? "Included in the estimate" : "Not on the estimate"
+          }
+          className="h-4 w-4 cursor-pointer accent-brass-500 disabled:cursor-not-allowed"
+        />
+      </div>
       {/* The label sits in the same onBlur wrapper as the figures, so renaming a
           line commits on the way out just as pricing it does. */}
-      <div className="min-w-0" onBlur={commit}>
+      <div className="min-w-0" onBlur={() => commit()}>
         <TextField
           id={`i-${feature.id}`}
           label="Item"
@@ -826,7 +939,7 @@ function FeatureRowEditor({
       {/* onBlur here rather than on the inputs: NumberField does not expose it,
           and a wrapper catches focus leaving either field. React's onBlur
           bubbles, unlike the native event. */}
-      <div onBlur={commit}>
+      <div onBlur={() => commit()}>
         <NumberField
           id={`q-${feature.id}`}
           label="Qty"
@@ -835,7 +948,7 @@ function FeatureRowEditor({
           disabled={!canEdit}
         />
       </div>
-      <div onBlur={commit}>
+      <div onBlur={() => commit()}>
         <NumberField
           id={`p-${feature.id}`}
           label="Unit (₦)"
@@ -846,10 +959,20 @@ function FeatureRowEditor({
       </div>
       <div>
         <p className="mb-1.5 text-sm text-cream-300">Amount</p>
+        {/* A priced but unticked line shows its figure struck through: the number
+            is real, it just is not in the total, and blanking it would look like
+            the price had been lost. */}
         <p
           className={`px-1 py-3 text-right text-sm ${
-            amount > 0 ? "text-brass-300" : "text-cream-600"
+            amount > 0
+              ? feature.included
+                ? "text-brass-300"
+                : "text-cream-600 line-through"
+              : "text-cream-600"
           }`}
+          title={
+            amount > 0 && !feature.included ? "Priced, but not on the estimate" : undefined
+          }
         >
           {amount > 0 ? formatNaira(amount) : "-"}
         </p>
@@ -862,7 +985,7 @@ function FeatureRowEditor({
             <>
               <button
                 type="button"
-                onClick={commit}
+                onClick={() => commit()}
                 aria-label={`Save ${feature.item}`}
                 title="Save"
                 className="cursor-pointer rounded px-1 text-xs text-brass-300 hover:text-brass-200"

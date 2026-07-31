@@ -209,6 +209,17 @@ export interface ComponentFeature {
   unitPriceKobo: number;
   amountKobo: number;
   order: number;
+  /**
+   * Whether the line goes on the estimate.
+   *
+   * Template rows arrive unchecked: the template is a checklist of everything
+   * that *might* apply to a kitchen, not a bill. Ticking a line is what says
+   * "this job needs it", which is a separate decision from what it costs, so a
+   * zero-priced line can still be listed and a priced one deliberately held
+   * back. Absent on rows written before the flag existed, where a price is the
+   * only signal of intent available.
+   */
+  included?: boolean;
   notes?: string;
 }
 

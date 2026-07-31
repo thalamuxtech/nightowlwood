@@ -7,6 +7,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -28,6 +29,24 @@ import { writeAudit, type AuditActor } from "./audit";
  * totals roll upward, and each level stores its own subtotal so a list view does
  * not have to read every descendant.
  */
+
+/**
+ * Whether a feature row belongs on the estimate.
+ *
+ * The tick is the answer where it exists. Rows written before the flag was
+ * introduced have no `included` field, and for those a non-zero amount is the
+ * only record of intent, so they stay in. Written once and shared by the editor,
+ * the rollups and estimate creation, because three copies of this rule would
+ * drift and the totals would stop agreeing with the ticks on screen.
+ */
+export function isIncluded(feature: {
+  included?: boolean | null;
+  amountKobo?: number | null;
+}): boolean {
+  if (feature.included === true) return true;
+  if (feature.included === false) return false;
+  return (feature.amountKobo ?? 0) > 0;
+}
 
 export interface NewProjectInput {
   customerId: string;
@@ -201,10 +220,12 @@ export async function setProjectStatus(
  * Adds a component, optionally pre-filling its features from the category
  * template.
  *
- * Template features are created at zero price: the item list is what the
- * business already uses as a checklist, and pre-filling prices with guesses
+ * Template features are created at zero price and unticked: the item list is what
+ * the business already uses as a checklist, and pre-filling prices with guesses
  * would be worse than leaving them blank, because a zero is obviously unpriced
- * while a wrong number looks deliberate.
+ * while a wrong number looks deliberate. Every row is written, so the whole
+ * checklist is visible and editable straight away; ticking a line is what puts it
+ * on the estimate.
  */
 export async function addComponent(
   db: Firestore,
@@ -235,6 +256,7 @@ export async function addComponent(
         quantity: 0,
         unitPriceKobo: 0,
         amountKobo: 0,
+        included: false,
         order: i,
         createdAt: serverTimestamp(),
         createdBy: actor.uid,
@@ -260,10 +282,13 @@ export async function addComponent(
 }
 
 /**
- * Saves a feature's quantity and price, then rolls the totals up.
+ * Saves a feature's quantity, price and inclusion, then rolls the totals up.
  *
  * Runs in a transaction over the component and project so two people pricing
  * different features of the same component cannot both read a stale subtotal.
+ *
+ * Only ticked lines count toward the rollups, so the component and project
+ * subtotals always equal the sum of what the estimate would actually list.
  */
 export async function saveFeature(
   db: Firestore,
@@ -279,9 +304,12 @@ export async function saveFeature(
     /** Renames the line. Omitted leaves the existing label untouched, so callers
      *  that only price a templated row cannot blank its name by accident. */
     item?: string;
+    /** Whether the line goes on the estimate. Omitted leaves the stored tick
+     *  alone, so pricing a row does not silently include or drop it. */
+    included?: boolean;
   }
 ): Promise<void> {
-  const amountKobo = lineAmountKobo(values.quantity, values.unitPriceKobo);
+  const lineTotal = lineAmountKobo(values.quantity, values.unitPriceKobo);
   const featureRef = doc(db, `${featuresPath(projectId, componentId)}/${featureId}`);
   const compRef = doc(db, `${componentsPath(projectId)}/${componentId}`);
   const projRef = doc(db, COL.projects, projectId);
@@ -290,8 +318,17 @@ export async function saveFeature(
   // else is caught by the transaction's own conflict check on the component doc.
   const siblings = await getDocs(collection(db, featuresPath(projectId, componentId)));
   const othersTotal = sumKobo(
-    siblings.docs.filter((d) => d.id !== featureId).map((d) => d.data().amountKobo as number)
+    siblings.docs
+      .filter((d) => d.id !== featureId && isIncluded(d.data()))
+      .map((d) => d.data().amountKobo as number)
   );
+
+  // The tick being saved wins; absent, the row's stored state decides. Read from
+  // the sibling snapshot already in hand rather than a second fetch.
+  const own = siblings.docs.find((d) => d.id === featureId)?.data() ?? {};
+  const nextIncluded =
+    values.included ?? isIncluded({ included: own.included, amountKobo: lineTotal });
+  const amountKobo = lineTotal;
 
   await runTransaction(db, async (tx) => {
     const compSnap = await tx.get(compRef);
@@ -300,13 +337,15 @@ export async function saveFeature(
     if (!projSnap.exists()) throw new Error("Project not found.");
 
     const previousComponentTotal = (compSnap.data().estimatedCostKobo as number) ?? 0;
-    const nextComponentTotal = othersTotal + amountKobo;
+    // An excluded line contributes nothing, however it is priced.
+    const nextComponentTotal = othersTotal + (nextIncluded ? amountKobo : 0);
     const projectTotal = (projSnap.data().estimatedCostKobo as number) ?? 0;
 
     tx.update(featureRef, {
       quantity: values.quantity,
       unitPriceKobo: values.unitPriceKobo,
       amountKobo,
+      included: nextIncluded,
       actualQuantity: values.actualQuantity ?? null,
       notes: values.notes ?? null,
       // Only written when supplied: an absent label must not overwrite the
@@ -326,6 +365,12 @@ export async function saveFeature(
   });
 }
 
+/**
+ * Adds a line that is not on the category template.
+ *
+ * Ticked on arrival, unlike a template row: someone typed this item in for this
+ * job, so its inclusion is not in question the way a checklist entry's is.
+ */
 export async function addFeature(
   db: Firestore,
   actor: AuditActor,
@@ -342,6 +387,7 @@ export async function addFeature(
     quantity: 0,
     unitPriceKobo: 0,
     amountKobo: 0,
+    included: true,
     order: input.order,
     createdAt: serverTimestamp(),
     createdBy: actor.uid,
@@ -350,7 +396,13 @@ export async function addFeature(
   return ref.id;
 }
 
-/** Removes a feature and rolls the totals back. */
+/**
+ * Removes a feature and rolls the totals back.
+ *
+ * The caller's `amountKobo` is ignored for an excluded line: an unticked row was
+ * never added to the subtotals, so subtracting its price would take the totals
+ * below what the remaining lines justify.
+ */
 export async function removeFeature(
   db: Firestore,
   actor: AuditActor,
@@ -359,6 +411,7 @@ export async function removeFeature(
   featureId: string,
   amountKobo: number
 ): Promise<void> {
+  const featureRef = doc(db, `${featuresPath(projectId, componentId)}/${featureId}`);
   const compRef = doc(db, `${componentsPath(projectId)}/${componentId}`);
   const projRef = doc(db, COL.projects, projectId);
 
@@ -367,20 +420,94 @@ export async function removeFeature(
     const projSnap = await tx.get(projRef);
     if (!compSnap.exists() || !projSnap.exists()) throw new Error("Not found.");
 
-    tx.delete(doc(db, `${featuresPath(projectId, componentId)}/${featureId}`));
+    const featSnap = await tx.get(featureRef);
+    const contributed =
+      featSnap.exists() && isIncluded(featSnap.data()) ? amountKobo : 0;
+
+    tx.delete(featureRef);
     tx.update(compRef, {
       estimatedCostKobo: Math.max(
         0,
-        ((compSnap.data().estimatedCostKobo as number) ?? 0) - amountKobo
+        ((compSnap.data().estimatedCostKobo as number) ?? 0) - contributed
       ),
     });
     tx.update(projRef, {
       estimatedCostKobo: Math.max(
         0,
-        ((projSnap.data().estimatedCostKobo as number) ?? 0) - amountKobo
+        ((projSnap.data().estimatedCostKobo as number) ?? 0) - contributed
       ),
     });
   });
+}
+
+/**
+ * Ticks or unticks every feature in a component at once, then rebuilds the
+ * subtotals from what is left ticked.
+ *
+ * Pricing a 33-row kitchen and then ticking each line individually is 33 writes
+ * and 33 rollup transactions for one decision, so the bulk actions do it in
+ * batches and recompute the component total from scratch afterwards rather than
+ * by delta. Recomputing is safe here because every feature has just been read.
+ *
+ * `onlyPriced` ticks just the lines that carry an amount, which is the common
+ * case: price the handful that apply, then include them in one go.
+ */
+export async function setComponentInclusion(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  componentId: string,
+  included: boolean,
+  options: { onlyPriced?: boolean } = {}
+): Promise<number> {
+  const feats = await getDocs(collection(db, featuresPath(projectId, componentId)));
+
+  const targets = feats.docs.filter((d) => {
+    if (included && options.onlyPriced && !((d.data().amountKobo as number) ?? 0)) {
+      return false;
+    }
+    return isIncluded(d.data()) !== included;
+  });
+  if (targets.length === 0) return 0;
+
+  const changed = new Set(targets.map((d) => d.id));
+  for (let i = 0; i < targets.length; i += 400) {
+    const b = writeBatch(db);
+    targets.slice(i, i + 400).forEach((d) =>
+      b.update(d.ref, {
+        included,
+        updatedAt: serverTimestamp(),
+        updatedBy: actor.uid,
+      })
+    );
+    await b.commit();
+  }
+
+  const nextComponentTotal = sumKobo(
+    feats.docs
+      .filter((d) =>
+        changed.has(d.id) ? included : isIncluded(d.data())
+      )
+      .map((d) => (d.data().amountKobo as number) ?? 0)
+  );
+
+  const compRef = doc(db, `${componentsPath(projectId)}/${componentId}`);
+  const projRef = doc(db, COL.projects, projectId);
+  await runTransaction(db, async (tx) => {
+    const compSnap = await tx.get(compRef);
+    const projSnap = await tx.get(projRef);
+    if (!compSnap.exists() || !projSnap.exists()) throw new Error("Not found.");
+    const previous = (compSnap.data().estimatedCostKobo as number) ?? 0;
+    const projectTotal = (projSnap.data().estimatedCostKobo as number) ?? 0;
+    tx.update(compRef, { estimatedCostKobo: nextComponentTotal });
+    tx.update(projRef, {
+      estimatedCostKobo: Math.max(0, projectTotal - previous + nextComponentTotal),
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+  });
+
+  return targets.length;
 }
 
 export async function removeComponent(
@@ -496,9 +623,12 @@ export async function createEstimate(
     const category = compSnap.docs[i].data().category as ProductCategory;
     for (const f of featSnaps[i].docs) {
       const d = f.data();
-      // Skip untouched template rows: an estimate listing 178 zero-value lines
-      // is unreadable, and the client only needs what was actually priced.
-      if (!d.amountKobo) continue;
+      // Only ticked lines are snapshotted. The template is a 178-row checklist of
+      // what a job of this kind might involve, and listing all of it would bury
+      // the work actually quoted for. The tick is the estimator's decision about
+      // what this job includes; a zero-priced line that is ticked still appears,
+      // because "included, price to follow" is a thing an estimate needs to say.
+      if (!isIncluded(d)) continue;
       lines.push({
         category,
         item: d.item ?? "",
@@ -578,6 +708,207 @@ export async function createEstimate(
   });
 
   return { estimateId: estRef.id, version, totals };
+}
+
+/**
+ * Recomputes an estimate's totals from its own lines.
+ *
+ * Called after any line edit. The percentages are read back off the estimate rather
+ * than passed in, so a correction cannot quietly reprice the margin along with the
+ * line: the rates were fixed when the estimate was issued, and only the lines are
+ * being changed.
+ *
+ * The Nightowl percent is back-derived from the stored amount because only the
+ * resulting figure is persisted. Matches how submitEstimateReview recovers it.
+ */
+async function recomputeEstimate(
+  db: Firestore,
+  actor: AuditActor,
+  estimateId: string
+): Promise<EstimateTotals> {
+  const estRef = doc(db, COL.estimates, estimateId);
+  const snap = await getDoc(estRef);
+  if (!snap.exists()) throw new Error("Estimate not found.");
+  const est = snap.data();
+
+  const lines = await getDocs(collection(db, estimateLinesPath(estimateId)));
+  const subtotal = sumKobo(lines.docs.map((d) => (d.data().amountKobo as number) ?? 0));
+
+  const previousSubtotal = (est.subtotalKobo as number) ?? 0;
+  const previousCharges = (est.nightowlChargesKobo as number) ?? 0;
+  const nightowlPercent =
+    previousSubtotal > 0 ? (previousCharges / previousSubtotal) * 100 : 0;
+
+  const totals = computeEstimateTotals(
+    subtotal,
+    (est.errorMarginPercent as number) ?? 0,
+    nightowlPercent
+  );
+
+  await updateDoc(estRef, {
+    subtotalKobo: totals.subtotalKobo,
+    errorMarginKobo: totals.errorMarginKobo,
+    nightowlChargesKobo: totals.nightowlChargesKobo,
+    totalKobo: totals.totalKobo,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  return totals;
+}
+
+/**
+ * Edits a line on an issued estimate, then restates the totals.
+ *
+ * Allowed because an estimate is a working document until it is approved: a reviewer
+ * comes back with a corrected figure, or a price is found to be wrong, and the
+ * alternative is regenerating the whole estimate from the project and losing the
+ * version the client is holding.
+ *
+ * Refused once approved. At that point the total has become the project's contract
+ * value, and editing the lines behind it would leave the contract standing on
+ * figures that no longer add up to it.
+ */
+export async function saveEstimateLine(
+  db: Firestore,
+  actor: AuditActor,
+  estimateId: string,
+  lineId: string,
+  values: { item: string; quantity: number; unitPriceKobo: number }
+): Promise<EstimateTotals> {
+  const estSnap = await getDoc(doc(db, COL.estimates, estimateId));
+  if (!estSnap.exists()) throw new Error("Estimate not found.");
+  if (estSnap.data().status === "approved") {
+    throw new Error(
+      "This estimate is approved and sets the contract value, so its lines cannot be edited. Create a new estimate instead."
+    );
+  }
+
+  const amountKobo = lineAmountKobo(values.quantity, values.unitPriceKobo);
+  await updateDoc(doc(db, `${estimateLinesPath(estimateId)}/${lineId}`), {
+    ...(values.item.trim() ? { item: values.item.trim() } : {}),
+    quantity: values.quantity,
+    unitPriceKobo: values.unitPriceKobo,
+    amountKobo,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  return recomputeEstimate(db, actor, estimateId);
+}
+
+/**
+ * Adds a line to an issued estimate.
+ *
+ * Ordered after everything present so it appears at the foot of its section rather
+ * than interleaved with the snapshotted lines. The category decides which component
+ * heading it prints under on the PDF.
+ */
+export async function addEstimateLine(
+  db: Firestore,
+  actor: AuditActor,
+  estimateId: string,
+  values: {
+    item: string;
+    category: ProductCategory;
+    quantity: number;
+    unitPriceKobo: number;
+  }
+): Promise<EstimateTotals> {
+  if (!values.item.trim()) throw new Error("Name the line.");
+
+  const estSnap = await getDoc(doc(db, COL.estimates, estimateId));
+  if (!estSnap.exists()) throw new Error("Estimate not found.");
+  if (estSnap.data().status === "approved") {
+    throw new Error("An approved estimate cannot be added to.");
+  }
+
+  const existing = await getDocs(collection(db, estimateLinesPath(estimateId)));
+  const maxOrder = existing.docs.reduce(
+    (max, d) => Math.max(max, (d.data().order as number) ?? 0),
+    -1
+  );
+
+  await setDoc(doc(collection(db, estimateLinesPath(estimateId))), {
+    category: values.category,
+    item: values.item.trim().slice(0, 200),
+    quantity: values.quantity,
+    unitPriceKobo: values.unitPriceKobo,
+    amountKobo: lineAmountKobo(values.quantity, values.unitPriceKobo),
+    actualQuantity: null,
+    order: maxOrder + 1,
+    createdAt: serverTimestamp(),
+    createdBy: actor.uid,
+  });
+
+  return recomputeEstimate(db, actor, estimateId);
+}
+
+/** Removes a line from an issued estimate and restates the totals. */
+export async function removeEstimateLine(
+  db: Firestore,
+  actor: AuditActor,
+  estimateId: string,
+  lineId: string
+): Promise<EstimateTotals> {
+  const estSnap = await getDoc(doc(db, COL.estimates, estimateId));
+  if (!estSnap.exists()) throw new Error("Estimate not found.");
+  if (estSnap.data().status === "approved") {
+    throw new Error("An approved estimate cannot have lines removed.");
+  }
+
+  await deleteDoc(doc(db, `${estimateLinesPath(estimateId)}/${lineId}`));
+  return recomputeEstimate(db, actor, estimateId);
+}
+
+/**
+ * Restates an issued estimate's margin and charge percentages.
+ *
+ * Separate from the line edits because it is a different decision — what the business
+ * adds on top, rather than what the work costs — and because the two percentages are
+ * the ones an external reviewer is explicitly not allowed to touch.
+ */
+export async function setEstimateMargins(
+  db: Firestore,
+  actor: AuditActor,
+  estimateId: string,
+  options: { errorMarginPercent: number; nightowlChargePercent: number }
+): Promise<EstimateTotals> {
+  const estRef = doc(db, COL.estimates, estimateId);
+  const estSnap = await getDoc(estRef);
+  if (!estSnap.exists()) throw new Error("Estimate not found.");
+  if (estSnap.data().status === "approved") {
+    throw new Error("An approved estimate's margins cannot be changed.");
+  }
+
+  const lines = await getDocs(collection(db, estimateLinesPath(estimateId)));
+  const subtotal = sumKobo(lines.docs.map((d) => (d.data().amountKobo as number) ?? 0));
+  const totals = computeEstimateTotals(
+    subtotal,
+    options.errorMarginPercent,
+    options.nightowlChargePercent
+  );
+
+  await updateDoc(estRef, {
+    subtotalKobo: totals.subtotalKobo,
+    errorMarginPercent: options.errorMarginPercent,
+    errorMarginKobo: totals.errorMarginKobo,
+    nightowlChargesKobo: totals.nightowlChargesKobo,
+    totalKobo: totals.totalKobo,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.estimates,
+    docId: estimateId,
+    summary: `Restated estimate margins: ${options.errorMarginPercent}% margin, ${options.nightowlChargePercent}% charge, total ${totals.totalKobo} kobo`,
+    after: { totalKobo: totals.totalKobo },
+  });
+
+  return totals;
 }
 
 export async function approveEstimate(
