@@ -19,6 +19,7 @@ import {
   Inbox,
   LayoutDashboard,
   Loader2,
+  LogIn,
   LogOut,
   Newspaper,
   NotebookPen,
@@ -487,27 +488,74 @@ function Sidebar({ email }: { email: string }) {
   );
 }
 
+/**
+ * Demo accounts offered as one-click fills.
+ *
+ * Purely a convenience for anyone reviewing the portal: the accounts are ordinary
+ * staff accounts and every role, rule and capability applies to them exactly as it
+ * would to a real member of staff. Nothing here grants access — it fills two boxes.
+ *
+ * `demo-admin@` rather than the real `admin@nightowl.com.ng`, whose password belongs
+ * to the owner and is not published.
+ */
+const DEMO_LOGINS = [
+  {
+    role: "Admin",
+    email: "demo-admin@nightowl.com.ng",
+    hint: "Everything, including finance and approvals",
+  },
+  {
+    role: "Manager",
+    email: "manager@nightowl.com.ng",
+    hint: "Jobs, projects, stock and purchasing",
+  },
+  {
+    role: "Operator",
+    email: "operator@nightowl.com.ng",
+    hint: "Own work log and tool requests",
+  },
+] as const;
+
+const DEMO_PASSWORD = "NightowlDemo!2026";
+
 function LoginScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // Controlled so a demo button can fill them; typing still works normally.
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [filled, setFilled] = useState<string | null>(null);
 
-  async function onSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const data = new FormData(e.currentTarget);
+  async function signIn(withEmail: string, withPassword: string) {
     setBusy(true);
     setError("");
     try {
-      await signInWithEmailAndPassword(
-        getFirebaseAuth(),
-        String(data.get("email") ?? ""),
-        String(data.get("password") ?? "")
-      );
+      await signInWithEmailAndPassword(getFirebaseAuth(), withEmail, withPassword);
     } catch {
       setError("Invalid credentials. Access is restricted to Nightowl staff.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await signIn(email, password);
+  }
+
+  /**
+   * Fills the form and signs straight in.
+   *
+   * The fields are populated as well as submitted, rather than only submitted, so
+   * the reviewer can see which account they are using — and so a failed sign-in
+   * leaves something on screen to correct rather than an empty form.
+   */
+  async function useDemo(demoEmail: string) {
+    setEmail(demoEmail);
+    setPassword(DEMO_PASSWORD);
+    setFilled(demoEmail);
+    await signIn(demoEmail, DEMO_PASSWORD);
   }
 
   return (
@@ -536,6 +584,11 @@ function LoginScreen() {
               type="email"
               required
               autoComplete="username"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setFilled(null);
+              }}
               className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
             />
           </div>
@@ -550,6 +603,11 @@ function LoginScreen() {
                 type={showPassword ? "text" : "password"}
                 required
                 autoComplete="current-password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setFilled(null);
+                }}
                 className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 pr-12 text-cream-100 focus:border-brass-500 focus:outline-none"
               />
               <button
@@ -583,6 +641,41 @@ function LoginScreen() {
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
+
+        {/* Demo sign-ins. Each is an ordinary staff account, so what a reviewer
+            sees is exactly what that role sees — the buttons only save typing. */}
+        <div className="mt-8 rounded-2xl border border-night-700/60 bg-night-900/40 p-4">
+          <p className="text-xs uppercase tracking-wider text-cream-500">
+            Demo sign-in
+          </p>
+          <p className="mt-1.5 text-xs text-cream-600">
+            Fills the form and signs in. Each role sees only what that role is
+            allowed to.
+          </p>
+          <div className="mt-3 space-y-2">
+            {DEMO_LOGINS.map((d) => (
+              <button
+                key={d.email}
+                type="button"
+                disabled={busy}
+                onClick={() => useDemo(d.email)}
+                className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-60 ${
+                  filled === d.email
+                    ? "border-brass-500/60 bg-brass-500/10"
+                    : "border-night-600 bg-night-800/50 hover:border-brass-500/50"
+                }`}
+              >
+                <span className="min-w-0">
+                  <span className="block text-sm text-cream-100">{d.role}</span>
+                  <span className="block truncate text-xs text-cream-500">
+                    {d.hint}
+                  </span>
+                </span>
+                <LogIn size={15} className="shrink-0 text-brass-400" />
+              </button>
+            ))}
+          </div>
+        </div>
       </motion.div>
     </div>
   );
