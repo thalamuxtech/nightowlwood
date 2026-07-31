@@ -3,20 +3,29 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import {
-  CheckCircle2,
-  Loader2,
-  Lock,
-  Plus,
-  ShieldAlert,
-  Trash2,
-} from "lucide-react";
+import { CheckCircle2, Loader2, Lock, Plus, ShieldAlert } from "lucide-react";
 import { getFirebaseApp } from "@/lib/firebase";
 import { formatNaira, parseNairaInput, toNaira } from "@/lib/erp/money";
 import { OwlMark } from "@/components/site/OwlMark";
 
 /** Must match the region the functions are deployed to. */
 const REGION = "europe-west1";
+
+/**
+ * Category slugs as the reviewer should read them.
+ *
+ * Duplicated from `@/lib/erp/enums` rather than imported: this is a public page
+ * reached without a login, and pulling the ERP enum module in would ship the
+ * admin's vocabulary — statuses, roles, capabilities — to anyone with the link.
+ */
+const CATEGORY_LABELS: Record<string, string> = {
+  kitchen: "Kitchen",
+  doors: "Doors",
+  frames: "Frames",
+  tv_wall_panels: "TV Wall Panels",
+  closets: "Closets",
+  bedset: "Bedset",
+};
 
 interface ReviewLine {
   id?: string;
@@ -111,6 +120,37 @@ export function EstimateReview() {
         .reduce((s, l) => s + (Number(l.qty) || 0) * parseNairaInput(l.price), 0),
     [lines]
   );
+
+  const kept = useMemo(() => lines.filter((l) => !l.removed), [lines]);
+
+  /**
+   * Lines grouped under the component they were estimated for.
+   *
+   * Runs of the same category are kept in the order they arrived rather than
+   * sorted, because that order is the estimator's own sequence and a reviewer
+   * working from the paper template reads down the same list. Lines the reviewer
+   * adds have no category and collect at the end under their own heading, so a
+   * new item is never silently filed under someone else's kitchen.
+   */
+  const groups = useMemo(() => {
+    const numbered = lines.map((l, i) => ({ ...l, index: i + 1 }));
+    const out: Array<{ key: string; label: string; rows: typeof numbered }> = [];
+    for (const row of numbered) {
+      const key = row.addedByReviewer && !row.id ? "__added" : (row.category ?? "");
+      const last = out[out.length - 1];
+      if (last && last.key === key) last.rows.push(row);
+      else
+        out.push({
+          key,
+          label:
+            key === "__added"
+              ? "Added during review"
+              : (CATEGORY_LABELS[key] ?? key ?? "Items"),
+          rows: [row],
+        });
+    }
+    return out;
+  }, [lines]);
 
   async function submit() {
     setSubmitting(true);
@@ -269,8 +309,9 @@ export function EstimateReview() {
       </header>
 
       <p className="mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-cream-400">
-        Adjust any quantity or price, remove a line you disagree with, or add
-        something missing. Nothing is saved until you submit.
+        Every line is listed below, grouped as it was estimated. Untick anything that
+        does not belong, adjust any quantity or price, and add whatever is missing.
+        Nothing is saved until you submit.
       </p>
 
       {error && (
@@ -282,73 +323,147 @@ export function EstimateReview() {
         </p>
       )}
 
-      <div className="mt-8 space-y-2">
-        {lines.map((l, i) => (
-          <div
-            key={l.key}
-            className={`grid items-end gap-3 rounded-2xl border p-4 sm:grid-cols-[1fr_5rem_8rem_8rem_2.5rem] ${
-              l.removed
-                ? "border-night-800 bg-night-900/20 opacity-50"
-                : "border-night-700/60 bg-night-900/40"
-            }`}
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-night-700/60 bg-night-900/40 px-4 py-3">
+        <p className="text-sm text-cream-400">
+          <span className="text-cream-100">{kept.length}</span> of {lines.length} lines
+          included
+        </p>
+        <div className="flex gap-4">
+          <button
+            type="button"
+            onClick={() => setLines((p) => p.map((x) => ({ ...x, removed: false })))}
+            className="cursor-pointer text-xs text-cream-400 transition-colors hover:text-brass-300"
           >
-            <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wider text-cream-600">
-                {i + 1}
-                {l.addedByReviewer ? " · added" : ""}
-              </p>
-              {l.id ? (
-                <p className="mt-0.5 truncate text-sm text-cream-100">{l.item}</p>
-              ) : (
-                <input
-                  value={l.item}
-                  onChange={(e) =>
-                    setLines((p) =>
-                      p.map((x) => (x.key === l.key ? { ...x, item: e.target.value } : x))
+            Include all
+          </button>
+          <button
+            type="button"
+            onClick={() => setLines((p) => p.map((x) => ({ ...x, removed: true })))}
+            className="cursor-pointer text-xs text-cream-400 transition-colors hover:text-brass-300"
+          >
+            Clear all
+          </button>
+        </div>
+      </div>
+
+      {/* Grouped by the component the line was estimated under, so the reviewer
+          reads "Kitchen" before its parts rather than 59 items in a single run. */}
+      <div className="mt-6 space-y-6">
+        {groups.map((g) => (
+          <div key={g.key}>
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-night-800/50 px-4 py-2.5">
+              <span className="text-xs font-medium uppercase tracking-wider text-brass-300">
+                {g.label}
+              </span>
+              <span className="text-xs text-cream-300">
+                {formatNaira(
+                  g.rows
+                    .filter((r) => !r.removed)
+                    .reduce(
+                      (s, r) => s + (Number(r.qty) || 0) * parseNairaInput(r.price),
+                      0
                     )
-                  }
-                  placeholder="Item description"
-                  aria-label="Item description"
-                  className="mt-0.5 w-full rounded-lg border border-night-600 bg-night-800/60 px-3 py-2 text-sm text-cream-100 focus:border-brass-500 focus:outline-none"
-                />
-              )}
+                )}
+              </span>
             </div>
 
-            <Field
-              label="Qty"
-              value={l.qty}
-              disabled={l.removed}
-              onChange={(v) =>
-                setLines((p) => p.map((x) => (x.key === l.key ? { ...x, qty: v } : x)))
-              }
-            />
-            <Field
-              label="Unit (₦)"
-              value={l.price}
-              disabled={l.removed}
-              onChange={(v) =>
-                setLines((p) => p.map((x) => (x.key === l.key ? { ...x, price: v } : x)))
-              }
-            />
-            <div>
-              <p className="mb-1.5 text-xs text-cream-500">Amount</p>
-              <p className="py-2 text-right text-sm text-brass-300">
-                {formatNaira((Number(l.qty) || 0) * parseNairaInput(l.price))}
-              </p>
+            <div className="mt-2 space-y-2">
+              {g.rows.map((l) => (
+                <div
+                  key={l.key}
+                  className={`grid items-end gap-3 rounded-2xl border p-4 sm:grid-cols-[1.5rem_1fr_5rem_8rem_8rem] ${
+                    l.removed
+                      ? "border-night-800 bg-night-900/20"
+                      : l.addedByReviewer
+                        ? "border-amber-500/30 bg-amber-500/5"
+                        : "border-night-700/60 bg-night-900/40"
+                  }`}
+                >
+                  {/* A checkbox rather than a bin: including a line is a judgement
+                      the reviewer makes item by item, and a tick shows the current
+                      answer at a glance where an icon only offers an action. */}
+                  <div className="flex items-center pb-2.5">
+                    <input
+                      id={`inc-${l.key}`}
+                      type="checkbox"
+                      checked={!l.removed}
+                      onChange={(e) =>
+                        setLines((p) =>
+                          p.map((x) =>
+                            x.key === l.key ? { ...x, removed: !e.target.checked } : x
+                          )
+                        )
+                      }
+                      aria-label={`Include ${l.item || "this line"}`}
+                      title={l.removed ? "Not on the estimate" : "Included"}
+                      className="h-4 w-4 cursor-pointer accent-brass-500"
+                    />
+                  </div>
+
+                  <div className={`min-w-0 ${l.removed ? "opacity-50" : ""}`}>
+                    <p className="text-xs uppercase tracking-wider text-cream-600">
+                      {l.addedByReviewer ? "Added by you" : `Line ${l.index}`}
+                    </p>
+                    {l.id ? (
+                      <p
+                        className={`mt-0.5 text-sm text-cream-100 ${
+                          l.removed ? "line-through" : ""
+                        }`}
+                      >
+                        {l.item}
+                      </p>
+                    ) : (
+                      <input
+                        value={l.item}
+                        onChange={(e) =>
+                          setLines((p) =>
+                            p.map((x) =>
+                              x.key === l.key ? { ...x, item: e.target.value } : x
+                            )
+                          )
+                        }
+                        placeholder="Item description"
+                        aria-label="Item description"
+                        className="mt-0.5 w-full rounded-lg border border-night-600 bg-night-800/60 px-3 py-2 text-sm text-cream-100 focus:border-brass-500 focus:outline-none"
+                      />
+                    )}
+                  </div>
+
+                  <Field
+                    label="Qty"
+                    value={l.qty}
+                    disabled={l.removed}
+                    onChange={(v) =>
+                      setLines((p) =>
+                        p.map((x) => (x.key === l.key ? { ...x, qty: v } : x))
+                      )
+                    }
+                  />
+                  <Field
+                    label="Unit (₦)"
+                    value={l.price}
+                    disabled={l.removed}
+                    onChange={(v) =>
+                      setLines((p) =>
+                        p.map((x) => (x.key === l.key ? { ...x, price: v } : x))
+                      )
+                    }
+                  />
+                  <div>
+                    <p className="mb-1.5 text-xs text-cream-500">Amount</p>
+                    <p
+                      className={`py-2 text-right text-sm ${
+                        l.removed ? "text-cream-600 line-through" : "text-brass-300"
+                      }`}
+                    >
+                      {formatNaira(
+                        (Number(l.qty) || 0) * parseNairaInput(l.price)
+                      )}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                setLines((p) =>
-                  p.map((x) => (x.key === l.key ? { ...x, removed: !x.removed } : x))
-                )
-              }
-              aria-label={l.removed ? `Restore ${l.item}` : `Remove ${l.item}`}
-              title={l.removed ? "Restore" : "Remove"}
-              className="mb-2 cursor-pointer justify-self-end text-cream-500 transition-colors hover:text-red-400"
-            >
-              <Trash2 size={15} />
-            </button>
           </div>
         ))}
       </div>

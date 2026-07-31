@@ -131,7 +131,13 @@ async function loadEstimate(estimateId: string): Promise<PdfEstimate> {
     const l = doc.data();
     const category = String(l.category ?? "");
     return {
-      group: CATEGORY_LABELS[category] || category || "Items",
+      // A reviewer's addition has no category, and saying so is better than
+      // filing it under a component it was never part of. Matches the heading
+      // the reviewer saw when they added it.
+      group:
+        CATEGORY_LABELS[category] ||
+        category ||
+        (l.addedByReviewer === true ? "Added during review" : "Items"),
       item: String(l.item ?? ""),
       quantity: Number(l.quantity ?? 0),
       unitPriceKobo: Number(l.unitPriceKobo ?? 0),

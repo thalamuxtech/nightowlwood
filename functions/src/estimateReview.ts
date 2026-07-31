@@ -427,7 +427,12 @@ export const submitEstimateReview = onCall(
       } else {
         added += 1;
         batch.set(doc.ref.collection("lines").doc(), {
-          category: line.category ?? est.lines?.[0]?.category ?? "kitchen",
+          // Blank rather than guessed. The previous fallback read `est.lines`,
+          // which does not exist — lines are a subcollection — so every added row
+          // landed under "kitchen" regardless of what it was, filing a reviewer's
+          // closet handle beneath someone else's kitchen. An empty category groups
+          // it under "Added during review", which is what it actually is.
+          category: line.category ?? "",
           item: String(line.item ?? "").slice(0, 200),
           quantity,
           unitPriceKobo,
