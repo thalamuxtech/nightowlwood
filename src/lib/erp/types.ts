@@ -187,6 +187,44 @@ export interface Project extends AuditFields {
   estimatedCostKobo: number;
   actualCostKobo: number;
   notes?: string;
+
+  /*
+   * The estimate.
+   *
+   * The project *is* its estimate: the components and their ticked features are
+   * the line items, and these fields are the rest of the document. There is no
+   * separate snapshot, so a price corrected on a component is corrected on the
+   * estimate, which is the whole point — one set of numbers, never two that can
+   * disagree.
+   */
+
+  /** Both percentages apply to the component subtotal only, never to each other. */
+  errorMarginPercent?: number;
+  nightowlChargePercent?: number;
+  /** Bumped each time the estimate is sent out, so a client can cite a version. */
+  estimateVersion?: number;
+  estimateStatus?: EstimateStatus;
+  estimateApprovedBy?: string;
+  estimateApprovedAt?: Timestamp | null;
+  estimateNotes?: string;
+  lastEmailedTo?: string;
+  lastEmailedAt?: Timestamp | null;
+
+  /**
+   * External-reviewer access, held here now that there is no estimate document.
+   * Only hashes are stored, never the raw token.
+   */
+  reviewTokenHash?: string;
+  reviewPasscodeHash?: string;
+  reviewEmail?: string;
+  reviewerName?: string;
+  reviewSentAt?: Timestamp | null;
+  reviewExpiresAt?: Timestamp | null;
+  reviewedAt?: Timestamp | null;
+  reviewAttempts?: number;
+  reviewNotes?: string;
+  /** Components the reviewer was asked to look at. Empty means all of them. */
+  reviewComponentIds?: string[];
 }
 
 export interface ProjectComponent extends AuditFields {
@@ -221,6 +259,18 @@ export interface ComponentFeature {
    */
   included?: boolean;
   notes?: string;
+  /**
+   * Set when an external reviewer added or changed this line.
+   *
+   * Reviewer edits now land straight on the feature, because the feature is the
+   * estimate line. Without these the admin would have no way to tell a figure the
+   * office typed from one a fabricator sent back, which is exactly the thing worth
+   * a second look before it goes to a client.
+   */
+  addedByReviewer?: boolean;
+  reviewerNote?: string;
+  /** What the line said before the reviewer touched it, so the change is visible. */
+  reviewedFromKobo?: number | null;
 }
 
 export interface Estimate extends AuditFields {

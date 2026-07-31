@@ -37,7 +37,7 @@ function toBlobUrl(base64: string): string {
 }
 
 export function EstimatePdfModal({
-  estimateId,
+  projectId,
   projectNumber,
   version,
   customerEmail,
@@ -45,7 +45,7 @@ export function EstimatePdfModal({
   onClose,
   onEmailed,
 }: {
-  estimateId: string;
+  projectId: string;
   projectNumber: string;
   version: number;
   customerEmail?: string;
@@ -68,11 +68,11 @@ export function EstimatePdfModal({
     let revoked = false;
     let objectUrl: string | null = null;
 
-    const fn = httpsCallable<{ estimateId: string }, PdfResult>(
+    const fn = httpsCallable<{ projectId: string }, PdfResult>(
       functions,
       "getEstimatePdf"
     );
-    fn({ estimateId })
+    fn({ projectId })
       .then((res) => {
         if (revoked) return;
         objectUrl = toBlobUrl(res.data.base64);
@@ -94,7 +94,7 @@ export function EstimatePdfModal({
       // would otherwise hold every PDF at once.
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [functions, estimateId]);
+  }, [functions, projectId]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -126,10 +126,10 @@ export function EstimatePdfModal({
     setError("");
     try {
       const fn = httpsCallable<
-        { estimateId: string; to: string; message: string },
+        { projectId: string; to: string; message: string },
         { ok: boolean; to: string; projectNumber: string; version: number }
       >(functions, "emailEstimate");
-      const res = await fn({ estimateId, to: address, message: message.trim() });
+      const res = await fn({ projectId, to: address, message: message.trim() });
       onEmailed(res.data.to);
       onClose();
     } catch (e: unknown) {

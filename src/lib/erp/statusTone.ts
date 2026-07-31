@@ -42,7 +42,6 @@ export const ESTIMATE_STATUS_TONE: Record<EstimateStatus, PillTone> = {
   in_review: "info",
   reviewed: "warn", // reviewer came back; admin needs to look
   approved: "positive",
-  superseded: "neutral",
 };
 
 export const INVOICE_STATUS_TONE: Record<InvoiceStatus, PillTone> = {

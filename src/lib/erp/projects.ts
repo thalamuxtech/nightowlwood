@@ -14,12 +14,18 @@ import {
   writeBatch,
   type Firestore,
 } from "firebase/firestore";
-import { COL, COUNTER, componentsPath, estimateLinesPath, featuresPath } from "./collections";
-import type { ProductCategory, ProjectStatus } from "./enums";
+import { COL, COUNTER, componentsPath, featuresPath } from "./collections";
+import type { EstimateStatus, ProductCategory, ProjectStatus } from "./enums";
 import { applyPercentKobo, lineAmountKobo, sumKobo } from "./money";
 import { allocateDocNumber } from "./numbering";
 import { ESTIMATE_TEMPLATES } from "./estimateTemplates";
+import { DEFAULT_INVOICE_SETTINGS } from "./settings";
 import { writeAudit, type AuditActor } from "./audit";
+
+/** Fallbacks when a project carries no rates of its own. */
+const DEFAULT_ERROR_MARGIN_PERCENT = DEFAULT_INVOICE_SETTINGS.defaultErrorMarginPercent;
+const DEFAULT_NIGHTOWL_CHARGE_PERCENT =
+  DEFAULT_INVOICE_SETTINGS.defaultNightowlChargePercent;
 
 /**
  * Projects, components, features and estimates.
@@ -28,6 +34,12 @@ import { writeAudit, type AuditActor } from "./audit";
  * deliverable ("Main kitchen"), a feature is a priced line within it. Estimate
  * totals roll upward, and each level stores its own subtotal so a list view does
  * not have to read every descendant.
+ *
+ * The project *is* its estimate. There is no snapshot: the ticked features are the
+ * line items and the rates live on the project, so a corrected price is corrected
+ * everywhere at once. Approving records the agreed figure in `contractValueKobo`,
+ * which is what invoices bill against; the components stay editable after that, so
+ * the agreed figure and the live sum can diverge, and the agreed one wins.
  */
 
 /**
@@ -624,335 +636,45 @@ export function computeEstimateTotals(
 }
 
 /**
- * Creates an estimate from the project's current component features.
+ * The estimate's own figures, read off the project.
  *
- * A snapshot, not a live view: the lines are copied so a later price edit on the
- * project does not silently restate an estimate the client has already seen.
- * Previous estimates for the project are marked superseded, and the version
- * number increments, so the history stays readable.
+ * There is no estimate document. The components and their ticked features *are*
+ * the line items, `estimatedCostKobo` is already their rolled-up subtotal, and the
+ * two percentages live on the project, so the totals are always current by
+ * construction rather than by remembering to regenerate something.
  */
-export async function createEstimate(
+export function projectEstimateTotals(project: {
+  estimatedCostKobo?: number | null;
+  errorMarginPercent?: number | null;
+  nightowlChargePercent?: number | null;
+}): EstimateTotals {
+  return computeEstimateTotals(
+    project.estimatedCostKobo ?? 0,
+    project.errorMarginPercent ?? DEFAULT_ERROR_MARGIN_PERCENT,
+    project.nightowlChargePercent ?? DEFAULT_NIGHTOWL_CHARGE_PERCENT
+  );
+}
+
+/**
+ * Sets the margin and charge rates for the project's estimate.
+ *
+ * Separate from pricing a line because it is a different decision — what the
+ * business adds on top, rather than what the work costs — and because these are the
+ * two figures an external reviewer is explicitly not allowed to touch.
+ */
+export async function setProjectMargins(
   db: Firestore,
   actor: AuditActor,
   projectId: string,
-  projectNumber: string,
   options: { errorMarginPercent: number; nightowlChargePercent: number }
-): Promise<{ estimateId: string; version: number; totals: EstimateTotals }> {
-  const compSnap = await getDocs(collection(db, componentsPath(projectId)));
-
-  interface Line {
-    category: ProductCategory;
-    item: string;
-    quantity: number;
-    unitPriceKobo: number;
-    amountKobo: number;
-    actualQuantity: number | null;
-    order: number;
-  }
-  const lines: Line[] = [];
-
-  // Feature reads are issued together. A kitchen project carries a component per
-  // room and each holds its own template rows, so serial reads made estimate
-  // creation slower the more complete the project was.
-  const featSnaps = await Promise.all(
-    compSnap.docs.map((comp) => getDocs(collection(db, featuresPath(projectId, comp.id))))
-  );
-
-  for (let i = 0; i < compSnap.docs.length; i++) {
-    const category = compSnap.docs[i].data().category as ProductCategory;
-    for (const f of featSnaps[i].docs) {
-      const d = f.data();
-      // Only ticked lines are snapshotted. The template is a 178-row checklist of
-      // what a job of this kind might involve, and listing all of it would bury
-      // the work actually quoted for. The tick is the estimator's decision about
-      // what this job includes; a zero-priced line that is ticked still appears,
-      // because "included, price to follow" is a thing an estimate needs to say.
-      if (!isIncluded(d)) continue;
-      lines.push({
-        category,
-        item: d.item ?? "",
-        quantity: d.quantity ?? 0,
-        unitPriceKobo: d.unitPriceKobo ?? 0,
-        amountKobo: d.amountKobo ?? 0,
-        actualQuantity: d.actualQuantity ?? null,
-        order: d.order ?? 0,
-      });
-    }
+): Promise<void> {
+  if (options.errorMarginPercent < 0 || options.nightowlChargePercent < 0) {
+    throw new Error("A percentage cannot be negative.");
   }
 
-  const subtotal = sumKobo(lines.map((l) => l.amountKobo));
-  const totals = computeEstimateTotals(
-    subtotal,
-    options.errorMarginPercent,
-    options.nightowlChargePercent
-  );
-
-  // Supersede any live estimate for this project before adding the new one.
-  //
-  // Filtered server-side. Reading every estimate in the business to find one
-  // project's was billed against the whole collection, so the cost of issuing an
-  // estimate grew with every estimate ever issued.
-  const existing = await getDocs(
-    query(collection(db, COL.estimates), where("projectId", "==", projectId))
-  );
-  const mine = existing.docs.filter((d) => d.data().status !== "superseded");
-
-  // Versions count every estimate for the project, including superseded ones.
-  // Counting only live ones reused version numbers: supersede v1, and the next
-  // estimate was v1 again, so two different documents shared a number.
-  const version = existing.size + 1;
-
-  const estRef = doc(collection(db, COL.estimates));
-  let batch = writeBatch(db);
-  let ops = 0;
-
-  for (const d of mine) {
-    batch.update(d.ref, { status: "superseded", updatedAt: serverTimestamp() });
-    ops += 1;
-  }
-
-  batch.set(estRef, {
-    projectId,
-    projectNumber,
-    version,
-    status: "draft",
-    subtotalKobo: totals.subtotalKobo,
+  await updateDoc(doc(db, COL.projects, projectId), {
     errorMarginPercent: options.errorMarginPercent,
-    errorMarginKobo: totals.errorMarginKobo,
     nightowlChargePercent: options.nightowlChargePercent,
-    nightowlChargesKobo: totals.nightowlChargesKobo,
-    totalKobo: totals.totalKobo,
-    createdAt: serverTimestamp(),
-    createdBy: actor.uid,
-  });
-  ops += 1;
-
-  for (const l of lines) {
-    batch.set(doc(collection(db, estimateLinesPath(estRef.id))), l);
-    ops += 1;
-    if (ops >= 400) {
-      await batch.commit();
-      batch = writeBatch(db);
-      ops = 0;
-    }
-  }
-  if (ops > 0) await batch.commit();
-
-  await writeAudit(db, {
-    actor,
-    action: "create",
-    collectionName: COL.estimates,
-    docId: estRef.id,
-    summary: `Estimate v${version} for ${projectNumber}: ${lines.length} lines, total ${totals.totalKobo} kobo`,
-    after: { version, totalKobo: totals.totalKobo, lineCount: lines.length },
-  });
-
-  return { estimateId: estRef.id, version, totals };
-}
-
-/**
- * The Nightowl charge rate an estimate was quoted at.
- *
- * Prefers the stored rate. Estimates issued before that field existed fall back to
- * the ratio of the charge to the subtotal, which is the only record they carry —
- * and which is why the rate is now stored: the ratio cannot be recovered once the
- * subtotal is zero, so emptying an old estimate loses its rate for good. Nothing
- * can be done for those retroactively, but nothing new is created without it.
- */
-export function resolveNightowlPercent(est: {
-  nightowlChargePercent?: number | null;
-  nightowlChargesKobo?: number | null;
-  subtotalKobo?: number | null;
-}): number {
-  if (typeof est.nightowlChargePercent === "number") return est.nightowlChargePercent;
-  const subtotal = est.subtotalKobo ?? 0;
-  if (subtotal <= 0) return 0;
-  return ((est.nightowlChargesKobo ?? 0) / subtotal) * 100;
-}
-
-/**
- * Recomputes an estimate's totals from its own lines.
- *
- * Called after any line edit. The percentages are read back off the estimate rather
- * than passed in, so a correction cannot quietly reprice the margin along with the
- * line: the rates were fixed when the estimate was issued, and only the lines are
- * being changed.
- */
-async function recomputeEstimate(
-  db: Firestore,
-  actor: AuditActor,
-  estimateId: string
-): Promise<EstimateTotals> {
-  const estRef = doc(db, COL.estimates, estimateId);
-  const snap = await getDoc(estRef);
-  if (!snap.exists()) throw new Error("Estimate not found.");
-  const est = snap.data();
-
-  const lines = await getDocs(collection(db, estimateLinesPath(estimateId)));
-  const subtotal = sumKobo(lines.docs.map((d) => (d.data().amountKobo as number) ?? 0));
-
-  const nightowlPercent = resolveNightowlPercent(est);
-
-  const totals = computeEstimateTotals(
-    subtotal,
-    (est.errorMarginPercent as number) ?? 0,
-    nightowlPercent
-  );
-
-  await updateDoc(estRef, {
-    subtotalKobo: totals.subtotalKobo,
-    errorMarginKobo: totals.errorMarginKobo,
-    // Written back so an estimate that predates the field gains it on first edit,
-    // rather than staying dependent on a ratio a later edit could erase.
-    nightowlChargePercent: nightowlPercent,
-    nightowlChargesKobo: totals.nightowlChargesKobo,
-    totalKobo: totals.totalKobo,
-    updatedAt: serverTimestamp(),
-    updatedBy: actor.uid,
-  });
-
-  return totals;
-}
-
-/**
- * Edits a line on an issued estimate, then restates the totals.
- *
- * Allowed because an estimate is a working document until it is approved: a reviewer
- * comes back with a corrected figure, or a price is found to be wrong, and the
- * alternative is regenerating the whole estimate from the project and losing the
- * version the client is holding.
- *
- * Refused once approved. At that point the total has become the project's contract
- * value, and editing the lines behind it would leave the contract standing on
- * figures that no longer add up to it.
- */
-export async function saveEstimateLine(
-  db: Firestore,
-  actor: AuditActor,
-  estimateId: string,
-  lineId: string,
-  values: { item: string; quantity: number; unitPriceKobo: number }
-): Promise<EstimateTotals> {
-  const estSnap = await getDoc(doc(db, COL.estimates, estimateId));
-  if (!estSnap.exists()) throw new Error("Estimate not found.");
-  if (estSnap.data().status === "approved") {
-    throw new Error(
-      "This estimate is approved and sets the contract value, so its lines cannot be edited. Create a new estimate instead."
-    );
-  }
-
-  const amountKobo = lineAmountKobo(values.quantity, values.unitPriceKobo);
-  await updateDoc(doc(db, `${estimateLinesPath(estimateId)}/${lineId}`), {
-    ...(values.item.trim() ? { item: values.item.trim() } : {}),
-    quantity: values.quantity,
-    unitPriceKobo: values.unitPriceKobo,
-    amountKobo,
-    updatedAt: serverTimestamp(),
-    updatedBy: actor.uid,
-  });
-
-  return recomputeEstimate(db, actor, estimateId);
-}
-
-/**
- * Adds a line to an issued estimate.
- *
- * Ordered after everything present so it appears at the foot of its section rather
- * than interleaved with the snapshotted lines. The category decides which component
- * heading it prints under on the PDF.
- */
-export async function addEstimateLine(
-  db: Firestore,
-  actor: AuditActor,
-  estimateId: string,
-  values: {
-    item: string;
-    category: ProductCategory;
-    quantity: number;
-    unitPriceKobo: number;
-  }
-): Promise<EstimateTotals> {
-  if (!values.item.trim()) throw new Error("Name the line.");
-
-  const estSnap = await getDoc(doc(db, COL.estimates, estimateId));
-  if (!estSnap.exists()) throw new Error("Estimate not found.");
-  if (estSnap.data().status === "approved") {
-    throw new Error("An approved estimate cannot be added to.");
-  }
-
-  const existing = await getDocs(collection(db, estimateLinesPath(estimateId)));
-  const maxOrder = existing.docs.reduce(
-    (max, d) => Math.max(max, (d.data().order as number) ?? 0),
-    -1
-  );
-
-  await setDoc(doc(collection(db, estimateLinesPath(estimateId))), {
-    category: values.category,
-    item: values.item.trim().slice(0, 200),
-    quantity: values.quantity,
-    unitPriceKobo: values.unitPriceKobo,
-    amountKobo: lineAmountKobo(values.quantity, values.unitPriceKobo),
-    actualQuantity: null,
-    order: maxOrder + 1,
-    createdAt: serverTimestamp(),
-    createdBy: actor.uid,
-  });
-
-  return recomputeEstimate(db, actor, estimateId);
-}
-
-/** Removes a line from an issued estimate and restates the totals. */
-export async function removeEstimateLine(
-  db: Firestore,
-  actor: AuditActor,
-  estimateId: string,
-  lineId: string
-): Promise<EstimateTotals> {
-  const estSnap = await getDoc(doc(db, COL.estimates, estimateId));
-  if (!estSnap.exists()) throw new Error("Estimate not found.");
-  if (estSnap.data().status === "approved") {
-    throw new Error("An approved estimate cannot have lines removed.");
-  }
-
-  await deleteDoc(doc(db, `${estimateLinesPath(estimateId)}/${lineId}`));
-  return recomputeEstimate(db, actor, estimateId);
-}
-
-/**
- * Restates an issued estimate's margin and charge percentages.
- *
- * Separate from the line edits because it is a different decision — what the business
- * adds on top, rather than what the work costs — and because the two percentages are
- * the ones an external reviewer is explicitly not allowed to touch.
- */
-export async function setEstimateMargins(
-  db: Firestore,
-  actor: AuditActor,
-  estimateId: string,
-  options: { errorMarginPercent: number; nightowlChargePercent: number }
-): Promise<EstimateTotals> {
-  const estRef = doc(db, COL.estimates, estimateId);
-  const estSnap = await getDoc(estRef);
-  if (!estSnap.exists()) throw new Error("Estimate not found.");
-  if (estSnap.data().status === "approved") {
-    throw new Error("An approved estimate's margins cannot be changed.");
-  }
-
-  const lines = await getDocs(collection(db, estimateLinesPath(estimateId)));
-  const subtotal = sumKobo(lines.docs.map((d) => (d.data().amountKobo as number) ?? 0));
-  const totals = computeEstimateTotals(
-    subtotal,
-    options.errorMarginPercent,
-    options.nightowlChargePercent
-  );
-
-  await updateDoc(estRef, {
-    subtotalKobo: totals.subtotalKobo,
-    errorMarginPercent: options.errorMarginPercent,
-    errorMarginKobo: totals.errorMarginKobo,
-    nightowlChargePercent: options.nightowlChargePercent,
-    nightowlChargesKobo: totals.nightowlChargesKobo,
-    totalKobo: totals.totalKobo,
     updatedAt: serverTimestamp(),
     updatedBy: actor.uid,
   });
@@ -960,47 +682,117 @@ export async function setEstimateMargins(
   await writeAudit(db, {
     actor,
     action: "update",
-    collectionName: COL.estimates,
-    docId: estimateId,
-    summary: `Restated estimate margins: ${options.errorMarginPercent}% margin, ${options.nightowlChargePercent}% charge, total ${totals.totalKobo} kobo`,
-    after: { totalKobo: totals.totalKobo },
+    collectionName: COL.projects,
+    docId: projectId,
+    summary: `Estimate rates: ${options.errorMarginPercent}% margin, ${options.nightowlChargePercent}% Nightowl charge`,
+    after: options,
   });
-
-  return totals;
 }
 
-export async function approveEstimate(
+/**
+ * Adds several components at once, each with its category template.
+ *
+ * A project is usually quoted as a kitchen *and* two closets *and* a run of doors,
+ * and adding them one dialog at a time made the common case the slow one. Ordering
+ * continues from what is already there so the sequence stays the estimator's.
+ */
+export async function addComponents(
   db: Firestore,
   actor: AuditActor,
-  estimateId: string,
   projectId: string,
+  entries: Array<{
+    name: string;
+    category: ProductCategory;
+    useTemplate: boolean;
+  }>,
+  startOrder: number
+): Promise<string[]> {
+  if (entries.length === 0) throw new Error("Choose at least one component.");
+
+  const ids: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    ids.push(
+      await addComponent(db, actor, projectId, {
+        name: e.name,
+        category: e.category,
+        order: startOrder + i,
+        useTemplate: e.useTemplate,
+      })
+    );
+  }
+  return ids;
+}
+
+/*
+ * The version is bumped server-side, by whichever call sends the estimate out —
+ * `sendEstimateForReview` and `emailEstimate`. It deliberately has no client-side
+ * equivalent: a version claimed in the browser and then not sent would leave a gap,
+ * and the bump has to be atomic with the send that earns it.
+ */
+
+/**
+ * Approves the estimate and fixes the contract value.
+ *
+ * Approving records what was agreed: the total at this moment becomes
+ * `contractValueKobo`, which is what invoices bill against. The components stay
+ * editable afterwards — there is no frozen copy to protect — so the agreed figure
+ * and the live component sum can legitimately diverge later. `contractValueKobo`
+ * is the agreed one, and invoicing reads it in preference for exactly that reason.
+ */
+export async function approveProjectEstimate(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  projectNumber: string,
   totalKobo: number
 ): Promise<void> {
-  const batch = writeBatch(db);
-  batch.update(doc(db, COL.estimates, estimateId), {
-    status: "approved",
-    approvedBy: actor.uid,
-    approvedAt: serverTimestamp(),
-  });
-  // Approving fixes the contract value and moves the project on.
-  batch.update(doc(db, COL.projects, projectId), {
+  await updateDoc(doc(db, COL.projects, projectId), {
+    estimateStatus: "approved" satisfies EstimateStatus,
+    estimateApprovedBy: actor.uid,
+    estimateApprovedAt: serverTimestamp(),
     status: "approved" satisfies ProjectStatus,
     contractValueKobo: totalKobo,
     updatedAt: serverTimestamp(),
     updatedBy: actor.uid,
   });
-  await batch.commit();
 
   await writeAudit(db, {
     actor,
     action: "estimate_approve",
-    collectionName: COL.estimates,
-    docId: estimateId,
-    summary: `Approved estimate at ${totalKobo} kobo and set the contract value`,
-    after: { status: "approved", contractValueKobo: totalKobo },
+    collectionName: COL.projects,
+    docId: projectId,
+    summary: `${projectNumber}: approved the estimate at ${totalKobo} kobo and set the contract value`,
+    after: { estimateStatus: "approved", contractValueKobo: totalKobo },
   });
 }
 
+/** Returns an approved estimate to draft so it can be requoted. */
+export async function reopenProjectEstimate(
+  db: Firestore,
+  actor: AuditActor,
+  projectId: string,
+  projectNumber: string
+): Promise<void> {
+  await updateDoc(doc(db, COL.projects, projectId), {
+    estimateStatus: "draft" satisfies EstimateStatus,
+    estimateApprovedBy: null,
+    estimateApprovedAt: null,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.projects,
+    docId: projectId,
+    // The contract value is deliberately left standing: it is what was agreed, and
+    // reopening to requote does not unagree it. Approving again overwrites it.
+    summary: `${projectNumber}: reopened the estimate for requoting; the contract value stands until it is approved again`,
+    after: { estimateStatus: "draft" },
+  });
+}
 export async function deleteProject(
   db: Firestore,
   actor: AuditActor,

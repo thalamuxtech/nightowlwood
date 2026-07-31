@@ -6,52 +6,71 @@ import { useSearchParams } from "next/navigation";
 import { collection, doc, getDoc, onSnapshot, orderBy, query } from "firebase/firestore";
 import {
   ArrowLeft,
+  Check,
   ChevronDown,
   ChevronRight,
+  Clock,
   FileText,
   Loader2,
   PenLine,
+  Percent,
   Plus,
+  RotateCcw,
+  Send,
   Trash2,
+  UserCheck,
 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL, componentsPath, featuresPath } from "@/lib/erp/collections";
 import {
+  ESTIMATE_STATUS_LABELS,
   PRODUCT_CATEGORIES,
   PRODUCT_CATEGORY_LABELS,
   PROJECT_STATUSES,
   PROJECT_STATUS_LABELS,
+  type EstimateStatus,
   type ProductCategory,
   type ProjectStatus,
 } from "@/lib/erp/enums";
 import { formatNaira, parseNairaInput, toNaira } from "@/lib/erp/money";
 import { templateItemCount } from "@/lib/erp/estimateTemplates";
 import {
-  addComponent,
+  addComponents,
   addFeature,
+  approveProjectEstimate,
   computeEstimateTotals,
-  createEstimate,
   isIncluded,
   removeComponent,
+  reopenProjectEstimate,
   setComponentInclusion,
+  setProjectMargins,
   updateComponent,
   removeFeature,
   saveFeature,
   setProjectStatus,
 } from "@/lib/erp/projects";
-import { DEFAULT_INVOICE_SETTINGS, SETTINGS_DOC } from "@/lib/erp/settings";
-import { PROJECT_STATUS_TONE } from "@/lib/erp/statusTone";
+import { DEFAULT_INVOICE_SETTINGS } from "@/lib/erp/settings";
+import { ESTIMATE_STATUS_TONE, PROJECT_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { ProjectDetailsEditor } from "@/components/admin/products/ProjectDetailsEditor";
-import { ProjectEstimates } from "@/components/admin/products/ProjectEstimates";
+import { EstimatePdfModal } from "@/components/admin/products/EstimatePdfModal";
+import { SendForReviewModal } from "@/components/admin/products/SendForReviewModal";
 import {
   Button,
   CheckboxField,
   NumberField,
-  SelectField,
   TextField,
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+
+const fmtDay = (ms: number | null) =>
+  ms
+    ? new Date(ms).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "";
 
 interface ProjectDoc {
   projectNumber: string;
@@ -63,6 +82,20 @@ interface ProjectDoc {
   estimatedCostKobo: number;
   contractValueKobo?: number;
   targetDateMs: number | null;
+  /* The estimate lives on the project; there is no separate document. */
+  errorMarginPercent: number;
+  nightowlChargePercent: number;
+  estimateVersion: number;
+  estimateStatus: EstimateStatus;
+  estimateApprovedAtMs: number | null;
+  reviewEmail?: string;
+  reviewerName?: string;
+  reviewSentAtMs: number | null;
+  reviewExpiresAtMs: number | null;
+  reviewedAtMs: number | null;
+  reviewNotes?: string;
+  lastEmailedTo?: string;
+  lastEmailedAtMs: number | null;
 }
 
 interface ComponentRow {
@@ -111,10 +144,9 @@ export function ProjectDetail() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [addingComponent, setAddingComponent] = useState(false);
-  const [margins, setMargins] = useState({
-    errorMarginPercent: DEFAULT_INVOICE_SETTINGS.defaultErrorMarginPercent,
-    nightowlChargePercent: DEFAULT_INVOICE_SETTINGS.defaultNightowlChargePercent,
-  });
+  const [editingRates, setEditingRates] = useState(false);
+  const [viewingPdf, setViewingPdf] = useState(false);
+  const [sendingForReview, setSendingForReview] = useState(false);
 
   useEffect(() => {
     if (!projectId) {
@@ -129,6 +161,8 @@ export function ProjectDetail() {
           setMissing(true);
         } else {
           const x = snap.data();
+          const ms = (v: unknown) =>
+            (v as { toMillis?: () => number } | null)?.toMillis?.() ?? null;
           setProject({
             projectNumber: x.projectNumber ?? "",
             customerId: x.customerId ?? "",
@@ -138,7 +172,23 @@ export function ProjectDetail() {
             status: (x.status as ProjectStatus) ?? "enquiry",
             estimatedCostKobo: x.estimatedCostKobo ?? 0,
             contractValueKobo: x.contractValueKobo ?? undefined,
-            targetDateMs: x.targetDate?.toMillis?.() ?? null,
+            targetDateMs: ms(x.targetDate),
+            errorMarginPercent:
+              x.errorMarginPercent ?? DEFAULT_INVOICE_SETTINGS.defaultErrorMarginPercent,
+            nightowlChargePercent:
+              x.nightowlChargePercent ??
+              DEFAULT_INVOICE_SETTINGS.defaultNightowlChargePercent,
+            estimateVersion: x.estimateVersion ?? 0,
+            estimateStatus: (x.estimateStatus as EstimateStatus) ?? "draft",
+            estimateApprovedAtMs: ms(x.estimateApprovedAt),
+            reviewEmail: x.reviewEmail ?? undefined,
+            reviewerName: x.reviewerName ?? undefined,
+            reviewSentAtMs: ms(x.reviewSentAt),
+            reviewExpiresAtMs: ms(x.reviewExpiresAt),
+            reviewedAtMs: ms(x.reviewedAt),
+            reviewNotes: x.reviewNotes ?? undefined,
+            lastEmailedTo: x.lastEmailedTo ?? undefined,
+            lastEmailedAtMs: ms(x.lastEmailedAt),
           });
         }
         setLoading(false);
@@ -179,23 +229,6 @@ export function ProjectDetail() {
       .catch(() => {});
   }, [project?.customerId]);
 
-  // Margins default from settings but stay editable per estimate.
-  useEffect(() => {
-    getDoc(doc(getDb(), COL.settings, SETTINGS_DOC.invoice))
-      .then((snap) => {
-        if (!snap.exists()) return;
-        const d = snap.data();
-        setMargins({
-          errorMarginPercent:
-            d.defaultErrorMarginPercent ?? DEFAULT_INVOICE_SETTINGS.defaultErrorMarginPercent,
-          nightowlChargePercent:
-            d.defaultNightowlChargePercent ??
-            DEFAULT_INVOICE_SETTINGS.defaultNightowlChargePercent,
-        });
-      })
-      .catch(() => {});
-  }, []);
-
   const actor = useMemo(
     () => ({
       uid: session.user?.uid ?? "",
@@ -205,44 +238,65 @@ export function ProjectDetail() {
     [session.user, session.role]
   );
 
+  // Derived from the project, so pricing a line moves the total immediately.
   const totals = useMemo(
     () =>
       computeEstimateTotals(
         project?.estimatedCostKobo ?? 0,
-        margins.errorMarginPercent,
-        margins.nightowlChargePercent
+        project?.errorMarginPercent ?? DEFAULT_INVOICE_SETTINGS.defaultErrorMarginPercent,
+        project?.nightowlChargePercent ??
+          DEFAULT_INVOICE_SETTINGS.defaultNightowlChargePercent
       ),
-    [project?.estimatedCostKobo, margins]
+    [project?.estimatedCostKobo, project?.errorMarginPercent, project?.nightowlChargePercent]
   );
 
-  async function generateEstimate() {
+  function notify(message: string) {
+    setNotice(message);
+    setTimeout(() => setNotice(""), 6000);
+  }
+  const [notice, setNotice] = useState("");
+
+  const reviewExpired =
+    !!project?.reviewSentAtMs &&
+    !project?.reviewedAtMs &&
+    project.reviewExpiresAtMs !== null &&
+    project.reviewExpiresAtMs < Date.now();
+
+  async function approve() {
     if (!project) return;
     setBusy(true);
     setError("");
     try {
-      const { version, totals: t } = await createEstimate(
+      await approveProjectEstimate(
         getDb(),
         actor,
         projectId,
         project.projectNumber,
-        margins
+        totals.totalKobo
       );
-      setError("");
-      alertVersion(version, t.totalKobo);
+      notify(
+        `Approved. The contract value is now ${formatNaira(totals.totalKobo)}.`
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create the estimate.");
+      setError(e instanceof Error ? e.message : "Could not approve the estimate.");
     } finally {
       setBusy(false);
     }
   }
 
-  function alertVersion(version: number, totalKobo: number) {
-    // A transient confirmation rather than a modal: the estimate list below
-    // updates live, so the message only needs to say what happened.
-    setNotice(`Estimate v${version} created at ${formatNaira(totalKobo)}.`);
-    setTimeout(() => setNotice(""), 6000);
+  async function reopen() {
+    if (!project) return;
+    setBusy(true);
+    setError("");
+    try {
+      await reopenProjectEstimate(getDb(), actor, projectId, project.projectNumber);
+      notify("Reopened for requoting. The agreed contract value still stands.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not reopen the estimate.");
+    } finally {
+      setBusy(false);
+    }
   }
-  const [notice, setNotice] = useState("");
 
   if (loading) {
     return (
@@ -322,72 +376,227 @@ export function ProjectDetail() {
         </p>
       )}
 
-      {/* Estimate summary */}
+      {viewingPdf && (
+        <EstimatePdfModal
+          projectId={projectId}
+          projectNumber={project.projectNumber}
+          version={project.estimateVersion}
+          customerEmail={customerEmail}
+          canEmail={session.role === "admin"}
+          onClose={() => setViewingPdf(false)}
+          onEmailed={(to) => notify(`Estimate emailed to ${to}.`)}
+        />
+      )}
+
+      {sendingForReview && (
+        <SendForReviewModal
+          projectId={projectId}
+          projectNumber={project.projectNumber}
+          version={project.estimateVersion}
+          components={components}
+          onClose={() => setSendingForReview(false)}
+          onSent={() => notify("Sent for review.")}
+        />
+      )}
+
+      {/*
+       * The estimate.
+       *
+       * One panel, not a list of versions: the components below are the line items,
+       * so this is a live total of them rather than a separate document that has to
+       * be regenerated to catch up.
+       */}
       <section className="mt-8 rounded-3xl border border-brass-500/30 bg-night-900/40 p-6">
-        <h2 className="font-display text-lg text-cream-100">Estimate</h2>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display text-lg text-cream-100">Estimate</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusPill tone={ESTIMATE_STATUS_TONE[project.estimateStatus]}>
+                {ESTIMATE_STATUS_LABELS[project.estimateStatus]}
+              </StatusPill>
+              {project.estimateVersion > 0 && (
+                <span className="text-xs text-cream-500">
+                  v{project.estimateVersion} issued
+                </span>
+              )}
+              {reviewExpired && (
+                <StatusPill tone="danger" title="The review link has expired">
+                  Link expired
+                </StatusPill>
+              )}
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wider text-cream-500">
+              {project.contractValueKobo ? "Agreed contract" : "Estimate total"}
+            </p>
+            <p className="font-display text-2xl text-brass-300">
+              {formatNaira(project.contractValueKobo ?? totals.totalKobo)}
+            </p>
+          </div>
+        </div>
+
         <div className="mt-5 grid gap-4 sm:grid-cols-4">
           <Figure label="Materials & labour" value={formatNaira(totals.subtotalKobo)} />
           <Figure
-            label={`Error margin ${margins.errorMarginPercent}%`}
+            label={`Error margin ${project.errorMarginPercent}%`}
             value={formatNaira(totals.errorMarginKobo)}
           />
           <Figure
-            label={`Nightowl charge ${margins.nightowlChargePercent}%`}
+            label={`Nightowl charge ${project.nightowlChargePercent}%`}
             value={formatNaira(totals.nightowlChargesKobo)}
           />
           <Figure label="Total" value={formatNaira(totals.totalKobo)} accent />
         </div>
 
-        {canEdit && (
+        {/* Where the estimate stands with the reviewer and the client, in words. */}
+        {(project.reviewSentAtMs || project.lastEmailedTo) && (
+          <div className="mt-4 space-y-1.5">
+            {project.reviewSentAtMs && (
+              <p className="flex flex-wrap items-center gap-1.5 text-xs text-cream-400">
+                {project.reviewedAtMs ? (
+                  <>
+                    <UserCheck size={13} className="text-emerald-400" />
+                    Review returned {fmtDay(project.reviewedAtMs)} by{" "}
+                    {project.reviewerName || project.reviewEmail}
+                  </>
+                ) : (
+                  <>
+                    <Clock size={13} className="text-sky-400" />
+                    With {project.reviewerName || project.reviewEmail} since{" "}
+                    {fmtDay(project.reviewSentAtMs)}
+                    {project.reviewExpiresAtMs && !reviewExpired && (
+                      <span className="text-cream-600">
+                        · expires {fmtDay(project.reviewExpiresAtMs)}
+                      </span>
+                    )}
+                  </>
+                )}
+              </p>
+            )}
+            {project.lastEmailedTo && (
+              <p className="text-xs text-cream-500">
+                Sent to client {project.lastEmailedTo} on{" "}
+                {fmtDay(project.lastEmailedAtMs)}
+              </p>
+            )}
+          </div>
+        )}
+
+        {project.reviewNotes && (
+          <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
+            <span className="font-medium">Reviewer&rsquo;s note:</span>{" "}
+            {project.reviewNotes}
+          </p>
+        )}
+
+        {editingRates && canEditEstimate && (
+          <div className="mt-5 rounded-2xl border border-brass-500/30 bg-night-950/40 p-4">
+            <RatesEditor
+              projectId={projectId}
+              actor={actor}
+              errorMarginPercent={project.errorMarginPercent}
+              nightowlChargePercent={project.nightowlChargePercent}
+              onClose={() => setEditingRates(false)}
+              onError={setError}
+              onSaved={(t) => notify(`Estimate now ${formatNaira(t)}.`)}
+            />
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => setViewingPdf(true)}>
+            <span className="flex items-center gap-2">
+              <FileText size={14} /> View / download
+            </span>
+          </Button>
+
+          {canEditEstimate && (
+            <Button variant="secondary" onClick={() => setEditingRates((v) => !v)}>
+              <span className="flex items-center gap-2">
+                <Percent size={14} /> {editingRates ? "Hide rates" : "Change rates"}
+              </span>
+            </Button>
+          )}
+
+          {canSendForReview && (
+            <Button variant="secondary" onClick={() => setSendingForReview(true)}>
+              <span className="flex items-center gap-2">
+                <Send size={14} />
+                {project.reviewSentAtMs && !project.reviewedAtMs
+                  ? "Resend for review"
+                  : "Send for review"}
+              </span>
+            </Button>
+          )}
+
+          {canApprove && project.estimateStatus !== "approved" && (
+            <Button
+              busy={busy}
+              onClick={approve}
+              title="Fixes the project's contract value at this total"
+            >
+              <span className="flex items-center gap-2">
+                <Check size={14} /> Approve
+              </span>
+            </Button>
+          )}
+
+          {canApprove && project.estimateStatus === "approved" && (
+            <Button variant="secondary" busy={busy} onClick={reopen}>
+              <span className="flex items-center gap-2">
+                <RotateCcw size={14} /> Reopen to requote
+              </span>
+            </Button>
+          )}
+        </div>
+
+        {project.estimateStatus === "approved" && (
           <>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:w-2/3">
-              <NumberField
-                id="err-margin"
-                label="Error margin (%)"
-                value={String(margins.errorMarginPercent)}
-                onChange={(v) =>
-                  setMargins((m) => ({ ...m, errorMarginPercent: Number(v) || 0 }))
-                }
-              />
-              <NumberField
-                id="no-charge"
-                label="Nightowl charge (%)"
-                value={String(margins.nightowlChargePercent)}
-                onChange={(v) =>
-                  setMargins((m) => ({ ...m, nightowlChargePercent: Number(v) || 0 }))
-                }
-              />
-            </div>
-            <p className="mt-2 text-xs text-cream-500">
-              Both percentages apply to the subtotal only, never to each other.
+            <p className="mt-3 text-xs text-cream-500">
+              Approved {fmtDay(project.estimateApprovedAtMs)}. The contract value is
+              fixed at {formatNaira(project.contractValueKobo ?? 0)} and is what
+              invoices bill against; editing components below changes the estimate but
+              not the agreed figure.
             </p>
-            <div className="mt-5">
-              <Button onClick={generateEstimate} busy={busy}>
-                <span className="flex items-center gap-2">
-                  <FileText size={15} /> Create estimate
-                </span>
-              </Button>
-            </div>
+            {/* Said plainly rather than left to be noticed. The server refuses to
+                email a drifted estimate, and finding that out at the point of
+                sending is later than anyone wants to hear it. */}
+            {!!project.contractValueKobo &&
+              totals.totalKobo !== project.contractValueKobo && (
+                <p className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
+                  Edited since approval: now {formatNaira(totals.totalKobo)} against
+                  the agreed {formatNaira(project.contractValueKobo)}. Reopen and
+                  re-approve, or restore the prices, before sending this to the
+                  client.
+                </p>
+              )}
           </>
         )}
       </section>
 
-      {/* Components */}
+      {/* Components — the estimate's line items */}
       <section className="mt-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-display text-lg text-cream-100">
-            Components{" "}
-            {components.length > 0 && (
-              <span className="text-cream-500">({components.length})</span>
-            )}
-          </h2>
+          <div>
+            <h2 className="font-display text-lg text-cream-100">
+              Components{" "}
+              {components.length > 0 && (
+                <span className="text-cream-500">({components.length})</span>
+              )}
+            </h2>
+            <p className="mt-1 text-xs text-cream-500">
+              These are the estimate&rsquo;s line items. What is ticked is what the
+              client is quoted.
+            </p>
+          </div>
           {canEdit && !addingComponent && (
             <button
               type="button"
               onClick={() => setAddingComponent(true)}
               className="flex cursor-pointer items-center gap-2 text-sm text-brass-300 transition-colors hover:text-brass-200"
             >
-              <Plus size={15} /> Add component
+              <Plus size={15} /> Add components
             </button>
           )}
         </div>
@@ -399,13 +608,16 @@ export function ProjectDetail() {
             nextOrder={components.length}
             onClose={() => setAddingComponent(false)}
             onError={setError}
+            onAdded={(n) =>
+              notify(n === 1 ? "Component added." : `${n} components added.`)
+            }
           />
         )}
 
         {components.length === 0 && !addingComponent ? (
           <p className="mt-5 rounded-3xl border border-night-700/60 bg-night-900/40 p-8 text-center text-sm text-cream-500">
-            No components yet. Add one and choose its category to pull in the
-            standard line items for that kind of work.
+            No components yet. Add one or more and each will pull in the standard line
+            items for that kind of work.
           </p>
         ) : (
           <div className="mt-5 space-y-3">
@@ -424,23 +636,6 @@ export function ProjectDetail() {
           </div>
         )}
       </section>
-
-      {/* Issued estimates: the versioned documents, and what happens to them */}
-      <ProjectEstimates
-        projectId={projectId}
-        projectNumber={project.projectNumber}
-        customerEmail={customerEmail}
-        actor={actor}
-        canSendForReview={canSendForReview}
-        canApprove={canApprove}
-        canEditLines={canEditEstimate}
-        isAdmin={session.role === "admin"}
-        onError={setError}
-        onNotice={(m) => {
-          setNotice(m);
-          setTimeout(() => setNotice(""), 6000);
-        }}
-      />
 
       {/* Status */}
       {canEdit && (
@@ -481,40 +676,135 @@ export function ProjectDetail() {
   );
 }
 
+/**
+ * Sets the two rates the estimate adds on top of the components.
+ *
+ * Saved to the project rather than held on screen, so the figure here is the figure
+ * the PDF prints and the client is quoted. Neither rate is a reviewer's to set.
+ */
+function RatesEditor({
+  projectId,
+  actor,
+  errorMarginPercent,
+  nightowlChargePercent,
+  onClose,
+  onError,
+  onSaved,
+}: {
+  projectId: string;
+  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  errorMarginPercent: number;
+  nightowlChargePercent: number;
+  onClose: () => void;
+  onError: (m: string) => void;
+  onSaved: (totalKobo: number) => void;
+}) {
+  const [margin, setMargin] = useState(String(errorMarginPercent));
+  const [charge, setCharge] = useState(String(nightowlChargePercent));
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <NumberField
+          id="err-margin"
+          label="Error margin (%)"
+          value={margin}
+          onChange={setMargin}
+        />
+        <NumberField
+          id="no-charge"
+          label="Nightowl charge (%)"
+          value={charge}
+          onChange={setCharge}
+        />
+      </div>
+      <p className="mt-2 text-xs text-cream-500">
+        Both apply to the component subtotal only, never to each other.
+      </p>
+      <div className="mt-4 flex gap-3">
+        <Button
+          busy={busy}
+          onClick={() => {
+            setBusy(true);
+            setProjectMargins(getDb(), actor, projectId, {
+              errorMarginPercent: Number(margin) || 0,
+              nightowlChargePercent: Number(charge) || 0,
+            })
+              .then(() => {
+                onClose();
+                onSaved(0);
+              })
+              .catch((e: unknown) =>
+                onError(e instanceof Error ? e.message : "Could not save the rates.")
+              )
+              .finally(() => setBusy(false));
+          }}
+        >
+          Save rates
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Adds one or more components, each pre-filled from its category template.
+ *
+ * Multi-select because a project is quoted as a kitchen *and* two closets *and* a
+ * run of doors, and adding them one dialog at a time made the common case the slow
+ * one. Each ticked category gets a name field, defaulted to the category label so
+ * the form is usable without typing but still editable when a project has two of
+ * the same kind ("Kitchen" and "Pantry kitchen").
+ */
 function AddComponentForm({
   projectId,
   actor,
   nextOrder,
   onClose,
   onError,
+  onAdded,
 }: {
   projectId: string;
   actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
   nextOrder: number;
   onClose: () => void;
   onError: (m: string) => void;
+  onAdded: (count: number) => void;
 }) {
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState<ProductCategory>("kitchen");
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [names, setNames] = useState<Record<string, string>>({});
   const [useTemplate, setUseTemplate] = useState(true);
   const [busy, setBusy] = useState(false);
 
+  const chosen = PRODUCT_CATEGORIES.filter((c) => picked[c]);
+  const totalItems = chosen.reduce((s, c) => s + templateItemCount(c), 0);
+
   async function submit() {
-    if (!name.trim()) {
-      onError("Name the component.");
+    if (chosen.length === 0) {
+      onError("Pick at least one component.");
       return;
     }
     setBusy(true);
     try {
-      await addComponent(getDb(), actor, projectId, {
-        name: name.trim(),
-        category,
-        order: nextOrder,
-        useTemplate,
-      });
+      await addComponents(
+        getDb(),
+        actor,
+        projectId,
+        chosen.map((c) => ({
+          name: (names[c] ?? "").trim() || PRODUCT_CATEGORY_LABELS[c],
+          category: c,
+          useTemplate,
+        })),
+        nextOrder
+      );
+      onAdded(chosen.length);
       onClose();
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Could not add the component.");
+      onError(e instanceof Error ? e.message : "Could not add the components.");
     } finally {
       setBusy(false);
     }
@@ -522,41 +812,80 @@ function AddComponentForm({
 
   return (
     <div className="mt-5 rounded-2xl border border-brass-500/30 bg-night-950/40 p-5">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          id="comp-name"
-          label="Component name"
-          value={name}
-          onChange={setName}
-          placeholder="Main kitchen"
-          required
-        />
-        <SelectField
-          id="comp-category"
-          label="Category"
-          value={category}
-          onChange={(v) => setCategory(v as ProductCategory)}
-          options={PRODUCT_CATEGORIES.map((c) => ({
-            value: c,
-            label: `${PRODUCT_CATEGORY_LABELS[c]} (${templateItemCount(c)} items)`,
-          }))}
-        />
+      <p className="text-sm text-cream-300">
+        Which components does this project include?
+      </p>
+      <div className="mt-3 space-y-2">
+        {PRODUCT_CATEGORIES.map((c) => {
+          const on = !!picked[c];
+          return (
+            <div
+              key={c}
+              className={`rounded-xl border p-3 transition-colors ${
+                on
+                  ? "border-brass-500/40 bg-brass-500/5"
+                  : "border-night-700/50 bg-night-900/30"
+              }`}
+            >
+              <label
+                htmlFor={`pick-${c}`}
+                className="flex cursor-pointer items-center gap-3 text-sm text-cream-200"
+              >
+                <input
+                  id={`pick-${c}`}
+                  type="checkbox"
+                  checked={on}
+                  onChange={(e) =>
+                    setPicked((p) => ({ ...p, [c]: e.target.checked }))
+                  }
+                  className="h-4 w-4 cursor-pointer accent-brass-500"
+                />
+                <span className="flex-1">{PRODUCT_CATEGORY_LABELS[c]}</span>
+                <span className="text-xs text-cream-500">
+                  {templateItemCount(c)} items
+                </span>
+              </label>
+              {/* The name only matters once the category is in, so it appears then
+                  rather than presenting six empty boxes up front. */}
+              {on && (
+                <div className="mt-3">
+                  <TextField
+                    id={`name-${c}`}
+                    label="Name it"
+                    value={names[c] ?? ""}
+                    onChange={(v) => setNames((p) => ({ ...p, [c]: v }))}
+                    placeholder={PRODUCT_CATEGORY_LABELS[c]}
+                    hint="Optional"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
+
       <div className="mt-4">
         <CheckboxField
           id="comp-template"
-          label={`Pre-fill the ${templateItemCount(category)} standard line items for ${PRODUCT_CATEGORY_LABELS[category]}`}
+          label={
+            chosen.length
+              ? `Pre-fill ${totalItems} standard line items across ${chosen.length} ${
+                  chosen.length === 1 ? "component" : "components"
+                }`
+              : "Pre-fill the standard line items"
+          }
           checked={useTemplate}
           onChange={setUseTemplate}
         />
         <p className="mt-2 text-xs text-cream-600">
-          Items are added unpriced. A zero is visibly unpriced; a guessed figure
-          would look deliberate.
+          Items are added unpriced and unticked. A zero is visibly unpriced; a guessed
+          figure would look deliberate.
         </p>
       </div>
+
       <div className="mt-5 flex gap-3">
         <Button onClick={submit} busy={busy}>
-          Add component
+          {chosen.length > 1 ? `Add ${chosen.length} components` : "Add component"}
         </Button>
         <Button variant="ghost" onClick={onClose}>
           Cancel
@@ -565,7 +894,6 @@ function AddComponentForm({
     </div>
   );
 }
-
 function ComponentPanel({
   projectId,
   component,

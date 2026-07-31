@@ -231,17 +231,22 @@ service cloud.firestore {
       }
     }
 
+    // The estimate is no longer its own document: a project's components and their
+    // ticked features are the line items, and the rates, review token and approval
+    // live on the project. These rules stay only so estimates written under the old
+    // model remain readable; nothing creates them any more.
+    //
+    // Reviewer edits arrive through a Cloud Function using the Admin SDK, which
+    // bypasses these rules; external reviewers never hold a Firebase session, so no
+    // client path is opened for them anywhere.
     match /estimates/{estimateId} {
       allow read: if isStaff();
-      allow create, update: if isOps();
+      allow create, update: if false;
       allow delete: if isAdmin();
 
-      // Reviewer edits arrive through a Cloud Function using the Admin SDK,
-      // which bypasses these rules; external reviewers never hold a Firebase
-      // session, so no client path is opened here.
       match /lines/{lineId} {
         allow read: if isStaff();
-        allow write: if isOps();
+        allow write: if false;
       }
     }
 

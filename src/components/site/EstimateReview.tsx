@@ -28,17 +28,24 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 interface ReviewLine {
+  /** `componentId:featureId`. Absent on a line the reviewer is adding. */
   id?: string;
   category?: string;
+  /** The component this line sits under, e.g. "Main kitchen". */
+  component?: string;
+  /** Which component a line the reviewer adds should be filed under. */
+  componentId?: string;
   item: string;
   quantity: number;
   unitPriceKobo: number;
   amountKobo: number;
+  /** Whether it is currently on the estimate. */
+  included?: boolean;
   addedByReviewer?: boolean;
 }
 
 interface OpenedEstimate {
-  estimateId: string;
+  projectId: string;
   projectNumber: string;
   version: number;
   reviewerName: string | null;
@@ -104,6 +111,9 @@ export function EstimateReview() {
           key: `k${seq++}`,
           qty: l.quantity ? String(l.quantity) : "",
           price: l.unitPriceKobo ? String(toNaira(l.unitPriceKobo)) : "",
+          // The whole checklist arrives, ticked or not, so an item the office
+          // missed can be brought in rather than only repriced.
+          removed: l.included === false,
         }))
       );
     } catch (e) {
@@ -124,28 +134,54 @@ export function EstimateReview() {
   const kept = useMemo(() => lines.filter((l) => !l.removed), [lines]);
 
   /**
+   * The components a new line may be filed under.
+   *
+   * Taken from the lines that arrived rather than a separate list, because those are
+   * exactly the components this reviewer was given — narrowing the scope on sending
+   * must narrow where they can add, or a kitchen fabricator could file work against
+   * a closet they were never shown.
+   */
+  const addTargets = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const l of lines) {
+      if (!l.id) continue;
+      const componentId = l.id.split(":")[0];
+      if (!componentId || seen.has(componentId)) continue;
+      seen.set(componentId, l.component || l.category || "this component");
+    }
+    return [...seen].map(([componentId, label]) => ({ componentId, label }));
+  }, [lines]);
+
+  /**
    * Lines grouped under the component they were estimated for.
    *
-   * Runs of the same category are kept in the order they arrived rather than
-   * sorted, because that order is the estimator's own sequence and a reviewer
-   * working from the paper template reads down the same list. Lines the reviewer
-   * adds have no category and collect at the end under their own heading, so a
-   * new item is never silently filed under someone else's kitchen.
+   * Grouped by the component's own name rather than its category, so a project with
+   * a main kitchen and a pantry kitchen shows two headings instead of one repeated.
+   * Runs are kept in the order they arrived rather than sorted, because that order
+   * is the estimator's own sequence and a reviewer working from the paper template
+   * reads down the same list. Lines the reviewer adds collect at the end under their
+   * own heading, so a new item is never silently filed under someone else's kitchen.
    */
   const groups = useMemo(() => {
     const numbered = lines.map((l, i) => ({ ...l, index: i + 1 }));
+    // Keyed on the component id where there is one, so a line the reviewer adds
+    // joins the group it was added to instead of collecting in a separate bucket
+    // the server would then have to guess a home for.
+    const keyOf = (row: (typeof numbered)[number]) =>
+      row.id?.split(":")[0] || row.componentId || row.component || row.category || "";
     const out: Array<{ key: string; label: string; rows: typeof numbered }> = [];
     for (const row of numbered) {
-      const key = row.addedByReviewer && !row.id ? "__added" : (row.category ?? "");
+      const key = keyOf(row);
       const last = out[out.length - 1];
       if (last && last.key === key) last.rows.push(row);
       else
         out.push({
           key,
           label:
-            key === "__added"
-              ? "Added during review"
-              : (CATEGORY_LABELS[key] ?? key ?? "Items"),
+            row.component ||
+            CATEGORY_LABELS[row.category ?? ""] ||
+            row.category ||
+            "Items",
           rows: [row],
         });
     }
@@ -163,9 +199,10 @@ export function EstimateReview() {
           lines: Array<{
             id?: string;
             item: string;
-            category?: string;
+            componentId?: string;
             quantity: number;
             unitPriceKobo: number;
+            included: boolean;
           }>;
           note?: string;
         },
@@ -175,16 +212,22 @@ export function EstimateReview() {
       const res = await fn({
         token,
         passcode: passcode.trim(),
-        // Removed lines are simply omitted; the function zeroes them rather than
-        // deleting, so the record still shows the reviewer disagreed.
+        // Every line is sent with its tick, unticked ones included. Omitting them
+        // would be indistinguishable from never having seen them, and the server
+        // needs the difference: an untick is a judgement worth recording, and a
+        // line the reviewer never touched should keep whatever it already said.
         lines: lines
-          .filter((l) => !l.removed)
+          // A blank row the reviewer opened and abandoned is not a line.
+          .filter((l) => l.id || l.item.trim())
           .map((l) => ({
             id: l.id,
             item: l.item,
-            category: l.category,
+            // Only meaningful on an added line; the server reads the component from
+            // the composite id for anything that already exists.
+            componentId: l.componentId,
             quantity: Number(l.qty) || 0,
             unitPriceKobo: parseNairaInput(l.price),
+            included: !l.removed,
           })),
         note: note.trim() || undefined,
       });
@@ -468,27 +511,38 @@ export function EstimateReview() {
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={() =>
-          setLines((p) => [
-            ...p,
-            {
-              key: `k${seq++}`,
-              item: "",
-              quantity: 0,
-              unitPriceKobo: 0,
-              amountKobo: 0,
-              qty: "",
-              price: "",
-              addedByReviewer: true,
-            },
-          ])
-        }
-        className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-brass-300 transition-colors hover:text-brass-200"
-      >
-        <Plus size={15} /> Add a missing item
-      </button>
+      {/* Adding is offered per component, not once at the foot of the page. A new
+          line has to belong somewhere, and the group the reviewer clicked under is
+          the only reliable statement of where — a single button at the bottom left
+          the server guessing, and it guessed the first component every time. */}
+      <div className="mt-6 flex flex-wrap gap-2">
+        {addTargets.map((t) => (
+          <button
+            key={t.componentId}
+            type="button"
+            onClick={() =>
+              setLines((p) => [
+                ...p,
+                {
+                  key: `k${seq++}`,
+                  item: "",
+                  quantity: 0,
+                  unitPriceKobo: 0,
+                  amountKobo: 0,
+                  qty: "",
+                  price: "",
+                  addedByReviewer: true,
+                  componentId: t.componentId,
+                  component: t.label,
+                },
+              ])
+            }
+            className="flex cursor-pointer items-center gap-2 rounded-xl border border-night-600 bg-night-900/40 px-3.5 py-2 text-sm text-brass-300 transition-colors hover:border-brass-500/50 hover:text-brass-200"
+          >
+            <Plus size={14} /> Add to {t.label}
+          </button>
+        ))}
+      </div>
 
       <div className="mt-8 rounded-2xl border border-brass-500/30 bg-brass-500/5 p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-3">

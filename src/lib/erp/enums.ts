@@ -166,12 +166,18 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   cancelled: "Cancelled",
 };
 
+/*
+ * "superseded" was dropped when the estimate stopped being a separate document.
+ * It meant "a newer estimate exists for this project", which cannot happen now that
+ * a project has exactly one estimate: revising it edits the same one and bumps its
+ * version. Nothing wrote the status any more, so it was vocabulary the UI offered
+ * for a state unreachable in practice.
+ */
 export const ESTIMATE_STATUSES = [
   "draft",
   "in_review",
   "reviewed",
   "approved",
-  "superseded",
 ] as const;
 export type EstimateStatus = (typeof ESTIMATE_STATUSES)[number];
 
@@ -180,7 +186,6 @@ export const ESTIMATE_STATUS_LABELS: Record<EstimateStatus, string> = {
   in_review: "In Review",
   reviewed: "Reviewed",
   approved: "Approved",
-  superseded: "Superseded",
 };
 
 // ---------------------------------------------------------------------------

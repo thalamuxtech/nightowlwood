@@ -13,6 +13,7 @@ import {
 import { COL, jobLinesPath, jobPaymentsPath, purchaseLinesPath, toolItemsPath } from "./collections";
 import type { BoardType, JobStatus, ServiceType, WageWorkType } from "./enums";
 import { lineAmountKobo, toKobo } from "./money";
+import { ESTIMATE_TEMPLATES } from "./estimateTemplates";
 
 /**
  * Demo data for exercising the system end to end.
@@ -460,6 +461,55 @@ export async function seedDemoData(
   await batch.commit();
 
   // --- Projects, components, features -------------------------------------
+  /**
+   * Splits a component's total across its template items.
+   *
+   * Weighted so the earlier materials carry more: a kitchen's board and high-gloss
+   * cost far more than its screws, and a flat split would put ₦29,000 of nails on
+   * the estimate. The lump-sum lines take a fixed share because on a real job they
+   * genuinely are a large, roughly predictable slice. The rates are skipped — they
+   * live on the project, and pricing them as rows would charge the margin twice.
+   */
+  function spreadAcrossItems(
+    items: ReadonlyArray<{ item: string; kind: string }>,
+    totalKobo: number
+  ): Map<string, number> {
+    const LUMPS = new Set([
+      "Labour",
+      "Transport",
+      "Fuel",
+      "Cutting & Edging",
+      "Transport & Wrapping",
+    ]);
+    const RATES = new Set(["Error Margin", "Nightowl Charges"]);
+    const out = new Map<string, number>();
+    if (totalKobo <= 0) return out;
+
+    const materials = items.filter((t) => !LUMPS.has(t.item) && !RATES.has(t.item));
+    const lumps = items.filter((t) => LUMPS.has(t.item));
+    const lumpTotal = lumps.length ? Math.round(totalKobo * 0.35) : 0;
+
+    const share = (group: typeof materials, pot: number) => {
+      if (!group.length || pot <= 0) return;
+      const weights = group.map((_, k) => 1 / (k + 2));
+      const sum = weights.reduce((a, b) => a + b, 0);
+      let used = 0;
+      group.forEach((t, k) => {
+        // Rounded to an even number of naira so quantity 2 divides exactly, and the
+        // last row absorbs the remainder so the parts equal the whole.
+        const v =
+          k === group.length - 1
+            ? pot - used
+            : Math.round((pot * weights[k]) / sum / 200) * 200;
+        out.set(t.item, Math.max(0, v));
+        used += v;
+      });
+    };
+    share(materials, totalKobo - lumpTotal);
+    share(lumps, lumpTotal);
+    return out;
+  }
+
   onProgress("Projects and estimates");
   batch = writeBatch(db);
   ops = 0;
@@ -469,6 +519,14 @@ export async function seedDemoData(
     const estimated = p.components.reduce((s, c) => s + toKobo(c.valueNaira), 0);
 
     const projRef = doc(collection(db, COL.projects));
+    // One project per estimate state, so the whole draft → in_review → reviewed →
+    // approved path has a subject without needing anything to be clicked first.
+    const estimateStatus = (["approved", "in_review", "reviewed", "draft"] as const)[
+      i % 4
+    ];
+    const outForReview = estimateStatus === "in_review";
+    const returned = estimateStatus === "reviewed";
+
     batch.set(projRef, {
       ...base,
       projectNumber: `PRJ-${year}-${pad(100 + i)}`,
@@ -481,13 +539,36 @@ export async function seedDemoData(
       targetDate: Timestamp.fromDate(daysAgo(-20 + i * 5)),
       estimatedCostKobo: estimated,
       actualCostKobo: p.status === "completed" ? Math.round(estimated * 0.94) : 0,
-      contractValueKobo: Math.round(estimated * 1.15),
+      // Only an approved estimate has an agreed figure. Setting it on all of them
+      // made every project look contracted, which is the state the pipeline is
+      // meant to distinguish.
+      contractValueKobo:
+        estimateStatus === "approved" ? Math.round(estimated * 1.2) : null,
+      // The estimate itself lives here: these rates plus the components below are
+      // the whole document.
+      errorMarginPercent: 5,
+      nightowlChargePercent: 15,
+      estimateVersion: estimateStatus === "draft" ? 0 : 1,
+      estimateStatus,
+      estimateApprovedAt:
+        estimateStatus === "approved" ? Timestamp.fromDate(daysAgo(30 - i * 5)) : null,
+      reviewEmail: outForReview || returned ? "quantity.surveyor@example.com" : null,
+      reviewerName: outForReview || returned ? "Engr. Adewale" : null,
+      reviewSentAt:
+        outForReview || returned ? Timestamp.fromDate(daysAgo(4)) : null,
+      // A live link for the one out for review; the returned one's has been used.
+      reviewExpiresAt: outForReview ? Timestamp.fromDate(daysAgo(-3)) : null,
+      reviewedAt: returned ? Timestamp.fromDate(daysAgo(1)) : null,
+      reviewNotes: returned
+        ? "Board prices are up since your last schedule; I have adjusted the sheet counts."
+        : null,
     });
     ops += 1;
 
     for (let k = 0; k < p.components.length; k += 1) {
       const c = p.components[k];
-      batch.set(doc(collection(db, `${COL.projects}/${projRef.id}/components`)), {
+      const compRef = doc(collection(db, `${COL.projects}/${projRef.id}/components`));
+      batch.set(compRef, {
         ...base,
         name: c.name,
         category: c.category,
@@ -496,6 +577,34 @@ export async function seedDemoData(
         estimatedCostKobo: toKobo(c.valueNaira),
       });
       ops += 1;
+
+      // The template's line items, priced so the component's total is actually
+      // traceable to rows. Seeding a total with no features beneath it was the
+      // original defect here: the screen read "0 of 0 items included" above a
+      // five-figure sum, and an estimate sent for review arrived empty.
+      const template = ESTIMATE_TEMPLATES[c.category];
+      const priced = spreadAcrossItems(template.items, toKobo(c.valueNaira));
+      for (let n = 0; n < template.items.length; n += 1) {
+        const t = template.items[n];
+        const amount = priced.get(t.item) ?? 0;
+        // Error Margin and Nightowl Charges are rates on the project, not rows.
+        const isRate = t.item === "Error Margin" || t.item === "Nightowl Charges";
+        const qty = amount > 0 && !isRate ? 2 : 0;
+        batch.set(doc(collection(db, `${COL.projects}/${projRef.id}/components/${compRef.id}/features`)), {
+          ...base,
+          item: t.item,
+          kind: t.kind,
+          actualQuantity: null,
+          quantity: qty,
+          unitPriceKobo: qty ? amount / qty : 0,
+          amountKobo: qty ? amount : 0,
+          included: qty > 0,
+          order: n,
+        });
+        ops += 1;
+        await commitIfFull();
+      }
+      written += template.items.length;
     }
     written += 1 + p.components.length;
     await commitIfFull();
@@ -669,32 +778,8 @@ export async function seedDemoData(
   batch = writeBatch(db);
   ops = 0;
 
-  // One estimate per project, at a different status each, so the whole
-  // draft -> in_review -> reviewed -> approved path is represented.
-  const estimateStatuses = ["approved", "in_review", "approved", "draft"] as const;
-  for (let i = 0; i < PROJECTS.length; i += 1) {
-    const p = PROJECTS[i];
-    const subtotal = p.components.reduce((sum, c) => sum + toKobo(c.valueNaira), 0);
-    const errorMargin = Math.round(subtotal * 0.05);
-    const charges = Math.round(subtotal * 0.15);
-    batch.set(doc(collection(db, COL.estimates)), {
-      ...base,
-      projectNumber: `PRJ-${year}-${pad(100 + i)}`,
-      version: 1,
-      status: estimateStatuses[i],
-      subtotalKobo: subtotal,
-      errorMarginPercent: 5,
-      errorMarginKobo: errorMargin,
-      nightowlChargesKobo: charges,
-      totalKobo: subtotal + errorMargin + charges,
-      reviewEmail: i === 1 ? "quantity.surveyor@example.com" : null,
-      reviewerName: i === 1 ? "Engr. Adewale" : null,
-      reviewSentAt: i === 1 ? Timestamp.fromDate(daysAgo(4)) : null,
-      reviewExpiresAt: i === 1 ? Timestamp.fromDate(daysAgo(-3)) : null,
-    });
-    written += 1;
-    ops += 1;
-  }
+  // Estimates are no longer separate documents — they are the projects seeded
+  // above, with their rates and review state written onto the project itself.
 
   // Invoices across every status, including one part-paid and one settled, so
   // receivables and the mark-paid path both have subjects.
@@ -1027,6 +1112,38 @@ export async function clearDemoData(
       paths: (id) => [toolItemsPath(id)],
     },
   ];
+
+  /*
+   * Features sit two levels down — project > component > feature — which the flat
+   * `paths` shape above cannot express, so they are cleared first and explicitly.
+   * They have to go before their components: deleting a component does not cascade,
+   * and once it is gone its features are unreachable and count toward nothing.
+   * A templated project carries well over a hundred of them, so this is where the
+   * bulk of a clear actually is.
+   */
+  onProgress("Component line items");
+  {
+    const projects = await getDocs(
+      query(collection(db, COL.projects), where(DEMO_FLAG, "==", true))
+    );
+    for (const project of projects.docs) {
+      const comps = await getDocs(
+        collection(db, `${COL.projects}/${project.id}/components`)
+      );
+      for (const comp of comps.docs) {
+        const feats = await getDocs(
+          collection(db, `${COL.projects}/${project.id}/components/${comp.id}/features`)
+        );
+        if (feats.empty) continue;
+        for (let i = 0; i < feats.docs.length; i += 400) {
+          const b = writeBatch(db);
+          feats.docs.slice(i, i + 400).forEach((f) => b.delete(f.ref));
+          await b.commit();
+        }
+        deleted += feats.size;
+      }
+    }
+  }
 
   for (const group of SUBCOLLECTIONS) {
     onProgress(group.label);

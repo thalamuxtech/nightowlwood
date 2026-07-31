@@ -92,7 +92,6 @@ const STATUS_LABELS: Record<string, string> = {
   in_review: "In Review",
   reviewed: "Reviewed",
   approved: "Approved",
-  superseded: "Superseded",
 };
 
 type Doc = PDFKit.PDFDocument;

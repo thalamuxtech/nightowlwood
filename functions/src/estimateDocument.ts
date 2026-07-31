@@ -34,6 +34,19 @@ const SENDER = { email: "info@nightowl.com.ng", name: "Nightowl Woodworks" };
 /** Days an estimate's prices are quoted as holding, absent a stored value. */
 const DEFAULT_VALID_DAYS = 30;
 
+/*
+ * Fallback rates for a project that has never had its own set.
+ *
+ * These must match DEFAULT_INVOICE_SETTINGS in src/lib/erp/settings.ts. They were
+ * 0 here and the configured defaults there, so a project whose rates had never been
+ * touched showed one total on the admin screen and printed a lower one on the
+ * client's PDF — on a ₦5,000,000 subtotal, a ₦1,000,000 difference in the client's
+ * favour, in writing. Duplicated rather than imported because functions/ compiles
+ * independently of the Next app.
+ */
+const DEFAULT_ERROR_MARGIN_PERCENT = 5;
+const DEFAULT_NIGHTOWL_CHARGE_PERCENT = 15;
+
 const FALLBACK_COMPANY: CompanyDetails = {
   name: "Nightowl Woodworks Ltd",
   tagline: "Precision in Every Cut",
@@ -101,118 +114,134 @@ const CATEGORY_LABELS: Record<string, string> = {
   bedset: "Bedset",
 };
 
+/** Whether a feature belongs on the estimate. Mirrors src/lib/erp/projects.ts. */
+function isIncluded(f: {
+  included?: boolean | null;
+  amountKobo?: number | null;
+}): boolean {
+  if (f.included === true) return true;
+  if (f.included === false) return false;
+  return (f.amountKobo ?? 0) > 0;
+}
+
 /**
- * Loads an estimate and its lines into the PDF's shape.
+ * Loads a project's estimate: its components, their ticked features, and its rates.
  *
- * Reads the estimate's own `lines` subcollection rather than recomputing from the
- * project's live features. The estimate is a snapshot taken when it was created, and
- * a client holding v2 must see v2's figures even if someone has since repriced the
- * project. That is the whole point of snapshotting them.
- *
- * The project and customer are read for the header only. If the project has since
- * been deleted the estimate still renders, because a document that cannot be
- * reproduced is not much of a record.
+ * Read live rather than from a snapshot, because there is no snapshot — the project
+ * *is* its estimate. A price corrected on a component is corrected on the document,
+ * which is the point. The consequence worth knowing: a client holding the PDF from
+ * last week may hold different figures from the one generated today, so the version
+ * and the preparation date on the page are what identify which is which.
  */
-async function loadEstimate(estimateId: string): Promise<PdfEstimate> {
+async function loadEstimate(projectId: string): Promise<PdfEstimate> {
   const db = getFirestore();
-  const snap = await db.doc(`estimates/${estimateId}`).get();
-  if (!snap.exists) throw new HttpsError("not-found", "Estimate not found.");
+  const snap = await db.doc(`projects/${projectId}`).get();
+  if (!snap.exists) throw new HttpsError("not-found", "Project not found.");
   const d = snap.data() ?? {};
 
-  const lineSnap = await db
-    .collection(`estimates/${estimateId}/lines`)
+  const comps = await db
+    .collection(`projects/${projectId}/components`)
     .orderBy("order", "asc")
     .get();
 
-  // `addedByReviewer` is deliberately not carried through. Whether a line came from
-  // this office or the reviewer we commissioned is internal provenance; the client is
-  // being quoted one price by one company. The admin screen shows the distinction.
-  const lines: PdfEstimateLine[] = lineSnap.docs.map((doc) => {
-    const l = doc.data();
-    const category = String(l.category ?? "");
-    return {
-      // A reviewer's addition has no category, and saying so is better than
-      // filing it under a component it was never part of. Matches the heading
-      // the reviewer saw when they added it.
-      group:
-        CATEGORY_LABELS[category] ||
-        category ||
-        (l.addedByReviewer === true ? "Added during review" : "Items"),
-      item: String(l.item ?? ""),
-      quantity: Number(l.quantity ?? 0),
-      unitPriceKobo: Number(l.unitPriceKobo ?? 0),
-      amountKobo: Number(l.amountKobo ?? 0),
-    };
+  // Issued together: a templated project holds a component per room, each with its
+  // own template rows, so serial reads got slower the more complete the project was.
+  const featSnaps = await Promise.all(
+    comps.docs.map((c) =>
+      db
+        .collection(`projects/${projectId}/components/${c.id}/features`)
+        .orderBy("order", "asc")
+        .get()
+    )
+  );
+
+  // Grouped by the component's own name, not its category: a project with two
+  // kitchens needs "Main kitchen" and "Pantry kitchen" told apart, and the category
+  // label would print the same heading twice.
+  //
+  // `addedByReviewer` is deliberately not carried onto the page. Whether a line came
+  // from this office or the fabricator we commissioned is internal provenance; the
+  // client is being quoted one price by one company.
+  const lines: PdfEstimateLine[] = [];
+  comps.docs.forEach((c, i) => {
+    const cd = c.data();
+    const heading =
+      String(cd.name ?? "").trim() ||
+      CATEGORY_LABELS[String(cd.category ?? "")] ||
+      "Items";
+    for (const f of featSnaps[i].docs) {
+      const x = f.data();
+      // Only ticked lines. The template is a 178-row checklist of what a job of
+      // this kind might involve; printing all of it would bury the work quoted for.
+      if (!isIncluded(x)) continue;
+      lines.push({
+        group: heading,
+        item: String(x.item ?? ""),
+        quantity: Number(x.quantity ?? 0),
+        unitPriceKobo: Number(x.unitPriceKobo ?? 0),
+        amountKobo: Number(x.amountKobo ?? 0),
+      });
+    }
   });
 
-  // A reviewer's zeroed-out lines are dropped rather than printed at nil. The
-  // submit path zeroes an omitted line instead of deleting it so the change is
-  // auditable, but a client has no use for a row the reviewer struck out.
-  const priced = lines.filter((l) => l.amountKobo > 0);
-
-  let projectTitle = "";
-  let customerName = "";
   let customerPhone: string | undefined;
   let customerAddress: string | undefined;
-  let location: string | undefined;
-
-  if (d.projectId) {
-    const proj = await db.doc(`projects/${d.projectId}`).get();
-    if (proj.exists) {
-      const p = proj.data() ?? {};
-      projectTitle = String(p.title ?? "");
-      customerName = String(p.customerName ?? "");
-      location = p.location || undefined;
-
-      if (p.customerId) {
-        const cust = await db.doc(`customers/${p.customerId}`).get();
-        if (cust.exists) {
-          const c = cust.data() ?? {};
-          customerPhone = c.phone || undefined;
-          customerAddress = c.address || undefined;
-        }
-      }
+  if (d.customerId) {
+    const cust = await db.doc(`customers/${d.customerId}`).get();
+    if (cust.exists) {
+      const c = cust.data() ?? {};
+      customerPhone = c.phone || undefined;
+      customerAddress = c.address || undefined;
     }
   }
 
-  const createdAtMs = ms(d.createdAt);
-  // Derived from the creation date rather than stored: the validity window is a
-  // standing term of business, not something set per estimate.
-  const validUntilMs =
-    ms(d.validUntil) ??
-    (createdAtMs ? createdAtMs + DEFAULT_VALID_DAYS * 86_400_000 : null);
+  // Totals are computed from the lines just read rather than from the project's
+  // stored rollup, so the figures on the page always add up to the rows above them
+  // even if a rollup has drifted.
+  const subtotalKobo = lines.reduce((s, l) => s + l.amountKobo, 0);
+  const errorMarginPercent = Number(
+    d.errorMarginPercent ?? DEFAULT_ERROR_MARGIN_PERCENT
+  );
+  const nightowlChargePercent = Number(
+    d.nightowlChargePercent ?? DEFAULT_NIGHTOWL_CHARGE_PERCENT
+  );
+  const errorMarginKobo = Math.round((subtotalKobo * errorMarginPercent) / 100);
+  const nightowlChargesKobo = Math.round((subtotalKobo * nightowlChargePercent) / 100);
 
-  const subtotalKobo = Number(d.subtotalKobo ?? 0);
-  const nightowlChargesKobo = Number(d.nightowlChargesKobo ?? 0);
-  // Prefers the stored rate; falls back to the ratio only for estimates issued
-  // before that field existed. Rounded to one decimal for display, because the
-  // fallback is a float and "15.000000000000002%" is not a rate anyone quoted.
-  const nightowlChargePercent =
-    typeof d.nightowlChargePercent === "number"
-      ? d.nightowlChargePercent
-      : subtotalKobo > 0
-        ? Math.round((nightowlChargesKobo / subtotalKobo) * 1000) / 10
-        : 0;
+  /*
+   * "Prepared" is the day these figures last went out.
+   *
+   * Most recent of the two sendings, not `reviewSentAt` alone: an estimate emailed
+   * to a client but never sent for review had no send date at all and fell back to
+   * the project's start, so a job begun two months ago printed "Valid until" a date
+   * already in the past. The project's own dates remain the last resort, for a
+   * document generated before it has been sent anywhere.
+   */
+  const sentMs = Math.max(ms(d.lastEmailedAt) ?? 0, ms(d.reviewSentAt) ?? 0);
+  const createdAtMs = sentMs || ms(d.startDate) || ms(d.createdAt);
+  const validUntilMs = createdAtMs
+    ? createdAtMs + DEFAULT_VALID_DAYS * 86_400_000
+    : null;
 
   return {
     projectNumber: String(d.projectNumber ?? ""),
-    projectTitle,
-    version: Number(d.version ?? 1),
-    status: String(d.status ?? "draft"),
-    customerName,
+    projectTitle: String(d.title ?? ""),
+    version: Number(d.estimateVersion ?? 1) || 1,
+    status: String(d.estimateStatus ?? "draft"),
+    customerName: String(d.customerName ?? ""),
     customerPhone,
     customerAddress,
-    location,
-    lines: priced,
+    location: d.location || undefined,
+    lines,
     subtotalKobo,
-    errorMarginPercent: Number(d.errorMarginPercent ?? 0),
-    errorMarginKobo: Number(d.errorMarginKobo ?? 0),
+    errorMarginPercent,
+    errorMarginKobo,
     nightowlChargesKobo,
     nightowlChargePercent,
-    totalKobo: Number(d.totalKobo ?? 0),
+    totalKobo: subtotalKobo + errorMarginKobo + nightowlChargesKobo,
     createdAtMs,
     validUntilMs,
-    notes: d.reviewNotes || d.notes || undefined,
+    notes: d.reviewNotes || d.estimateNotes || undefined,
   };
 }
 
@@ -238,10 +267,10 @@ export const getEstimatePdf = onCall(
   async (request) => {
     await requireRole(request.auth, ["admin", "manager"]);
 
-    const estimateId = String(request.data?.estimateId ?? "");
-    if (!estimateId) throw new HttpsError("invalid-argument", "estimateId is required.");
+    const projectId = String(request.data?.projectId ?? "");
+    if (!projectId) throw new HttpsError("invalid-argument", "projectId is required.");
 
-    const est = await loadEstimate(estimateId);
+    const est = await loadEstimate(projectId);
     const company = await companyForPdf();
     const pdf = await renderEstimatePdf(est, company);
 
@@ -265,9 +294,12 @@ export const getEstimatePdf = onCall(
  *
  * Deliberately refuses an estimate that is still out for review: the whole point of
  * the review step is that a professional checks the figures before a client sees
- * them, and sending mid-review would make that step decorative. A superseded
- * estimate is refused too, since a newer version exists and quoting the old one
- * would be quoting a price the business has already moved on from.
+ * them, and sending mid-review would make that step decorative.
+ *
+ * Sending bumps the version. The estimate is live, so the figures can move between
+ * one email and the next, and without a bump two clients could hold two different
+ * documents both labelled v1 — which is the one thing the version number exists to
+ * prevent.
  */
 export const emailEstimate = onCall(
   { region: REGION, secrets: [BREVO_API_KEY], cors: true, memory: "512MiB" },
@@ -275,23 +307,20 @@ export const emailEstimate = onCall(
     const actor = await requireRole(request.auth, ["admin"]);
     const db = getFirestore();
 
-    const estimateId = String(request.data?.estimateId ?? "");
-    if (!estimateId) throw new HttpsError("invalid-argument", "estimateId is required.");
+    const projectId = String(request.data?.projectId ?? "");
+    if (!projectId) throw new HttpsError("invalid-argument", "projectId is required.");
 
-    const snap = await db.doc(`estimates/${estimateId}`).get();
-    if (!snap.exists) throw new HttpsError("not-found", "Estimate not found.");
+    const snap = await db.doc(`projects/${projectId}`).get();
+    if (!snap.exists) throw new HttpsError("not-found", "Project not found.");
     const stored = snap.data() ?? {};
 
-    if (stored.status === "in_review") {
+    // Refused mid-review: the point of commissioning a professional is that they
+    // check the figures before a client sees them, and sending now would make that
+    // step decorative.
+    if (stored.estimateStatus === "in_review") {
       throw new HttpsError(
         "failed-precondition",
         "This estimate is still out for review. Wait for the reviewer to return it before sending it to the client."
-      );
-    }
-    if (stored.status === "superseded") {
-      throw new HttpsError(
-        "failed-precondition",
-        "This estimate has been superseded. Send the current version instead."
       );
     }
 
@@ -303,7 +332,45 @@ export const emailEstimate = onCall(
       );
     }
 
-    const est = await loadEstimate(estimateId);
+    /*
+     * An approved estimate may only be emailed while it still says what was agreed.
+     *
+     * Components stay editable after approval by design, but `contractValueKobo` is
+     * frozen at the approved figure and is what invoices bill against. Emailing a
+     * drifted estimate would hand the client written evidence of a total lower than
+     * the one being billed — so the divergence has to be resolved deliberately,
+     * either by reopening and re-approving or by putting the prices back.
+     */
+    if (stored.estimateStatus === "approved") {
+      const agreed = Number(stored.contractValueKobo ?? 0);
+      const live = (await loadEstimate(projectId)).totalKobo;
+      if (agreed > 0 && live !== agreed) {
+        throw new HttpsError(
+          "failed-precondition",
+          `This estimate has been edited since it was approved: it now totals ₦${Math.round(
+            live / 100
+          ).toLocaleString("en-US")} against an agreed ₦${Math.round(
+            agreed / 100
+          ).toLocaleString("en-US")}. Reopen and re-approve it, or restore the prices, before sending it to the client.`
+        );
+      }
+    }
+
+    /*
+     * The version is bumped before the PDF is drawn, not after.
+     *
+     * `loadEstimate` reads it off the project, so bumping afterwards would attach a
+     * file labelled with the previous version to the email announcing the new one —
+     * the file and the record disagreeing about which document the client holds.
+     */
+    const version = Number(stored.estimateVersion ?? 0) + 1;
+    await db.doc(`projects/${projectId}`).update({
+      estimateVersion: version,
+      lastEmailedAt: FieldValue.serverTimestamp(),
+      lastEmailedTo: recipient,
+    });
+
+    const est = await loadEstimate(projectId);
     const company = await companyForPdf();
     const pdf = await renderEstimatePdf(est, company);
 
@@ -365,24 +432,29 @@ export const emailEstimate = onCall(
     });
 
     if (!sent.ok) {
+      // The version was claimed before the PDF was drawn, so it has to be given
+      // back: a bounced send is not a version the client has ever seen, and letting
+      // failures consume numbers would leave gaps that look like lost documents.
+      // Restored to what was actually stored rather than decremented, so a
+      // concurrent send cannot be rolled back on top of.
+      await db.doc(`projects/${projectId}`).update({
+        estimateVersion: Number(stored.estimateVersion ?? 0),
+        lastEmailedAt: stored.lastEmailedAt ?? null,
+        lastEmailedTo: stored.lastEmailedTo ?? null,
+      });
       throw new HttpsError(
         "internal",
         sent.error ?? "The estimate could not be emailed. Check the email settings."
       );
     }
 
-    await db.doc(`estimates/${estimateId}`).update({
-      lastEmailedAt: FieldValue.serverTimestamp(),
-      lastEmailedTo: recipient,
-    });
-
     await db.collection("auditLog").add({
       actorUid: actor.uid,
       actorEmail: actor.email,
       actorRole: actor.role,
       action: "estimate_email",
-      collectionName: "estimates",
-      docId: estimateId,
+      collectionName: "projects",
+      docId: projectId,
       summary: `Emailed estimate ${est.projectNumber} v${est.version} to ${recipient}`,
       after: { to: recipient, bytes: pdf.length },
       at: FieldValue.serverTimestamp(),

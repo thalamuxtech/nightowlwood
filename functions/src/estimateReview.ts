@@ -8,6 +8,7 @@ import {
   detailTable,
   paragraph,
   renderEmail,
+  totalRow,
   type CompanyDetails,
 } from "./emailTemplate";
 
@@ -37,6 +38,15 @@ const MAX_ATTEMPTS = 5;
 
 /** Default validity. Long enough to be useful, short enough to expire. */
 const DEFAULT_VALID_DAYS = 7;
+
+/*
+ * Fallback rates for a project that has never had its own set. Must match
+ * DEFAULT_INVOICE_SETTINGS in src/lib/erp/settings.ts and the same pair in
+ * estimateDocument.ts: defaulting to 0 here would quote the reviewer a total
+ * lower than the admin screen shows, on the very figures they are checking.
+ */
+const DEFAULT_ERROR_MARGIN_PERCENT = 5;
+const DEFAULT_NIGHTOWL_CHARGE_PERCENT = 15;
 
 const SENDER = { email: "info@nightowl.com.ng", name: "Nightowl Woodworks" };
 
@@ -120,26 +130,40 @@ export const sendEstimateForReview = onCall(
     const actor = await requireOps(request.auth);
     const db = getFirestore();
 
-    const estimateId = String(request.data?.estimateId ?? "");
+    const projectId = String(request.data?.projectId ?? "");
     const email = String(request.data?.email ?? "").trim();
     const reviewerName = String(request.data?.reviewerName ?? "").trim();
     const validDays = Number(request.data?.validDays ?? DEFAULT_VALID_DAYS);
     const message = String(request.data?.message ?? "").trim();
+    const componentIds: string[] = Array.isArray(request.data?.componentIds)
+      ? request.data.componentIds.map(String)
+      : [];
 
-    if (!estimateId) throw new HttpsError("invalid-argument", "estimateId is required.");
+    if (!projectId) throw new HttpsError("invalid-argument", "projectId is required.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw new HttpsError("invalid-argument", "A valid reviewer email is required.");
     }
 
-    const estRef = db.doc(`estimates/${estimateId}`);
-    const estSnap = await estRef.get();
-    if (!estSnap.exists) throw new HttpsError("not-found", "Estimate not found.");
-    const est = estSnap.data() ?? {};
+    const projRef = db.doc(`projects/${projectId}`);
+    const projSnap = await projRef.get();
+    if (!projSnap.exists) throw new HttpsError("not-found", "Project not found.");
+    const est = projSnap.data() ?? {};
 
-    if (est.status === "approved") {
+    if (est.estimateStatus === "approved") {
       throw new HttpsError(
         "failed-precondition",
-        "This estimate is already approved, so it cannot be sent for review."
+        "This estimate is already approved. Reopen it for requoting before sending it out for review."
+      );
+    }
+
+    // Counted here rather than trusted from the caller: the figure goes in the
+    // reviewer's email, and the server is the one that knows what it will show them.
+    const scoped = await loadFeatures(projectId, componentIds);
+    const lineCount = scoped.length;
+    if (lineCount === 0) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Those components have no line items, so there is nothing to review."
       );
     }
 
@@ -151,12 +175,18 @@ export const sendEstimateForReview = onCall(
 
     // Only hashes are persisted. Sending a new link supersedes the previous one
     // because the stored hash is replaced, so an old URL stops working.
-    await estRef.update({
-      status: "in_review",
+    //
+    // The version is bumped here: sending is what makes an estimate something a
+    // reviewer or client can cite, and editing between sendings is expected.
+    const version = Number(est.estimateVersion ?? 0) + 1;
+    await projRef.update({
+      estimateStatus: "in_review",
+      estimateVersion: version,
       reviewTokenHash: sha256(token),
       reviewPasscodeHash: sha256(passcode),
       reviewEmail: email,
       reviewerName: reviewerName || null,
+      reviewComponentIds: componentIds,
       reviewSentAt: FieldValue.serverTimestamp(),
       reviewExpiresAt: expiresAt,
       reviewAttempts: 0,
@@ -182,8 +212,8 @@ export const sendEstimateForReview = onCall(
         (message ? paragraph(message) : "") +
         detailTable([
           ["Project", String(est.projectNumber ?? "")],
-          ["Version", `v${est.version ?? 1}`],
-          ["Lines to review", String(request.data?.lineCount ?? "")],
+          ["Version", `v${version}`],
+          ["Lines to review", String(lineCount)],
           [
             "Link expires",
             expiresAt.toDate().toLocaleDateString("en-GB", {
@@ -221,9 +251,11 @@ export const sendEstimateForReview = onCall(
       actorEmail: actor.email,
       actorRole: actor.role,
       action: "estimate_send_review",
-      collectionName: "estimates",
-      docId: estimateId,
-      summary: `Sent estimate v${est.version ?? 1} to ${email} for review`,
+      collectionName: "projects",
+      docId: projectId,
+      summary:
+        `Sent ${est.projectNumber ?? "project"} estimate v${version} to ${email} ` +
+        `for review (${lineCount} lines across ${componentIds.length || "all"} components)`,
       at: FieldValue.serverTimestamp(),
     });
 
@@ -238,15 +270,130 @@ export const sendEstimateForReview = onCall(
 // ---------------------------------------------------------------------------
 
 /**
- * Finds the estimate a token belongs to.
+ * Whether a feature belongs on the estimate.
+ *
+ * Duplicated from `src/lib/erp/projects.ts` because `functions/` compiles
+ * independently. Both must agree: this is the rule that decides what a client is
+ * quoted, and two versions of it that disagree would show one figure on screen and
+ * another on the PDF.
+ */
+function isIncluded(f: {
+  included?: boolean | null;
+  amountKobo?: number | null;
+}): boolean {
+  if (f.included === true) return true;
+  if (f.included === false) return false;
+  return (f.amountKobo ?? 0) > 0;
+}
+
+/** A feature, with the path needed to write back to it. */
+interface FeatureRef {
+  componentId: string;
+  componentName: string;
+  category: string;
+  featureId: string;
+  item: string;
+  quantity: number;
+  unitPriceKobo: number;
+  amountKobo: number;
+  included: boolean;
+  order: number;
+  addedByReviewer: boolean;
+}
+
+/**
+ * Reads a project's components and their features.
+ *
+ * `componentIds` narrows to what the reviewer was asked to look at. The composite
+ * id sent to the browser is `componentId:featureId`, because a feature lives two
+ * levels down and a flat id could not be written back.
+ */
+async function loadFeatures(
+  projectId: string,
+  componentIds: string[] | null
+): Promise<FeatureRef[]> {
+  const db = getFirestore();
+  const comps = await db
+    .collection(`projects/${projectId}/components`)
+    .orderBy("order", "asc")
+    .get();
+
+  const wanted = comps.docs.filter(
+    (c) => !componentIds || componentIds.length === 0 || componentIds.includes(c.id)
+  );
+
+  // Issued together: a templated project carries a component per room and each
+  // holds its own template rows, so serial reads got slower the more complete the
+  // project was.
+  const featSnaps = await Promise.all(
+    wanted.map((c) =>
+      db
+        .collection(`projects/${projectId}/components/${c.id}/features`)
+        .orderBy("order", "asc")
+        .get()
+    )
+  );
+
+  const out: FeatureRef[] = [];
+  wanted.forEach((c, i) => {
+    const cd = c.data();
+    for (const f of featSnaps[i].docs) {
+      const x = f.data();
+      out.push({
+        componentId: c.id,
+        componentName: String(cd.name ?? ""),
+        category: String(cd.category ?? ""),
+        featureId: f.id,
+        item: String(x.item ?? ""),
+        quantity: Number(x.quantity ?? 0),
+        unitPriceKobo: Number(x.unitPriceKobo ?? 0),
+        amountKobo: Number(x.amountKobo ?? 0),
+        included: isIncluded(x),
+        order: Number(x.order ?? 0),
+        addedByReviewer: x.addedByReviewer === true,
+      });
+    }
+  });
+  return out;
+}
+
+/** Recomputes a component's subtotal and the project's, from what is ticked. */
+async function rollUp(projectId: string): Promise<number> {
+  const db = getFirestore();
+  const comps = await db.collection(`projects/${projectId}/components`).get();
+
+  let projectTotal = 0;
+  for (const c of comps.docs) {
+    const feats = await db
+      .collection(`projects/${projectId}/components/${c.id}/features`)
+      .get();
+    const total = feats.docs
+      .filter((f) => isIncluded(f.data()))
+      .reduce((s, f) => s + Number(f.data().amountKobo ?? 0), 0);
+    if (total !== Number(c.data().estimatedCostKobo ?? 0)) {
+      await c.ref.update({ estimatedCostKobo: total });
+    }
+    projectTotal += total;
+  }
+
+  await db.doc(`projects/${projectId}`).update({
+    estimatedCostKobo: projectTotal,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return projectTotal;
+}
+
+/**
+ * Finds the project a token belongs to.
  *
  * Queries on the token *hash*, so the raw token never has to be stored to be
- * looked up.
+ * looked up. The token now lives on the project, since there is no estimate
+ * document to hang it on.
  */
 async function findByToken(token: string) {
   const db = getFirestore();
   const snap = await db
-    .collection("estimates")
+    .collection("projects")
     .where("reviewTokenHash", "==", sha256(token))
     .limit(1)
     .get();
@@ -269,26 +416,26 @@ export const openEstimateReview = onCall(
       new HttpsError("permission-denied", "That link or passcode is not valid.");
     if (!doc) throw rejected();
 
-    const est = doc.data();
+    const p = doc.data();
 
-    if (est.reviewedAt) {
+    if (p.reviewedAt) {
       throw new HttpsError(
         "failed-precondition",
         "This review has already been submitted. Contact Nightowl if you need to change it."
       );
     }
-    const expiresMs = est.reviewExpiresAt?.toMillis?.() ?? 0;
+    const expiresMs = p.reviewExpiresAt?.toMillis?.() ?? 0;
     if (!expiresMs || expiresMs < Date.now()) {
       throw new HttpsError("failed-precondition", "This link has expired.");
     }
-    if ((est.reviewAttempts ?? 0) >= MAX_ATTEMPTS) {
+    if ((p.reviewAttempts ?? 0) >= MAX_ATTEMPTS) {
       throw new HttpsError(
         "resource-exhausted",
         "Too many incorrect attempts. Ask Nightowl to resend the link."
       );
     }
 
-    if (!hashesMatch(sha256(passcode), String(est.reviewPasscodeHash ?? ""))) {
+    if (!hashesMatch(sha256(passcode), String(p.reviewPasscodeHash ?? ""))) {
       // Count the failure before rejecting, so the limit cannot be bypassed by
       // abandoning the request.
       await doc.ref.update({ reviewAttempts: FieldValue.increment(1) });
@@ -299,30 +446,44 @@ export const openEstimateReview = onCall(
     // not carry those attempts for the life of the link.
     await doc.ref.update({ reviewAttempts: 0 });
 
-    const linesSnap = await doc.ref.collection("lines").orderBy("order", "asc").get();
+    const scope: string[] = Array.isArray(p.reviewComponentIds)
+      ? p.reviewComponentIds.map(String)
+      : [];
+    const features = await loadFeatures(doc.id, scope);
+
+    const subtotal = features
+      .filter((f) => f.included)
+      .reduce((s, f) => s + f.amountKobo, 0);
+    const errorMarginPercent = Number(p.errorMarginPercent ?? DEFAULT_ERROR_MARGIN_PERCENT);
+    const nightowlPercent = Number(p.nightowlChargePercent ?? DEFAULT_NIGHTOWL_CHARGE_PERCENT);
 
     return {
-      estimateId: doc.id,
-      projectNumber: est.projectNumber ?? "",
-      version: est.version ?? 1,
-      reviewerName: est.reviewerName ?? null,
-      subtotalKobo: est.subtotalKobo ?? 0,
-      errorMarginPercent: est.errorMarginPercent ?? 0,
-      nightowlChargesKobo: est.nightowlChargesKobo ?? 0,
-      totalKobo: est.totalKobo ?? 0,
+      projectId: doc.id,
+      projectNumber: p.projectNumber ?? "",
+      version: p.estimateVersion ?? 1,
+      reviewerName: p.reviewerName ?? null,
+      subtotalKobo: subtotal,
+      errorMarginPercent,
+      nightowlChargesKobo: Math.round((subtotal * nightowlPercent) / 100),
+      totalKobo:
+        subtotal +
+        Math.round((subtotal * errorMarginPercent) / 100) +
+        Math.round((subtotal * nightowlPercent) / 100),
       expiresAtMs: expiresMs,
-      lines: linesSnap.docs.map((d) => {
-        const x = d.data();
-        return {
-          id: d.id,
-          category: x.category ?? "",
-          item: x.item ?? "",
-          quantity: x.quantity ?? 0,
-          unitPriceKobo: x.unitPriceKobo ?? 0,
-          amountKobo: x.amountKobo ?? 0,
-          addedByReviewer: x.addedByReviewer ?? false,
-        };
-      }),
+      // Every line is sent, ticked or not, so the reviewer sees the whole
+      // checklist and can tick something the office missed rather than only
+      // adjusting what was already priced.
+      lines: features.map((f) => ({
+        id: `${f.componentId}:${f.featureId}`,
+        category: f.category,
+        component: f.componentName,
+        item: f.item,
+        quantity: f.quantity,
+        unitPriceKobo: f.unitPriceKobo,
+        amountKobo: f.amountKobo,
+        included: f.included,
+        addedByReviewer: f.addedByReviewer,
+      })),
     };
   }
 );
@@ -332,11 +493,14 @@ export const openEstimateReview = onCall(
 // ---------------------------------------------------------------------------
 
 interface SubmittedLine {
+  /** `componentId:featureId` for an existing line; absent for a new one. */
   id?: string;
   item: string;
-  category?: string;
+  /** Which component a new line belongs to. */
+  componentId?: string;
   quantity: number;
   unitPriceKobo: number;
+  included?: boolean;
   note?: string;
 }
 
@@ -345,58 +509,55 @@ export const submitEstimateReview = onCall(
   async (request) => {
     const token = String(request.data?.token ?? "");
     const passcode = String(request.data?.passcode ?? "");
-    const lines = (request.data?.lines ?? []) as SubmittedLine[];
-    const note = String(request.data?.note ?? "").trim();
+    const db = getFirestore();
 
+    // Authenticated before the payload is looked at. Validating lines first
+    // leaked whether a token existed, via which error came back.
     if (!token || !passcode) {
       throw new HttpsError("invalid-argument", "Token and passcode are both required.");
     }
-
-    // Authenticate BEFORE inspecting the payload. Validating the lines first
-    // leaked whether a token existed: a bogus token with a non-empty payload
-    // returned "No lines were submitted" only when the token was real, which is
-    // enough to confirm a guess. Every pre-auth failure now returns the same
-    // text, so a prober learns nothing from the response.
     const doc = await findByToken(token);
     const rejected = () =>
       new HttpsError("permission-denied", "That link or passcode is not valid.");
     if (!doc) throw rejected();
 
-    const est = doc.data();
-    if ((est.reviewAttempts ?? 0) >= MAX_ATTEMPTS) throw rejected();
-    if (!hashesMatch(sha256(passcode), String(est.reviewPasscodeHash ?? ""))) {
+    const p = doc.data();
+    if (p.reviewedAt) {
+      throw new HttpsError("failed-precondition", "This review has already been submitted.");
+    }
+    const expiresMs = p.reviewExpiresAt?.toMillis?.() ?? 0;
+    if (!expiresMs || expiresMs < Date.now()) {
+      throw new HttpsError("failed-precondition", "This link has expired.");
+    }
+    if ((p.reviewAttempts ?? 0) >= MAX_ATTEMPTS) {
+      throw new HttpsError("resource-exhausted", "Too many incorrect attempts.");
+    }
+    if (!hashesMatch(sha256(passcode), String(p.reviewPasscodeHash ?? ""))) {
       await doc.ref.update({ reviewAttempts: FieldValue.increment(1) });
       throw rejected();
     }
 
-    // Past this point the caller holds a valid token and passcode, so specific
-    // messages are safe and genuinely useful to a real reviewer.
-    if (est.reviewedAt) {
-      throw new HttpsError("failed-precondition", "This review has already been submitted.");
+    const lines: SubmittedLine[] = Array.isArray(request.data?.lines)
+      ? request.data.lines
+      : [];
+    const note = String(request.data?.note ?? "").trim();
+    if (lines.length === 0) {
+      throw new HttpsError("invalid-argument", "Send at least one line.");
     }
-    const expiresMs = est.reviewExpiresAt?.toMillis?.() ?? 0;
-    if (!expiresMs || expiresMs < Date.now()) {
-      throw new HttpsError("failed-precondition", "This link has expired.");
-    }
-    if (!Array.isArray(lines) || lines.length === 0) {
-      throw new HttpsError("invalid-argument", "No lines were submitted.");
-    }
-    // A bound on the payload: a reviewer adding a few items is expected, tens of
-    // thousands is not, and the batch has limits.
     if (lines.length > 400) {
       throw new HttpsError("invalid-argument", "Too many lines in one submission.");
     }
 
-    const db = getFirestore();
-    const existing = await doc.ref.collection("lines").get();
-    const existingById = new Map(existing.docs.map((d) => [d.id, d]));
+    const scope: string[] = Array.isArray(p.reviewComponentIds)
+      ? p.reviewComponentIds.map(String)
+      : [];
+    const existing = await loadFeatures(doc.id, scope);
+    const byKey = new Map(existing.map((f) => [`${f.componentId}:${f.featureId}`, f]));
 
     let batch = db.batch();
     let ops = 0;
-    let subtotal = 0;
     let changed = 0;
     let added = 0;
-
     const commitIfFull = async () => {
       if (ops >= 400) {
         await batch.commit();
@@ -405,106 +566,151 @@ export const submitEstimateReview = onCall(
       }
     };
 
-    for (const line of lines) {
-      const quantity = Number(line.quantity) || 0;
-      const unitPriceKobo = Math.max(0, Math.round(Number(line.unitPriceKobo) || 0));
-      const amountKobo = Math.round(quantity * unitPriceKobo);
-      subtotal += amountKobo;
+    const seen = new Set<string>();
 
-      if (line.id && existingById.has(line.id)) {
-        const prev = existingById.get(line.id)!;
-        const before = prev.data();
-        if (before.quantity !== quantity || before.unitPriceKobo !== unitPriceKobo) {
-          changed += 1;
-        }
-        batch.update(prev.ref, {
-          quantity,
-          unitPriceKobo,
-          amountKobo,
-          reviewerNote: line.note ?? null,
-        });
-        existingById.delete(line.id);
-      } else {
-        added += 1;
-        batch.set(doc.ref.collection("lines").doc(), {
-          // Blank rather than guessed. The previous fallback read `est.lines`,
-          // which does not exist — lines are a subcollection — so every added row
-          // landed under "kitchen" regardless of what it was, filing a reviewer's
-          // closet handle beneath someone else's kitchen. An empty category groups
-          // it under "Added during review", which is what it actually is.
-          category: line.category ?? "",
+    for (const line of lines) {
+      const quantity = Math.max(0, Number(line.quantity) || 0);
+      const unitPriceKobo = Math.max(0, Math.round(Number(line.unitPriceKobo) || 0));
+      const amountKobo = quantity * unitPriceKobo;
+      const included = line.included !== false;
+
+      const prev = line.id ? byKey.get(line.id) : undefined;
+      if (prev) {
+        seen.add(line.id!);
+        const moved =
+          prev.quantity !== quantity ||
+          prev.unitPriceKobo !== unitPriceKobo ||
+          prev.included !== included;
+        if (moved) changed += 1;
+
+        batch.update(
+          db.doc(
+            `projects/${doc.id}/components/${prev.componentId}/features/${prev.featureId}`
+          ),
+          {
+            quantity,
+            unitPriceKobo,
+            amountKobo,
+            included,
+            // Only stamped when the figure actually moved, so an untouched line is
+            // not flagged for the admin's attention.
+            ...(moved
+              ? {
+                  reviewerNote: line.note ?? null,
+                  reviewedFromKobo: prev.amountKobo,
+                  reviewedByExternal: true,
+                }
+              : {}),
+          }
+        );
+        ops += 1;
+        await commitIfFull();
+        continue;
+      }
+
+      /*
+       * A new line needs a component to live under, and the reviewer says which.
+       *
+       * Checked against what they were actually shown, so a component id cannot be
+       * used to write into part of the project outside the review's scope. Falling
+       * back to "the first component" was wrong: the client sends the group the
+       * reviewer clicked "Add to" under, and quietly filing a closet handle beneath
+       * the kitchen is worse than refusing, because nobody would notice.
+       *
+       * The single-component case still falls through, since there is only one
+       * answer it could be.
+       */
+      const requested =
+        line.componentId &&
+        existing.find((f) => f.componentId === line.componentId)?.componentId;
+      const onlyOne =
+        existing.length > 0 &&
+        existing.every((f) => f.componentId === existing[0].componentId)
+          ? existing[0].componentId
+          : undefined;
+      const target = requested || onlyOne;
+      if (!target) {
+        throw new HttpsError(
+          "invalid-argument",
+          `Could not tell which component "${String(line.item ?? "a new line").slice(0, 60)}" belongs to. Reload the link and add it again.`
+        );
+      }
+
+      added += 1;
+      batch.set(
+        db.collection(`projects/${doc.id}/components/${target}/features`).doc(),
+        {
           item: String(line.item ?? "").slice(0, 200),
+          kind: "material",
+          actualQuantity: null,
           quantity,
           unitPriceKobo,
           amountKobo,
+          included,
           order: 9000 + added,
           addedByReviewer: true,
           reviewerNote: line.note ?? null,
-        });
-      }
+          createdAt: FieldValue.serverTimestamp(),
+          createdBy: "external:reviewer",
+        }
+      );
       ops += 1;
       await commitIfFull();
     }
 
-    // Lines the reviewer omitted are zeroed rather than deleted: the estimate is
-    // a record of what was proposed, and silently removing a line would hide
-    // that the reviewer disagreed with it.
-    for (const [, leftover] of existingById) {
-      batch.update(leftover.ref, {
-        quantity: 0,
-        amountKobo: 0,
-        reviewerNote: "Removed by reviewer",
-      });
+    // A line the reviewer left out is unticked rather than deleted: the office
+    // wrote it for a reason, and removing it outright would hide the disagreement.
+    for (const f of existing) {
+      const key = `${f.componentId}:${f.featureId}`;
+      if (seen.has(key) || !f.included) continue;
+      batch.update(
+        db.doc(`projects/${doc.id}/components/${f.componentId}/features/${f.featureId}`),
+        {
+          included: false,
+          reviewerNote: "Excluded by reviewer",
+          reviewedFromKobo: f.amountKobo,
+          reviewedByExternal: true,
+        }
+      );
       ops += 1;
+      changed += 1;
       await commitIfFull();
     }
 
-    const errorMarginPercent = est.errorMarginPercent ?? 0;
-    // The stored rate is preferred. Falling back to the ratio was rounding to a
-    // whole percent, so a 7.5% charge came back from review as 8% — the reviewer
-    // cannot touch this rate, yet submitting silently reset it. Estimates issued
-    // before the rate was stored still need the ratio, just not the rounding.
-    const nightowlPercent =
-      typeof est.nightowlChargePercent === "number"
-        ? est.nightowlChargePercent
-        : est.subtotalKobo
-          ? ((est.nightowlChargesKobo ?? 0) / est.subtotalKobo) * 100
-          : 0;
-    // Both percentages apply to the subtotal only, never to each other, matching
-    // computeEstimateTotals on the client.
+    if (ops > 0) await batch.commit();
+
+    // Totals are rebuilt from what is now ticked, rather than from the submitted
+    // payload, so the stored figure is the sum of the rows that actually exist.
+    const subtotal = await rollUp(doc.id);
+    const errorMarginPercent = Number(p.errorMarginPercent ?? DEFAULT_ERROR_MARGIN_PERCENT);
+    const nightowlPercent = Number(p.nightowlChargePercent ?? DEFAULT_NIGHTOWL_CHARGE_PERCENT);
     const errorMarginKobo = Math.round((subtotal * errorMarginPercent) / 100);
     const nightowlChargesKobo = Math.round((subtotal * nightowlPercent) / 100);
 
-    batch.update(doc.ref, {
-      status: "reviewed",
-      subtotalKobo: subtotal,
-      errorMarginKobo,
-      // Persisted so the rate survives a later edit that empties the subtotal.
-      nightowlChargePercent: nightowlPercent,
-      nightowlChargesKobo,
-      totalKobo: subtotal + errorMarginKobo + nightowlChargesKobo,
+    await doc.ref.update({
+      estimateStatus: "reviewed",
       reviewedAt: FieldValue.serverTimestamp(),
       reviewNotes: note || null,
       // The token is cleared so the link cannot be reused after submission.
       reviewTokenHash: FieldValue.delete(),
       reviewPasscodeHash: FieldValue.delete(),
     });
-    await batch.commit();
 
     await db.collection("auditLog").add({
       actorUid: "external:reviewer",
-      actorEmail: est.reviewEmail ?? "unknown",
-      actorRole: "admin",
+      actorEmail: String(p.reviewEmail ?? ""),
+      actorRole: "reviewer",
       action: "estimate_review_submit",
-      collectionName: "estimates",
+      collectionName: "projects",
       docId: doc.id,
       summary:
-        `Reviewer submitted: ${changed} line(s) changed, ${added} added, ` +
+        `Reviewer returned ${p.projectNumber ?? "a project"}: ` +
+        `${changed} changed, ${added} added, ` +
         `new total ${subtotal + errorMarginKobo + nightowlChargesKobo} kobo`,
       at: FieldValue.serverTimestamp(),
     });
 
-    // Notify the business. A review nobody hears about is a review that stalls.
+    // Best effort: a mail failure must not fail a submission that has been written.
     try {
       const company = await companyDetails();
       const html = renderEmail({
@@ -513,27 +719,40 @@ export const submitEstimateReview = onCall(
         heading: "A reviewer has returned an estimate",
         body:
           paragraph(
-            `${est.reviewerName || est.reviewEmail || "The reviewer"} has submitted their review of ${est.projectNumber ?? "an estimate"}.`
+            `${p.reviewerName || p.reviewEmail || "A reviewer"} has submitted their review of ${
+              p.projectNumber ?? "a project"
+            }.`
           ) +
           detailTable([
-            ["Project", String(est.projectNumber ?? "")],
-            ["Version", `v${est.version ?? 1}`],
+            ["Project", String(p.projectNumber ?? "")],
             ["Lines changed", String(changed)],
             ["Lines added", String(added)],
           ]) +
-          (note ? paragraph(`Reviewer note: ${note}`) : ""),
-        footerNote: "Open the project in the admin dashboard to accept or adjust.",
+          totalRow(
+            "Revised total",
+            "₦" +
+              Math.round(
+                (subtotal + errorMarginKobo + nightowlChargesKobo) / 100
+              ).toLocaleString("en-US")
+          ) +
+          (note ? paragraph(`Their note: ${note}`) : ""),
+        footerNote: "Open the project in the admin to see what changed.",
       });
       await mailer().send({
         to: [{ email: company.email, name: company.name }],
-        subject: `Estimate reviewed: ${est.projectNumber ?? "project"}`,
+        subject: `Estimate reviewed: ${p.projectNumber ?? "project"}`,
         html,
         tags: ["estimate-review"],
       });
     } catch {
-      // A notification failure must not fail the submission the reviewer just made.
+      // Logged by the mailer; the review is already saved.
     }
 
-    return { ok: true, changed, added, totalKobo: subtotal + errorMarginKobo + nightowlChargesKobo };
+    return {
+      ok: true,
+      changed,
+      added,
+      totalKobo: subtotal + errorMarginKobo + nightowlChargesKobo,
+    };
   }
 );

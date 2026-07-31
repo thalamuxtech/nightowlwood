@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { Check, Copy, Send, TriangleAlert, X } from "lucide-react";
 import { getFirebaseApp } from "@/lib/firebase";
+import { formatNaira } from "@/lib/erp/money";
 import {
   Button,
   NumberField,
@@ -36,17 +37,17 @@ interface SendResult {
 }
 
 export function SendForReviewModal({
-  estimateId,
+  projectId,
   projectNumber,
   version,
-  lineCount,
+  components,
   onClose,
   onSent,
 }: {
-  estimateId: string;
+  projectId: string;
   projectNumber: string;
   version: number;
-  lineCount: number;
+  components: Array<{ id: string; name: string; estimatedCostKobo: number }>;
   onClose: () => void;
   onSent: () => void;
 }) {
@@ -58,6 +59,18 @@ export function SendForReviewModal({
   const [error, setError] = useState("");
   const [sent, setSent] = useState<SendResult | null>(null);
   const [copied, setCopied] = useState<"link" | "code" | null>(null);
+  /**
+   * Which components the reviewer is asked to look at.
+   *
+   * All of them by default, since that is the usual case. Narrowing matters when the
+   * reviewer is a specialist — a kitchen fabricator has no useful opinion on the
+   * door schedule, and sending them the lot invites edits outside their competence.
+   */
+  const [scope, setScope] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(components.map((c) => [c.id, true]))
+  );
+
+  const chosen = components.filter((c) => scope[c.id]);
 
   const functions = useMemo(() => getFunctions(getFirebaseApp(), REGION), []);
 
@@ -90,23 +103,27 @@ export function SendForReviewModal({
       setError("Enter a valid email address for the reviewer.");
       return;
     }
+    if (chosen.length === 0) {
+      setError("Pick at least one component for the reviewer to look at.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const fn = httpsCallable<
         {
-          estimateId: string;
+          projectId: string;
           email: string;
           reviewerName: string;
           validDays: number;
           message: string;
           siteUrl: string;
-          lineCount: number;
+          componentIds: string[];
         },
         SendResult
       >(functions, "sendEstimateForReview");
       const res = await fn({
-        estimateId,
+        projectId,
         email: address,
         reviewerName: reviewerName.trim(),
         validDays: Math.max(1, Math.min(30, Number(validDays) || 7)),
@@ -114,7 +131,8 @@ export function SendForReviewModal({
         // The link has to point at wherever this admin is being used, or a
         // reviewer opens a URL on the wrong host.
         siteUrl: window.location.origin,
-        lineCount,
+        // Empty would be ambiguous server-side, so all-selected is sent explicitly.
+        componentIds: chosen.map((c) => c.id),
       });
       setSent(res.data);
       onSent();
@@ -282,9 +300,55 @@ export function SendForReviewModal({
               />
             </div>
 
+            <div className="mt-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-cream-300">What should they review?</p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setScope(
+                      Object.fromEntries(
+                        components.map((c) => [c.id, chosen.length !== components.length])
+                      )
+                    )
+                  }
+                  className="cursor-pointer text-xs text-cream-400 transition-colors hover:text-brass-300"
+                >
+                  {chosen.length === components.length ? "Clear all" : "Select all"}
+                </button>
+              </div>
+              <div className="mt-2 space-y-1.5">
+                {components.map((c) => (
+                  <label
+                    key={c.id}
+                    htmlFor={`scope-${c.id}`}
+                    className="flex cursor-pointer items-center gap-3 rounded-xl border border-night-700/50 bg-night-950/40 px-3 py-2 text-sm text-cream-200"
+                  >
+                    <input
+                      id={`scope-${c.id}`}
+                      type="checkbox"
+                      checked={!!scope[c.id]}
+                      onChange={(e) =>
+                        setScope((p) => ({ ...p, [c.id]: e.target.checked }))
+                      }
+                      className="h-4 w-4 cursor-pointer accent-brass-500"
+                    />
+                    <span className="flex-1 truncate">{c.name}</span>
+                    <span className="text-xs text-cream-500">
+                      {formatNaira(c.estimatedCostKobo)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {components.length === 0 && (
+                <p className="mt-2 text-xs text-amber-300">
+                  This project has no components yet, so there is nothing to review.
+                </p>
+              )}
+            </div>
+
             <p className="mt-4 text-xs text-cream-500">
-              {lineCount} priced {lineCount === 1 ? "line" : "lines"} will be sent.
-              Sending replaces any earlier review link for this estimate.
+              Sending replaces any earlier review link for this project.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
