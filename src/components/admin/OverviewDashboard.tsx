@@ -48,7 +48,7 @@ import {
   DEFAULT_RANGE_KEY,
   type ReportRange,
 } from "@/lib/erp/ranges";
-import { OperatorDashboard } from "@/components/admin/dashboards/OperatorDashboard";
+import { WorkLogScreen } from "@/components/admin/payroll/WorkLogScreen";
 import { LEGEND_STYLE, TOOLTIP_PROPS } from "@/components/admin/ui/chartTheme";
 
 
@@ -395,7 +395,12 @@ export function OverviewDashboard() {
 
   // Returned before the company panels so an operator never renders them, even
   // briefly, and never subscribes to data they cannot read.
-  if (isOperator) return <OperatorDashboard />;
+  //
+  // The work log itself, not a dashboard of it: logging work is the entirety of
+  // what an operator is here to do, and a landing page whose only purpose is to
+  // link onward to the one screen that matters is a step in the way. The shell
+  // drops its navigation for this role for the same reason.
+  if (isOperator) return <WorkLogScreen />;
 
   /** Job counts per customer, for the manager view that omits money. */
   const jobsPerCustomer = useMemo(() => {

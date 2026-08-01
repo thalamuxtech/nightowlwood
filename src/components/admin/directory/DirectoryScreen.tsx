@@ -10,20 +10,28 @@ import {
   query,
   serverTimestamp,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import {
+  Check,
   Contact,
+  Copy,
   HardHat,
+  KeyRound,
   Loader2,
   PenLine,
   Plus,
   RotateCcw,
   Search,
   ShieldAlert,
+  Trash2,
   Truck,
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { getDb } from "@/lib/firebase";
+import { getDb, getFirebaseApp } from "@/lib/firebase";
+
+/** Must match the region the callables are deployed to. */
+const FN_REGION = "europe-west1";
 import { COL } from "@/lib/erp/collections";
 import {
   createCustomer,
@@ -79,6 +87,10 @@ interface StaffRow {
   isOperator: boolean;
   isAssistant: boolean;
   active: boolean;
+  /** Whether a work-log access code is currently issued. The code itself is
+   *  never readable — only its hash is stored — so this is the presence of one. */
+  hasAccessCode: boolean;
+  accessCodeLastUsedMs: number | null;
 }
 
 interface SupplierRow {
@@ -610,6 +622,8 @@ function StaffList({ actor, onError }: { actor: Actor; onError: (m: string) => v
               isOperator: x.isOperator !== false,
               isAssistant: x.isAssistant !== false,
               active: x.active !== false,
+              hasAccessCode: typeof x.accessCodeHash === "string",
+              accessCodeLastUsedMs: x.accessCodeLastUsedAt?.toMillis?.() ?? null,
             };
           })
         );
@@ -676,6 +690,15 @@ function StaffList({ actor, onError }: { actor: Actor; onError: (m: string) => v
                     .join(" and ") || "Not set"
                 }
               />
+              {canEdit && r.active && (
+                <AccessCodePanel
+                  staffId={r.id}
+                  staffName={r.name}
+                  hasCode={r.hasAccessCode}
+                  lastUsedMs={r.accessCodeLastUsedMs}
+                  onError={onError}
+                />
+              )}
             </>
           }
           form={
@@ -971,6 +994,150 @@ function SupplierForm({
         </Button>
       </div>
     </section>
+  );
+}
+
+/**
+ * Issues and withdraws a staff member's work-log access code.
+ *
+ * The code is shown once, by the call that creates it, and never again — only its
+ * hash is stored, so there is nothing to look up later. The panel says so where
+ * someone would otherwise assume they can come back for it, and issuing again is
+ * the recovery path, which also invalidates whatever was issued before.
+ */
+function AccessCodePanel({
+  staffId,
+  staffName,
+  hasCode,
+  lastUsedMs,
+  onError,
+}: {
+  staffId: string;
+  staffName: string;
+  hasCode: boolean;
+  lastUsedMs: number | null;
+  onError: (m: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [issued, setIssued] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const functions = useMemo(() => getFunctions(getFirebaseApp(), FN_REGION), []);
+
+  async function issue() {
+    if (
+      hasCode &&
+      !window.confirm(
+        `${staffName} already has a code. Issuing a new one stops the old one working immediately. Continue?`
+      )
+    )
+      return;
+
+    setBusy(true);
+    try {
+      const fn = httpsCallable<{ staffId: string }, { code: string }>(
+        functions,
+        "issueOperatorCode"
+      );
+      const res = await fn({ staffId });
+      setIssued(res.data.code);
+    } catch (e: unknown) {
+      onError(
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message: unknown }).message)
+          : "Could not issue a code."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke() {
+    if (!window.confirm(`Withdraw ${staffName}'s code? They will be signed out.`))
+      return;
+    setBusy(true);
+    try {
+      const fn = httpsCallable<{ staffId: string }, { ok: boolean }>(
+        functions,
+        "revokeOperatorCode"
+      );
+      await fn({ staffId });
+      setIssued(null);
+    } catch (e: unknown) {
+      onError(
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message: unknown }).message)
+          : "Could not withdraw the code."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-night-700/60 bg-night-950/40 p-4 sm:col-span-2">
+      <p className="text-xs uppercase tracking-wider text-cream-500">Work-log code</p>
+
+      {issued ? (
+        <div className="mt-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-display text-2xl tracking-[0.3em] text-brass-300">
+              {issued}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard
+                  .writeText(issued)
+                  .then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  })
+                  // Clipboard access can be refused; the code is on screen anyway.
+                  .catch(() => {});
+              }}
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-night-600 px-2.5 py-1 text-xs text-cream-300 transition-colors hover:border-brass-500/60 hover:text-brass-300"
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-cream-500">
+            Give this to {staffName}. It is shown once — only a hash is stored, so it
+            cannot be looked up again. Issue a new one if it is lost.
+          </p>
+        </div>
+      ) : (
+        <p className="mt-1.5 text-xs text-cream-500">
+          {hasCode
+            ? lastUsedMs
+              ? `A code is active. Last used ${new Date(lastUsedMs).toLocaleDateString("en-GB")}.`
+              : "A code is active but has not been used yet."
+            : "No code issued. They sign in with a code, not an email address."}
+        </p>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-3">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={issue}
+          className="flex cursor-pointer items-center gap-1.5 text-sm text-brass-300 transition-colors hover:text-brass-200 disabled:opacity-50"
+        >
+          <KeyRound size={14} /> {hasCode ? "Issue a new code" : "Issue a code"}
+        </button>
+        {hasCode && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={revoke}
+            className="flex cursor-pointer items-center gap-1.5 text-sm text-cream-500 transition-colors hover:text-red-400 disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Withdraw
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

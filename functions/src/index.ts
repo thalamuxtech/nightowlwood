@@ -295,6 +295,19 @@ export { getInvoicePdf, emailInvoice } from "./invoiceDocument";
 export { getEstimatePdf, emailEstimate } from "./estimateDocument";
 
 // ---------------------------------------------------------------------------
+// Operator access codes
+// ---------------------------------------------------------------------------
+
+// An operator reaches their work log with a short code rather than an email
+// login. See operatorAccess.ts for why, and for what the code does and does not
+// grant.
+export {
+  issueOperatorCode,
+  revokeOperatorCode,
+  redeemOperatorCode,
+} from "./operatorAccess";
+
+// ---------------------------------------------------------------------------
 // Scheduled alerts
 // ---------------------------------------------------------------------------
 

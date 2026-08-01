@@ -40,6 +40,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } fr
 import { getFirebaseAuth } from "@/lib/firebase";
 import { OwlMark } from "@/components/site/OwlMark";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { OperatorCodeLogin } from "@/components/admin/OperatorCodeLogin";
 import type { Capability } from "@/lib/erp/permissions";
 import { ROLE_LABELS } from "@/lib/erp/enums";
 import { AdminClock } from "@/components/admin/ui/AdminClock";
@@ -115,7 +116,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "Website",
     items: [
-      { href: "/admin/submissions/", label: "Submissions", icon: Inbox, capability: "customer.view" },
+      // customer.edit, not customer.view: a manager needs to see customers to
+      // raise a job against one, but the website's enquiry inbox is not their
+      // work, and gating it on view put the whole Website group in their sidebar.
+      { href: "/admin/submissions/", label: "Submissions", icon: Inbox, capability: "customer.edit" },
       { href: "/admin/blog/", label: "Blog", icon: Newspaper, capability: "customer.edit" },
       {
         href: "/admin/work/",
@@ -164,19 +168,69 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <AdminUserContext.Provider value={user}>
-      <div className="flex min-h-svh bg-night-950">
-        <Sidebar email={user.email ?? ""} />
-        <main className="min-w-0 flex-1 px-5 pb-16 pt-24 sm:px-8 lg:pt-6">
-          <div className="mb-6 flex items-center justify-end gap-2.5 print:hidden">
-            <AdminClock />
-            <DemoDataButton />
-          </div>
-          <NoRoleNotice email={user.email ?? ""} />
-          <ActiveGroupTabs />
+      <RoleShell email={user.email ?? ""}>{children}</RoleShell>
+    </AdminUserContext.Provider>
+  );
+}
+
+/**
+ * The frame around a signed-in session, which differs by role.
+ *
+ * An operator gets no sidebar, no clock and no group tabs. Their entire use of the
+ * system is the work log form, so navigation would be a menu with one item on it —
+ * chrome around a single screen, on a phone, for someone standing at a machine.
+ * Everyone else gets the full shell.
+ *
+ * Split out of AdminShell because the role is only knowable inside the session
+ * provider, which AdminShell itself renders.
+ */
+function RoleShell({ email, children }: { email: string; children: ReactNode }) {
+  const { role, ready } = useErpSession();
+
+  if (ready && role === "operator") {
+    return (
+      <div className="min-h-svh bg-night-950">
+        <OperatorBar />
+        <main className="mx-auto min-w-0 max-w-5xl px-5 pb-16 pt-6 sm:px-8">
           {children}
         </main>
       </div>
-    </AdminUserContext.Provider>
+    );
+  }
+
+  return (
+    <div className="flex min-h-svh bg-night-950">
+      <Sidebar email={email} />
+      <main className="min-w-0 flex-1 px-5 pb-16 pt-24 sm:px-8 lg:pt-6">
+        <div className="mb-6 flex items-center justify-end gap-2.5 print:hidden">
+          <AdminClock />
+          <DemoDataButton />
+        </div>
+        <NoRoleNotice email={email} />
+        <ActiveGroupTabs />
+        {children}
+      </main>
+    </div>
+  );
+}
+
+/** Minimal header for an operator: who they are, and the way out. */
+function OperatorBar() {
+  const { displayName } = useErpSession();
+  return (
+    <header className="flex items-center justify-between border-b border-night-700/60 bg-night-900/70 px-5 py-3 print:hidden">
+      <span className="flex items-center gap-2.5 text-brass-400">
+        <OwlMark size={28} animate={false} />
+        <span className="text-sm text-cream-200">{displayName || "Work log"}</span>
+      </span>
+      <button
+        type="button"
+        onClick={() => signOut(getFirebaseAuth())}
+        className="flex cursor-pointer items-center gap-1.5 text-xs text-cream-400 transition-colors hover:text-brass-300"
+      >
+        <LogOut size={14} /> Sign out
+      </button>
+    </header>
   );
 }
 
@@ -526,6 +580,8 @@ function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [filled, setFilled] = useState<string | null>(null);
+  /** Operators sign in with a code instead; see OperatorCodeLogin. */
+  const [codeMode, setCodeMode] = useState(false);
 
   async function signIn(withEmail: string, withPassword: string) {
     setBusy(true);
@@ -557,6 +613,8 @@ function LoginScreen() {
     setFilled(demoEmail);
     await signIn(demoEmail, DEMO_PASSWORD);
   }
+
+  if (codeMode) return <OperatorCodeLogin onBack={() => setCodeMode(false)} />;
 
   return (
     <div className="flex min-h-svh items-center justify-center bg-night-950 px-5">
@@ -641,6 +699,16 @@ function LoginScreen() {
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
+
+        {/* Operators do not have an email login at all, so this is not an
+            alternative path to the same place — it is the only way in for them. */}
+        <button
+          type="button"
+          onClick={() => setCodeMode(true)}
+          className="mt-5 w-full cursor-pointer rounded-xl border border-night-600 bg-night-800/40 py-3 text-sm text-cream-300 transition-colors hover:border-brass-500/60 hover:text-brass-300"
+        >
+          I have a work-log code
+        </button>
 
         {/* Demo sign-ins. Each is an ordinary staff account, so what a reviewer
             sees is exactly what that role sees — the buttons only save typing. */}

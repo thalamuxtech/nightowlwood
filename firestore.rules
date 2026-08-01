@@ -168,6 +168,14 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // Failed work-log code attempts, per caller. Written only by the redeem
+    // function through the Admin SDK, which bypasses these rules; closing the
+    // collection to clients means a caller cannot clear its own lockout, and
+    // cannot read the buckets to learn how many codes are being guessed.
+    match /accessCodeAttempts/{callerId} {
+      allow read, write: if false;
+    }
+
     match /customers/{id} {
       allow read: if isStaff();
       allow create, update: if isOps();
