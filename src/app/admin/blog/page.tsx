@@ -30,6 +30,7 @@ import {
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getDb, getFirebaseStorage } from "@/lib/firebase";
 import type { Post } from "@/lib/types";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 function slugify(title: string) {
   return title
@@ -40,7 +41,7 @@ function slugify(title: string) {
     .slice(0, 80);
 }
 
-export default function BlogAdminPage() {
+function BlogAdminPageInner() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Post | "new" | null>(null);
@@ -408,5 +409,17 @@ function PostEditor({ post, onClose }: { post: Post | null; onClose: () => void 
         </form>
       </motion.div>
     </motion.div>
+  );
+}
+
+/**
+ * Guarded at the route rather than inside the screen: hiding the sidebar link is
+ * not access control, since the URL can still be typed or bookmarked.
+ */
+export default function BlogAdminPage() {
+  return (
+    <RequireCapability capability="customer.edit">
+      <BlogAdminPageInner />
+    </RequireCapability>
   );
 }

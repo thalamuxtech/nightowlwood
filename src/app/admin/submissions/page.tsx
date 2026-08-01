@@ -5,6 +5,7 @@ import { GraduationCap, Inbox, MailOpen, Users } from "lucide-react";
 import { RecordsBoard } from "@/components/admin/RecordsBoard";
 import { SubscribersPanel } from "@/components/admin/SubscribersPanel";
 import { InquiriesPanel } from "@/components/admin/InquiriesPanel";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 type Tab = "messages" | "subscribers" | "internships" | "inquiries";
 
@@ -22,7 +23,7 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof Inbox }> = [
  * its own. Grouping them by what they are, inbound submissions, keeps the nav
  * short and puts related work side by side.
  */
-export default function SubmissionsPage() {
+function SubmissionsPageInner() {
   const [tab, setTab] = useState<Tab>("messages");
 
   return (
@@ -82,5 +83,17 @@ export default function SubmissionsPage() {
         {tab === "inquiries" && <InquiriesPanel />}
       </div>
     </div>
+  );
+}
+
+/**
+ * Guarded at the route rather than inside the screen: hiding the sidebar link is
+ * not access control, since the URL can still be typed or bookmarked.
+ */
+export default function SubmissionsPage() {
+  return (
+    <RequireCapability capability="customer.edit">
+      <SubmissionsPageInner />
+    </RequireCapability>
   );
 }

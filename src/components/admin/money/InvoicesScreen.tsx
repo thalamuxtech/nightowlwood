@@ -59,7 +59,8 @@ interface SourceOption {
  */
 export function InvoicesScreen() {
   const session = useErpSession();
-  const isAdmin = session.role === "admin";
+  // Marking paid and emailing an invoice. Grantable, so read as a capability.
+  const isAdmin = session.can("invoice.markPaid");
   const canCreate = session.can("invoice.create");
 
   const [rows, setRows] = useState<InvoiceRow[]>([]);

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { WageRunScreen } from "@/components/admin/payroll/WageRunScreen";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "Payroll",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function PayrollPage() {
-  return <WageRunScreen />;
+  return (
+    <RequireCapability capability="wage.run">
+      <WageRunScreen />
+    </RequireCapability>
+  );
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { JobIntakeForm } from "@/components/admin/services/JobIntakeForm";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "New Job",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function NewJobPage() {
-  return <JobIntakeForm />;
+  return (
+    <RequireCapability capability="job.create">
+      <JobIntakeForm />
+    </RequireCapability>
+  );
 }

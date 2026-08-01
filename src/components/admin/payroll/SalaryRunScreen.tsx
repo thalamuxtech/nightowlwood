@@ -93,7 +93,8 @@ function formatMonth(ms: number | null): string {
  */
 export function SalaryRunScreen() {
   const session = useErpSession();
-  const isAdmin = session.role === "admin";
+  // Capability, not role: see WageRunScreen.
+  const isAdmin = session.can("wage.run");
 
   const [month, setMonth] = useState(() => {
     const d = new Date();
@@ -179,9 +180,11 @@ export function SalaryRunScreen() {
     () => ({
       uid: session.user?.uid ?? "",
       email: session.user?.email ?? "",
-      role: "admin" as const,
+      // The caller.s real role: a granted manager reaching this writes audit
+      // entries as a manager, not as an administrator they are not.
+      role: (session.role ?? "manager") as "admin" | "manager" | "operator",
     }),
-    [session.user]
+    [session.user, session.role]
   );
 
   const runPreview = useCallback(async () => {
@@ -624,7 +627,7 @@ function DraftEditor({
   onDone,
 }: {
   run: SalaryRunRow;
-  actor: { uid: string; email: string; role: "admin" };
+  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
   onError: (message: string) => void;
   onDone: () => void;
 }) {

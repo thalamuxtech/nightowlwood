@@ -64,7 +64,8 @@ interface ReadingRow {
  */
 export function MetersScreen() {
   const session = useErpSession();
-  const isAdmin = session.role === "admin";
+  // Correcting and removing meter readings.
+  const isAdmin = session.can("record.delete");
   const canRecord = session.can("expense.create");
 
   const [rows, setRows] = useState<ReadingRow[]>([]);

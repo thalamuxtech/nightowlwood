@@ -7,6 +7,7 @@ import { getDb } from "@/lib/firebase";
 import { EmailTester } from "@/components/admin/EmailTester";
 import { ReportRangesEditor } from "@/components/admin/ReportRangesEditor";
 import type { SiteSettings } from "@/lib/types";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 const DEFAULTS: SiteSettings = {
   contactEmail: "info@nightowl.com.ng",
@@ -24,7 +25,7 @@ const FIELDS: { key: keyof SiteSettings; label: string; placeholder: string; typ
   { key: "announcement", label: "Announcement banner (optional)", placeholder: "e.g. Closed for Sallah break until…", type: "text" },
 ];
 
-export default function SettingsPage() {
+function SettingsPageInner() {
   const [settings, setSettings] = useState<SiteSettings>(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -115,5 +116,17 @@ export default function SettingsPage() {
         <EmailTester />
       </div>
     </div>
+  );
+}
+
+/**
+ * Guarded at the route rather than inside the screen: hiding the sidebar link is
+ * not access control, since the URL can still be typed or bookmarked.
+ */
+export default function SettingsPage() {
+  return (
+    <RequireCapability capability="settings.change">
+      <SettingsPageInner />
+    </RequireCapability>
   );
 }

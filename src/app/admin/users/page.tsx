@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { UsersManager } from "@/components/admin/UsersManager";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "Users & Roles",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function AdminUsersPage() {
-  return <UsersManager />;
+  return (
+    <RequireCapability capability="user.manage">
+      <UsersManager />
+    </RequireCapability>
+  );
 }

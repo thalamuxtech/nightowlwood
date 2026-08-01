@@ -49,7 +49,8 @@ interface LoanRow {
  */
 export function LoansScreen() {
   const session = useErpSession();
-  const isAdmin = session.role === "admin";
+  // Approving and settling loans, which an admin may delegate.
+  const isAdmin = session.can("loan.approve");
   const canRequest = session.can("loan.request");
 
   const [rows, setRows] = useState<LoanRow[]>([]);

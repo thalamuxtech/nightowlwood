@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { MetersScreen } from "@/components/admin/money/MetersScreen";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "Power Meters",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function MetersPage() {
-  return <MetersScreen />;
+  return (
+    <RequireCapability capability="expense.view">
+      <MetersScreen />
+    </RequireCapability>
+  );
 }

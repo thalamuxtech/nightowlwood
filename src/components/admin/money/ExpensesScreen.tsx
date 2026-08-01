@@ -63,7 +63,9 @@ const RANGES: Array<{ key: RangeKey; label: string; days: number | null }> = [
 export function ExpensesScreen() {
   const session = useErpSession();
   const canRecord = session.can("expense.create");
-  const isAdmin = session.role === "admin";
+  // Editing and deleting a recorded expense, by capability rather than role, so
+  // an admin who grants it to a bookkeeper gets what they intended.
+  const isAdmin = session.can("record.delete");
 
   const [rows, setRows] = useState<ExpenseRow[]>([]);
   const [loading, setLoading] = useState(true);

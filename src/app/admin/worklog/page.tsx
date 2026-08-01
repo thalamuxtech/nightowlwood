@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { WorkLogScreen } from "@/components/admin/payroll/WorkLogScreen";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "Work Log",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function WorkLogPage() {
-  return <WorkLogScreen />;
+  return (
+    <RequireCapability capability="worklog.create">
+      <WorkLogScreen />
+    </RequireCapability>
+  );
 }

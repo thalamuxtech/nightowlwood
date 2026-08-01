@@ -39,7 +39,8 @@ interface RateRow {
  */
 export function WageRatesScreen() {
   const session = useErpSession();
-  const isAdmin = session.role === "admin";
+  // Capability, not role: an admin may grant rate-keeping to a payroll clerk.
+  const isAdmin = session.can("wage.editRates");
 
   const [rates, setRates] = useState<RateRow[]>([]);
   const [loading, setLoading] = useState(true);

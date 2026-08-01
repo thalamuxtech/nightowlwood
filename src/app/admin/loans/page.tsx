@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LoansScreen } from "@/components/admin/payroll/LoansScreen";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "Loans & Advances",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function LoansPage() {
-  return <LoansScreen />;
+  return (
+    <RequireCapability capability="loan.request">
+      <LoansScreen />
+    </RequireCapability>
+  );
 }

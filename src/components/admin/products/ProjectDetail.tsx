@@ -382,7 +382,7 @@ export function ProjectDetail() {
           projectNumber={project.projectNumber}
           version={project.estimateVersion}
           customerEmail={customerEmail}
-          canEmail={session.role === "admin"}
+          canEmail={session.can("estimate.approve")}
           onClose={() => setViewingPdf(false)}
           onEmailed={(to) => notify(`Estimate emailed to ${to}.`)}
         />

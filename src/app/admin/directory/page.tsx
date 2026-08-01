@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DirectoryScreen } from "@/components/admin/directory/DirectoryScreen";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "Directory",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function DirectoryPage() {
-  return <DirectoryScreen />;
+  return (
+    <RequireCapability capability="customer.edit">
+      <DirectoryScreen />
+    </RequireCapability>
+  );
 }

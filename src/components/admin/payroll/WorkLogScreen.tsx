@@ -80,7 +80,9 @@ export function WorkLogScreen() {
   const session = useErpSession();
   const canLogForOthers = session.can("worklog.viewAll");
   const canLog = session.can("worklog.create");
-  const isAdmin = session.role === "admin";
+  // Wage figures and the delete control. Rate visibility is its own capability,
+  // so granting it does not also hand over the ability to remove a log.
+  const isAdmin = session.can("wage.viewRates");
 
   const [rows, setRows] = useState<LogRow[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);

@@ -89,6 +89,26 @@ const ACCOUNTS = [
       });
     }
 
+    /*
+     * An operator is linked to a staff record.
+     *
+     * The work-log rules match on `resource.data.staffId == myStaffId()`, reading
+     * `staffId` off the user document — so an operator without one can create a
+     * log but never read one back, and their own screen comes up empty with a
+     * permission error. Linking the demo account to a real staff member is what
+     * makes the operator portal actually usable.
+     */
+    let staffId;
+    if (a.role === "operator") {
+      const staff = await db
+        .collection("staff")
+        .where("active", "==", true)
+        .limit(1)
+        .get();
+      staffId = staff.empty ? undefined : staff.docs[0].id;
+      if (!staffId) console.log("  (no active staff to link the operator to)");
+    }
+
     // The role document is what the admin shell actually reads.
     await db.doc(`users/${a.uid}`).set(
       {
@@ -98,6 +118,7 @@ const ACCOUNTS = [
         phone: a.phone,
         active: true,
         demo: true,
+        ...(staffId ? { staffId } : {}),
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { JobsList } from "@/components/admin/services/JobsList";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "Service Jobs",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function JobsPage() {
-  return <JobsList />;
+  return (
+    <RequireCapability capability="job.view">
+      <JobsList />
+    </RequireCapability>
+  );
 }

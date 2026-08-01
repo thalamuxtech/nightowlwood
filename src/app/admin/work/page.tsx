@@ -29,10 +29,11 @@ import {
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getDb, getFirebaseStorage } from "@/lib/firebase";
 import type { PortfolioItem } from "@/lib/types";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 const CATEGORIES = ["Residential", "Commercial", "Joinery", "Custom"];
 
-export default function WorkManagerPage() {
+function WorkManagerPageInner() {
   const [items, setItems] = useState<PortfolioItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<PortfolioItem | "new" | null>(null);
@@ -367,5 +368,17 @@ function ItemModal({
         </form>
       </motion.div>
     </motion.div>
+  );
+}
+
+/**
+ * Guarded at the route rather than inside the screen: hiding the sidebar link is
+ * not access control, since the URL can still be typed or bookmarked.
+ */
+export default function WorkManagerPage() {
+  return (
+    <RequireCapability capability="customer.edit">
+      <WorkManagerPageInner />
+    </RequireCapability>
   );
 }

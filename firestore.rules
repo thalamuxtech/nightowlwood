@@ -227,19 +227,19 @@ service cloud.firestore {
     // =====================================================================
 
     match /serviceJobs/{jobId} {
-      allow read: if isStaff();
+      allow read: if isAdminOr('job.view');
       allow create, update: if isOps();
       allow delete: if isAdminOr('record.delete');
 
       match /lines/{lineId} {
-        allow read: if isStaff();
+        allow read: if isAdminOr('job.view');
         allow write: if isOps();
       }
 
       // Payments are financial history: recording is fine for ops, but editing
       // or removing a recorded payment is admin-only.
       match /payments/{paymentId} {
-        allow read: if isStaff();
+        allow read: if isAdminOr('job.view');
         allow create: if isOps();
         allow update, delete: if isAdmin();
       }
@@ -264,16 +264,16 @@ service cloud.firestore {
     // =====================================================================
 
     match /projects/{projectId} {
-      allow read: if isStaff();
+      allow read: if isAdminOr('project.view');
       allow create, update: if isOps();
       allow delete: if isAdminOr('record.delete');
 
       match /components/{componentId} {
-        allow read: if isStaff();
+        allow read: if isAdminOr('project.view');
         allow write: if isOps();
 
         match /features/{featureId} {
-          allow read: if isStaff();
+          allow read: if isAdminOr('project.view');
           allow write: if isOps();
         }
       }
@@ -288,18 +288,18 @@ service cloud.firestore {
     // bypasses these rules; external reviewers never hold a Firebase session, so no
     // client path is opened for them anywhere.
     match /estimates/{estimateId} {
-      allow read: if isStaff();
+      allow read: if isAdminOr('project.view');
       allow create, update: if false;
       allow delete: if isAdminOr('record.delete');
 
       match /lines/{lineId} {
-        allow read: if isStaff();
+        allow read: if isAdminOr('project.view');
         allow write: if false;
       }
     }
 
     match /estimateTemplates/{id} {
-      allow read: if isStaff();
+      allow read: if isAdminOr('project.view');
       allow write: if isAdmin();
     }
 
@@ -307,29 +307,34 @@ service cloud.firestore {
     // Money
     // =====================================================================
 
+    // Read gated on the capability, not merely on being ops. A manager without
+    // invoice.view could previously fetch the whole ledger by URL, because the
+    // rules were looser than the matrix the UI claimed to enforce.
     match /invoices/{id} {
-      allow read: if isOps();
-      allow create: if isOps();
+      allow read: if isAdminOr('invoice.view');
+      allow create: if isAdminOr('invoice.create');
 
-      // The paid state and its audit fields are held back from an ordinary
-      // manager: marking an invoice paid is the single most abusable action in
-      // the system. An admin may still grant it deliberately.
+      // The paid state and its audit fields are held back: marking an invoice
+      // paid is the single most abusable action in the system, so it needs its
+      // own grant. Everything else on an invoice is editable by whoever was
+      // given invoice.create — previously any manager at all, granted or not.
       allow update: if isAdminOr('invoice.markPaid')
-        || (isManager()
+        || (isAdminOr('invoice.create')
             && fieldsUnchanged(['status', 'paidAt', 'paidBy', 'amountPaidKobo', 'balanceKobo']));
 
       allow delete: if isAdminOr('record.delete');
     }
 
     match /expenses/{id} {
-      allow read, create: if isOps();
+      allow read: if isAdminOr('expense.view');
+      allow create: if isAdminOr('expense.create');
       allow update: if isAdminOr('expense.create');
       allow delete: if isAdminOr('record.delete');
     }
 
     match /meterReadings/{id} {
-      allow read: if isOps();
-      allow create: if isOps();
+      allow read: if isAdminOr('expense.view');
+      allow create: if isAdminOr('expense.create');
       allow update: if isAdminOr('expense.create');
       allow delete: if isAdminOr('record.delete');
     }
@@ -390,32 +395,32 @@ service cloud.firestore {
     // =====================================================================
 
     match /inventoryService/{id} {
-      allow read: if isStaff();
+      allow read: if isAdminOr('inventory.view');
       allow create, update: if isOps();
       allow delete: if isAdminOr('record.delete');
     }
 
     match /inventoryCompany/{itemId} {
-      allow read: if isStaff();
+      allow read: if isAdminOr('inventory.view');
       allow create, update: if isOps();
       allow delete: if isAdminOr('record.delete');
 
       // Movements are an append-only ledger: never edited, never deleted.
       match /movements/{movementId} {
-        allow read: if isStaff();
+        allow read: if isAdminOr('inventory.view');
         allow create: if isOps();
         allow update, delete: if false;
       }
     }
 
     match /inventoryProduct/{id} {
-      allow read: if isStaff();
+      allow read: if isAdminOr('inventory.view');
       allow create, update: if isOps();
       allow delete: if isAdminOr('record.delete');
     }
 
     match /consumableCycles/{id} {
-      allow read: if isStaff();
+      allow read: if isAdminOr('supplier.view');
       allow create, update: if isOps();
       allow delete: if isAdminOr('record.delete');
     }
@@ -425,13 +430,13 @@ service cloud.firestore {
     // =====================================================================
 
     match /suppliers/{id} {
-      allow read: if isStaff();
+      allow read: if isAdminOr('supplier.view');
       allow create, update: if isOps();
       allow delete: if isAdminOr('record.delete');
     }
 
     match /consumableBrands/{id} {
-      allow read: if isStaff();
+      allow read: if isAdminOr('supplier.view');
       allow create, update: if isOps();
       allow delete: if isAdminOr('record.delete');
     }
@@ -452,19 +457,24 @@ service cloud.firestore {
     // =====================================================================
 
     match /toolRequests/{requestId} {
-      // Operators may see and raise their own requests; issuing is ops.
-      allow read: if isOps()
+      // Anyone with tool.request may see the log; a staff member may always see a
+      // request raised in their own name, granted or not, because it is theirs.
+      allow read: if isAdminOr('tool.request')
         || (isStaff() && resource.data.requestedByStaffId == myStaffId());
 
-      allow create: if isOps()
+      allow create: if isAdminOr('tool.request')
         || (isStaff() && request.resource.data.requestedByStaffId == myStaffId());
 
-      allow update: if isOps();
+      allow update: if isAdminOr('tool.issue');
       allow delete: if isAdminOr('record.delete');
 
+      // Items cannot repeat the parent's ownership test — `resource` here is the
+      // item, which carries no staff id — so they follow the capability alone. A
+      // staff member reading their own request sees the header without the lines
+      // unless they hold tool.request, which every role that uses this screen does.
       match /items/{itemId} {
-        allow read: if isStaff();
-        allow write: if isOps();
+        allow read: if isAdminOr('tool.request');
+        allow write: if isAdminOr('tool.issue');
       }
     }
 

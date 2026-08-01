@@ -64,7 +64,9 @@ function toDateInput(d: Date): string {
  */
 export function WageRunScreen() {
   const session = useErpSession();
-  const isAdmin = session.role === "admin";
+  // Capability, not role: an admin can grant this, and a hardcoded role check
+  // would leave that grant inert while the database allowed the work.
+  const isAdmin = session.can("wage.run");
   // Reopening unwinds an approval, and for a paid run reverses a booked expense,
   // so it sits with approval rather than with ordinary editing.
   const canReopen = session.can("wage.approve");
@@ -118,9 +120,11 @@ export function WageRunScreen() {
     () => ({
       uid: session.user?.uid ?? "",
       email: session.user?.email ?? "",
-      role: "admin" as const,
+      // The caller.s real role: a granted manager reaching this writes audit
+      // entries as a manager, not as an administrator they are not.
+      role: (session.role ?? "manager") as "admin" | "manager" | "operator",
     }),
-    [session.user]
+    [session.user, session.role]
   );
 
   const runPreview = useCallback(async () => {
@@ -449,7 +453,7 @@ function DraftEditor({
   onDone,
 }: {
   run: RunRow;
-  actor: { uid: string; email: string; role: "admin" };
+  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
   onError: (message: string) => void;
   onDone: () => void;
 }) {

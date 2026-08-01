@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { InventoryScreen } from "@/components/admin/inventory/InventoryScreen";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "Inventory",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function InventoryPage() {
-  return <InventoryScreen />;
+  return (
+    <RequireCapability capability="inventory.view">
+      <InventoryScreen />
+    </RequireCapability>
+  );
 }

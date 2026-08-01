@@ -449,7 +449,12 @@ export function OverviewDashboard() {
         </div>
       ) : (
         <>
-          <InsightsPanel />
+          {/* Inside the finance guard, not above it. The panel subscribes to
+              expenses, wage runs, invoices and loans, so rendering it outside
+              defeated the gating around it: a manager was denied the revenue
+              tiles and then handed an insights panel built from payroll and
+              receivables. */}
+          {canSeeFinance && <InsightsPanel />}
 
           {/* Revenue line selector. Sits above the range chips because it changes
               what is being measured, not merely over what period. */}

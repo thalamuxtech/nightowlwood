@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ProcurementScreen } from "@/components/admin/inventory/ProcurementScreen";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "Suppliers & Brands",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function ProcurementPage() {
-  return <ProcurementScreen />;
+  return (
+    <RequireCapability capability="supplier.view">
+      <ProcurementScreen />
+    </RequireCapability>
+  );
 }

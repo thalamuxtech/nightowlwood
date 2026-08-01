@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ToolLogScreen } from "@/components/admin/inventory/ToolLogScreen";
+import { RequireCapability } from "@/components/admin/RequireCapability";
 
 export const metadata: Metadata = {
   title: "Tool Log",
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function ToolsPage() {
-  return <ToolLogScreen />;
+  return (
+    <RequireCapability capability="tool.request">
+      <ToolLogScreen />
+    </RequireCapability>
+  );
 }
