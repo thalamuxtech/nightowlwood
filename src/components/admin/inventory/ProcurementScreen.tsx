@@ -1,19 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import {
   Award,
   Clock,
   Loader2,
+  PenLine,
   Plus,
+  RotateCcw,
   ShieldAlert,
+  Trash2,
   TrendingDown,
   Truck,
 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { formatNaira } from "@/lib/erp/money";
+import {
+  createSupplier,
+  deleteSupplier,
+  updateSupplier,
+} from "@/lib/erp/inventory";
 import {
   brandObservations,
   rankBrands,
@@ -29,6 +37,7 @@ interface SupplierRow {
   name: string;
   phone?: string;
   categories?: string[];
+  active: boolean;
   score: SupplierScorecard;
 }
 
@@ -51,6 +60,8 @@ export function ProcurementScreen() {
   const session = useErpSession();
   const canSeePerformance = session.can("procurement.viewPerformance");
   const canEdit = session.can("supplier.edit");
+  // Admin-only across the app; record.delete is not grantable to a manager.
+  const canDelete = session.can("record.delete");
 
   const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
   const [brands, setBrands] = useState<BrandRow[]>([]);
@@ -65,9 +76,11 @@ export function ProcurementScreen() {
     const unsubS = onSnapshot(
       query(collection(getDb(), COL.suppliers), orderBy("name", "asc")),
       (snap) => {
+        // Deactivated suppliers are read too, not filtered out at the snapshot.
+        // Filtering here made deactivation a one-way door: the supplier vanished
+        // from the only screen that could have restored it.
         setSuppliers(
           snap.docs
-            .filter((d) => d.data().active !== false)
             .map((d) => {
               const x = d.data();
               return {
@@ -75,6 +88,7 @@ export function ProcurementScreen() {
                 name: x.name ?? "",
                 phone: x.phone ?? undefined,
                 categories: x.categories ?? [],
+                active: x.active !== false,
                 score: {
                   purchaseCount: x.purchaseCount ?? 0,
                   totalSpendKobo: x.totalSpendKobo ?? 0,
@@ -141,6 +155,21 @@ export function ProcurementScreen() {
     ];
   }, [brands, suppliers, canSeePerformance]);
 
+  const actor = useMemo(
+    () => ({
+      uid: session.user?.uid ?? "",
+      email: session.user?.email ?? "",
+      role: session.role ?? "manager",
+    }),
+    [session.user, session.role]
+  );
+
+  const activeSuppliers = useMemo(() => suppliers.filter((s) => s.active), [suppliers]);
+  const inactiveSuppliers = useMemo(
+    () => suppliers.filter((s) => !s.active),
+    [suppliers]
+  );
+
   async function addSupplier() {
     if (!newName.trim()) {
       setError("Name the supplier.");
@@ -148,13 +177,12 @@ export function ProcurementScreen() {
     }
     setBusy(true);
     try {
-      await addDoc(collection(getDb(), COL.suppliers), {
-        name: newName.trim(),
-        phone: newPhone.trim() || null,
-        categories: [],
-        active: true,
-        createdAt: serverTimestamp(),
-        createdBy: session.user?.uid ?? "",
+      // Through the library rather than a bare addDoc: this was the only create in
+      // the app that wrote no audit entry, so a supplier appearing in the list had
+      // no record of who added it.
+      await createSupplier(getDb(), actor, {
+        name: newName,
+        phone: newPhone,
       });
       setNewName("");
       setNewPhone("");
@@ -331,74 +359,41 @@ export function ProcurementScreen() {
               </div>
             ) : (
               <div className="mt-5 space-y-3">
-                {suppliers.map((s) => (
-                  <div
+                {activeSuppliers.map((s) => (
+                  <SupplierCard
                     key={s.id}
-                    className="rounded-2xl border border-night-700/60 bg-night-900/40 p-5"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
-                        <p className="flex items-center gap-2 text-cream-100">
-                          <Truck size={15} className="text-cream-500" />
-                          {s.name}
-                        </p>
-                        <p className="mt-1 text-xs text-cream-500">
-                          {s.phone ? `${s.phone} · ` : ""}
-                          {s.score.purchaseCount} purchase
-                          {s.score.purchaseCount === 1 ? "" : "s"}
-                        </p>
-                      </div>
-                      {canSeePerformance && s.score.totalSpendKobo > 0 && (
-                        <div className="text-right">
-                          <p className="font-display text-lg text-cream-50">
-                            {formatNaira(s.score.totalSpendKobo)}
-                          </p>
-                          <p className="text-xs text-cream-500">total spend</p>
-                        </div>
-                      )}
-                    </div>
-                    <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
-                      <Metric
-                        label="Avg lead time"
-                        value={
-                          s.score.avgLeadTimeDays !== undefined
-                            ? `${s.score.avgLeadTimeDays} days`
-                            : "-"
-                        }
-                        tone={(s.score.avgLeadTimeDays ?? 0) > 14 ? "warn" : undefined}
-                      />
-                      <Metric
-                        label="On time"
-                        value={
-                          s.score.onTimeRatePercent !== undefined
-                            ? `${s.score.onTimeRatePercent}%`
-                            : "no promised dates"
-                        }
-                        tone={
-                          s.score.onTimeRatePercent !== undefined &&
-                          s.score.onTimeRatePercent < 70
-                            ? "warn"
-                            : undefined
-                        }
-                      />
-                      <Metric
-                        label="Defect rate"
-                        value={
-                          s.score.defectRatePercent !== undefined
-                            ? `${s.score.defectRatePercent}%`
-                            : "-"
-                        }
-                        tone={(s.score.defectRatePercent ?? 0) >= 5 ? "warn" : undefined}
-                      />
-                    </dl>
-                    {s.score.lastPurchaseAtMs && (
-                      <p className="mt-3 flex items-center gap-1.5 text-xs text-cream-600">
-                        <Clock size={12} /> Last delivery{" "}
-                        {new Date(s.score.lastPurchaseAtMs).toLocaleDateString("en-GB")}
-                      </p>
-                    )}
-                  </div>
+                    supplier={s}
+                    actor={actor}
+                    canEdit={canEdit}
+                    canDelete={canDelete}
+                    canSeePerformance={canSeePerformance}
+                    onError={setError}
+                  />
                 ))}
+              </div>
+            )}
+
+            {/* Deactivated suppliers get their own section rather than vanishing.
+                They were filtered out of the query before, which made deactivation
+                irreversible from the only screen that could undo it. */}
+            {inactiveSuppliers.length > 0 && (
+              <div className="mt-8">
+                <p className="text-xs uppercase tracking-wider text-cream-600">
+                  Deactivated ({inactiveSuppliers.length})
+                </p>
+                <div className="mt-3 space-y-3">
+                  {inactiveSuppliers.map((s) => (
+                    <SupplierCard
+                      key={s.id}
+                      supplier={s}
+                      actor={actor}
+                      canEdit={canEdit}
+                      canDelete={canDelete}
+                      canSeePerformance={canSeePerformance}
+                      onError={setError}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </section>
@@ -409,6 +404,210 @@ export function ProcurementScreen() {
             </p>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One supplier, with its scorecard and the controls to correct it.
+ *
+ * Deleting is refused by the library once there are purchases against the supplier,
+ * because those documents reference it by id and would be left pointing at nothing —
+ * the scorecard query would then read as zero rather than as missing. Deactivating is
+ * the answer for a supplier with history, and it is reversible.
+ */
+function SupplierCard({
+  supplier: s,
+  actor,
+  canEdit,
+  canDelete,
+  canSeePerformance,
+  onError,
+}: {
+  supplier: SupplierRow;
+  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  canEdit: boolean;
+  canDelete: boolean;
+  canSeePerformance: boolean;
+  onError: (m: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(s.name);
+  const [phone, setPhone] = useState(s.phone ?? "");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setName(s.name);
+    setPhone(s.phone ?? "");
+  }, [s.name, s.phone]);
+
+  async function save() {
+    setBusy(true);
+    try {
+      await updateSupplier(getDb(), actor, s.id, { name, phone });
+      setEditing(false);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not save the supplier.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleActive() {
+    setBusy(true);
+    try {
+      await updateSupplier(getDb(), actor, s.id, {
+        name: s.name,
+        phone: s.phone,
+        active: !s.active,
+      });
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not change the supplier.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className={`rounded-2xl border p-5 ${
+        s.active
+          ? "border-night-700/60 bg-night-900/40"
+          : "border-night-800 bg-night-900/20"
+      }`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className={s.active ? "" : "opacity-60"}>
+          <p className="flex items-center gap-2 text-cream-100">
+            <Truck size={15} className="text-cream-500" />
+            {s.name}
+            {!s.active && (
+              <span className="rounded-full border border-night-600 px-2 py-0.5 text-xs text-cream-500">
+                Deactivated
+              </span>
+            )}
+          </p>
+          <p className="mt-1 text-xs text-cream-500">
+            {s.phone ? `${s.phone} · ` : ""}
+            {s.score.purchaseCount} purchase
+            {s.score.purchaseCount === 1 ? "" : "s"}
+          </p>
+        </div>
+        {canSeePerformance && s.score.totalSpendKobo > 0 && (
+          <div className="text-right">
+            <p className="font-display text-lg text-cream-50">
+              {formatNaira(s.score.totalSpendKobo)}
+            </p>
+            <p className="text-xs text-cream-500">total spend</p>
+          </div>
+        )}
+      </div>
+
+      <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+        <Metric
+          label="Avg lead time"
+          value={
+            s.score.avgLeadTimeDays !== undefined
+              ? `${s.score.avgLeadTimeDays} days`
+              : "-"
+          }
+          tone={(s.score.avgLeadTimeDays ?? 0) > 14 ? "warn" : undefined}
+        />
+        <Metric
+          label="On time"
+          value={
+            s.score.onTimeRatePercent !== undefined
+              ? `${s.score.onTimeRatePercent}%`
+              : "no promised dates"
+          }
+          tone={
+            s.score.onTimeRatePercent !== undefined && s.score.onTimeRatePercent < 70
+              ? "warn"
+              : undefined
+          }
+        />
+        <Metric
+          label="Defect rate"
+          value={
+            s.score.defectRatePercent !== undefined
+              ? `${s.score.defectRatePercent}%`
+              : "-"
+          }
+          tone={(s.score.defectRatePercent ?? 0) >= 5 ? "warn" : undefined}
+        />
+      </dl>
+
+      {s.score.lastPurchaseAtMs && (
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-cream-600">
+          <Clock size={12} /> Last delivery{" "}
+          {new Date(s.score.lastPurchaseAtMs).toLocaleDateString("en-GB")}
+        </p>
+      )}
+
+      {editing && canEdit && (
+        <div className="mt-4 rounded-xl border border-brass-500/30 bg-night-950/40 p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField
+              id={`sup-name-${s.id}`}
+              label="Supplier name"
+              value={name}
+              onChange={setName}
+              required
+            />
+            <TextField
+              id={`sup-phone-${s.id}`}
+              label="Phone"
+              value={phone}
+              onChange={setPhone}
+            />
+          </div>
+          <div className="mt-4 flex gap-3">
+            <Button onClick={save} busy={busy}>
+              Save
+            </Button>
+            <Button variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {canEdit && !editing && (
+        <div className="mt-4 flex flex-wrap gap-4">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="flex cursor-pointer items-center gap-2 text-sm text-brass-300 transition-colors hover:text-brass-200"
+          >
+            <PenLine size={14} /> Edit
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={toggleActive}
+            className="flex cursor-pointer items-center gap-2 text-sm text-cream-500 transition-colors hover:text-amber-300 disabled:opacity-50"
+          >
+            <RotateCcw size={14} /> {s.active ? "Deactivate" : "Reactivate"}
+          </button>
+          {canDelete && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                if (!window.confirm(`Delete "${s.name}"?`)) return;
+                deleteSupplier(getDb(), actor, s.id, s.name).catch((e) =>
+                  onError(
+                    e instanceof Error ? e.message : "Could not delete the supplier."
+                  )
+                );
+              }}
+              className="flex cursor-pointer items-center gap-2 text-sm text-cream-500 transition-colors hover:text-red-400 disabled:opacity-50"
+            >
+              <Trash2 size={14} /> Delete
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

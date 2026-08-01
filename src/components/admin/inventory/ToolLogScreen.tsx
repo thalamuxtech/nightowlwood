@@ -5,6 +5,7 @@ import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestor
 import {
   AlertTriangle,
   Loader2,
+  PenLine,
   Plus,
   FileText,
   Printer,
@@ -15,10 +16,18 @@ import {
 import { getDb } from "@/lib/firebase";
 import { COL, toolItemsPath } from "@/lib/erp/collections";
 import {
+  TOOL_REQUEST_STATUSES,
   TOOL_REQUEST_STATUS_LABELS,
   type ToolRequestStatus,
 } from "@/lib/erp/enums";
-import { createToolRequest, issueTools, returnTools } from "@/lib/erp/inventory";
+import {
+  createToolRequest,
+  deleteToolRequest,
+  issueTools,
+  returnTools,
+  setToolRequestStatus,
+  updateToolRequest,
+} from "@/lib/erp/inventory";
 import { fromDateInputValue, toDateInputValue } from "@/lib/erp/workLogs";
 import { TOOL_REQUEST_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
@@ -83,6 +92,8 @@ export function ToolLogScreen() {
   const session = useErpSession();
   const canIssue = session.can("tool.issue");
   const canRequest = session.can("tool.request");
+  // Admin-only across the app; record.delete is not grantable to a manager.
+  const canDelete = session.can("record.delete");
 
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -265,6 +276,8 @@ export function ToolLogScreen() {
                 open={openId === r.id}
                 onToggle={() => setOpenId(openId === r.id ? null : r.id)}
                 canIssue={canIssue}
+                canRequest={canRequest}
+                canDelete={canDelete}
                 actor={actor}
                 onError={setError}
                 onPrint={(items) => setPrintRequest({ request: r, items })}
@@ -283,6 +296,8 @@ function RequestPanel({
   open,
   onToggle,
   canIssue,
+  canRequest,
+  canDelete,
   actor,
   onError,
   onPrint,
@@ -292,6 +307,8 @@ function RequestPanel({
   open: boolean;
   onToggle: () => void;
   canIssue: boolean;
+  canRequest: boolean;
+  canDelete: boolean;
   actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
   onError: (m: string) => void;
   onPrint: (items: ItemRow[]) => void;
@@ -299,6 +316,7 @@ function RequestPanel({
   const [items, setItems] = useState<ItemRow[]>([]);
   const [issuing, setIssuing] = useState(false);
   const [returning, setReturning] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [byName, setByName] = useState("");
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -507,7 +525,90 @@ function RequestPanel({
                   Record return
                 </Button>
               )}
+
+            {canRequest && !editing && !issuing && !returning && (
+              <Button variant="secondary" onClick={() => setEditing(true)}>
+                <span className="flex items-center gap-1.5">
+                  <PenLine size={14} /> Edit request
+                </span>
+              </Button>
+            )}
           </div>
+
+          {/* Status correction, separate from Issue and Record return.
+              Those two move the status as a consequence of recording what actually
+              happened; this is for putting the record straight when it says
+              something that did not — a request marked issued that never went out,
+              or one stuck at partly returned after a tool was quietly put back.
+              Overdue is absent because it follows the due date on read. */}
+          {canIssue && !editing && (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-cream-600">Correct status:</span>
+              {TOOL_REQUEST_STATUSES.filter(
+                (s) => s !== "overdue" && s !== request.status
+              ).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    setToolRequestStatus(
+                      getDb(),
+                      actor,
+                      request.id,
+                      request.requestNumber,
+                      request.status,
+                      s
+                    ).catch((e) =>
+                      onError(
+                        e instanceof Error ? e.message : "Could not change the status."
+                      )
+                    )
+                  }
+                  className="cursor-pointer rounded-lg border border-night-600 bg-night-800/60 px-2.5 py-1 text-xs text-cream-300 transition-colors hover:border-brass-500/60 hover:text-brass-300 disabled:opacity-50"
+                >
+                  {TOOL_REQUEST_STATUS_LABELS[s]}
+                </button>
+              ))}
+              {canDelete && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        `Delete tool request ${request.requestNumber} and its ${items.length} item(s)?`
+                      )
+                    )
+                      return;
+                    deleteToolRequest(
+                      getDb(),
+                      actor,
+                      request.id,
+                      request.requestNumber
+                    ).catch((e) =>
+                      onError(
+                        e instanceof Error ? e.message : "Could not delete the request."
+                      )
+                    );
+                  }}
+                  className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs text-cream-500 transition-colors hover:text-red-400 disabled:opacity-50"
+                >
+                  <Trash2 size={13} /> Delete request
+                </button>
+              )}
+            </div>
+          )}
+
+          {editing && canRequest && (
+            <EditRequestForm
+              request={request}
+              items={items}
+              actor={actor}
+              onClose={() => setEditing(false)}
+              onError={onError}
+            />
+          )}
 
           {(issuing || returning) && (
             <div className="mt-5 rounded-xl border border-brass-500/30 bg-night-950/40 p-4">
@@ -753,6 +854,193 @@ function Tile({
     <div className="rounded-3xl border border-night-700/60 bg-night-900/40 p-5">
       <p className="text-xs uppercase tracking-wider text-cream-500">{label}</p>
       <p className={`mt-2 font-display text-2xl ${colour}`}>{value}</p>
+    </div>
+  );
+}
+
+/**
+ * Corrects an existing tool request.
+ *
+ * Mirrors the fields of the new-request form, so nothing typed once becomes
+ * uneditable. Item rows carry their document id where they already exist, which is
+ * what lets the library update them in place rather than replacing the list — a
+ * replacement would discard the issued and returned quantities recorded against a
+ * row that is merely being renamed.
+ */
+function EditRequestForm({
+  request,
+  items,
+  actor,
+  onClose,
+  onError,
+}: {
+  request: RequestRow;
+  items: ItemRow[];
+  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  onClose: () => void;
+  onError: (m: string) => void;
+}) {
+  const [jobName, setJobName] = useState(request.jobName);
+  const [location, setLocation] = useState(request.jobLocation ?? "");
+  const [staff, setStaff] = useState<PickedStaff | null>(null);
+  const [dueBack, setDueBack] = useState(
+    request.expectedReturnMs ? toDateInputValue(new Date(request.expectedReturnMs)) : ""
+  );
+  const [rows, setRows] = useState(
+    items.map((i) => ({
+      key: i.id,
+      id: i.id as string | undefined,
+      name: i.name,
+      description: i.description ?? "",
+      qty: String(i.quantityRequested),
+    }))
+  );
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    const cleaned = rows
+      .filter((r) => r.name.trim() && Number(r.qty) > 0)
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        quantityRequested: Number(r.qty),
+      }));
+    if (cleaned.length === 0) {
+      onError("A request needs at least one tool.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateToolRequest(getDb(), actor, request.id, request.requestNumber, {
+        jobName,
+        jobLocation: location,
+        // Left as it was unless someone actively picks a different person: the
+        // picker starts empty, and treating that as "no staff" would blank the
+        // requester every time the job name was corrected.
+        requestedByStaffId: staff?.id,
+        requestedByName: staff?.name ?? request.requestedByName,
+        expectedReturnDate: dueBack ? fromDateInputValue(dueBack) : null,
+        items: cleaned,
+      });
+      onClose();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not save the request.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-5 rounded-xl border border-brass-500/30 bg-night-950/40 p-4">
+      <p className="text-sm text-cream-200">Editing {request.requestNumber}</p>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <TextField
+          id={`ed-job-${request.id}`}
+          label="Job"
+          value={jobName}
+          onChange={setJobName}
+          required
+        />
+        <TextField
+          id={`ed-loc-${request.id}`}
+          label="Location"
+          value={location}
+          onChange={setLocation}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <StaffPicker
+          label={`Requested by (currently ${request.requestedByName})`}
+          value={staff}
+          onChange={setStaff}
+          createdBy={actor.uid}
+        />
+        <div>
+          <label
+            htmlFor={`ed-due-${request.id}`}
+            className="mb-1.5 block text-sm text-cream-300"
+          >
+            Due back
+          </label>
+          <input
+            id={`ed-due-${request.id}`}
+            type="date"
+            value={dueBack}
+            onChange={(e) => setDueBack(e.target.value)}
+            className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
+          />
+        </div>
+      </div>
+
+      <p className="mt-5 text-sm text-cream-300">Tools</p>
+      <div className="mt-2 space-y-2">
+        {rows.map((r, i) => (
+          <div
+            key={r.key}
+            className="grid items-end gap-2 sm:grid-cols-[1fr_1fr_5rem_2rem]"
+          >
+            <TextField
+              id={`ed-name-${r.key}`}
+              label={i === 0 ? "Tool" : ""}
+              value={r.name}
+              onChange={(v) =>
+                setRows((p) => p.map((x) => (x.key === r.key ? { ...x, name: v } : x)))
+              }
+            />
+            <TextField
+              id={`ed-desc-${r.key}`}
+              label={i === 0 ? "Description" : ""}
+              value={r.description}
+              onChange={(v) =>
+                setRows((p) =>
+                  p.map((x) => (x.key === r.key ? { ...x, description: v } : x))
+                )
+              }
+            />
+            <NumberField
+              id={`ed-qty-${r.key}`}
+              label={i === 0 ? "Qty" : ""}
+              value={r.qty}
+              onChange={(v) =>
+                setRows((p) => p.map((x) => (x.key === r.key ? { ...x, qty: v } : x)))
+              }
+            />
+            <button
+              type="button"
+              aria-label={`Remove ${r.name || "row"}`}
+              onClick={() => setRows((p) => p.filter((x) => x.key !== r.key))}
+              className="mb-3 cursor-pointer justify-self-end text-cream-600 transition-colors hover:text-red-400"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={() =>
+          setRows((p) => [
+            ...p,
+            { key: `n${seq++}`, id: undefined, name: "", description: "", qty: "1" },
+          ])
+        }
+        className="mt-3 flex cursor-pointer items-center gap-1.5 text-sm text-brass-300 transition-colors hover:text-brass-200"
+      >
+        <Plus size={14} /> Add a tool
+      </button>
+
+      <div className="mt-5 flex gap-3">
+        <Button onClick={submit} busy={busy}>
+          Save changes
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
     </div>
   );
 }

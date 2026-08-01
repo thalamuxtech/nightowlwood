@@ -16,6 +16,7 @@ import {
   Loader2,
   PenLine,
   RefreshCw,
+  RotateCcw,
   ShieldAlert,
   Trash2,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import {
   deleteDraftSalaryRun,
   markSalaryRunPaid,
   previewSalaryRun,
+  reopenSalaryRun,
   saveDraftSalaryRun,
   setMonthlySalary,
   DEFAULT_WORKING_DAYS,
@@ -255,6 +257,29 @@ export function SalaryRunScreen() {
     }
   }
 
+  async function reopen(id: string, from: string) {
+    // Confirmed for a paid run: undoing a payment record is a different kind of
+    // action from correcting a draft, and the expense reversal is the part someone
+    // would not expect.
+    if (
+      from === "paid" &&
+      !window.confirm(
+        "Reopen this paid run? It returns to draft and the payroll expense it booked is reversed. What it was paid at stays in the audit log."
+      )
+    )
+      return;
+
+    setBusy(true);
+    setError("");
+    try {
+      await reopenSalaryRun(getDb(), actor, id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not reopen the run.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** `null` clears the figure, which returns the person to piece rate. */
   async function saveSalary(row: StaffRow, monthlySalaryKobo: number | null) {
     setBusy(true);
@@ -410,6 +435,24 @@ export function SalaryRunScreen() {
                       <Button variant="secondary" onClick={() => pay(r.id)} busy={busy}>
                         Mark paid
                       </Button>
+                    )}
+                    {/* Reopening returns the run to draft, and for a paid one also
+                        reverses the payroll expense it booked. Nothing is stuck, and
+                        the audit log keeps what it was paid at. */}
+                    {r.status !== "draft" && (
+                      <button
+                        type="button"
+                        aria-label="Reopen this run for editing"
+                        title={
+                          r.status === "paid"
+                            ? "Reopen to edit. The payroll expense this run booked is reversed."
+                            : "Reopen to edit."
+                        }
+                        onClick={() => reopen(r.id, r.status)}
+                        className="flex cursor-pointer items-center gap-1.5 text-xs text-cream-400 transition-colors hover:text-amber-300"
+                      >
+                        <RotateCcw size={14} /> Reopen
+                      </button>
                     )}
                   </div>
                 </div>

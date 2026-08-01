@@ -13,12 +13,14 @@ import {
   Plus,
   RotateCcw,
   ShieldAlert,
+  Trash2,
 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL, inventoryMovementsPath } from "@/lib/erp/collections";
 import { formatNaira, parseNairaInput, toNaira } from "@/lib/erp/money";
 import {
   createInventoryItem,
+  deleteInventoryItem,
   recordMovement,
   setInventoryItemActive,
   updateInventoryItem,
@@ -67,6 +69,8 @@ interface MovementRow {
 export function InventoryScreen() {
   const session = useErpSession();
   const canEdit = session.can("inventory.edit");
+  // Deleting is admin-only app-wide: record.delete is not grantable to a manager.
+  const canDelete = session.can("record.delete");
 
   const [rows, setRows] = useState<ItemRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -235,6 +239,7 @@ export function InventoryScreen() {
               open={openId === r.id}
               onToggle={() => setOpenId(openId === r.id ? null : r.id)}
               canEdit={canEdit}
+              canDelete={canDelete}
               actor={actor}
               onError={setError}
             />
@@ -257,6 +262,7 @@ export function InventoryScreen() {
                 open={openId === r.id}
                 onToggle={() => setOpenId(openId === r.id ? null : r.id)}
                 canEdit={canEdit}
+                canDelete={canDelete}
                 actor={actor}
                 onError={setError}
               />
@@ -273,6 +279,7 @@ function ItemPanel({
   open,
   onToggle,
   canEdit,
+  canDelete,
   actor,
   onError,
 }: {
@@ -280,6 +287,7 @@ function ItemPanel({
   open: boolean;
   onToggle: () => void;
   canEdit: boolean;
+  canDelete: boolean;
   actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
   onError: (m: string) => void;
 }) {
@@ -448,6 +456,33 @@ function ItemPanel({
               >
                 <RotateCcw size={14} /> {item.active ? "Retire item" : "Restore item"}
               </button>
+
+              {/* Delete is for the mistake case: an item typed in wrongly and
+                  caught before any stock moved. The library refuses once there is
+                  a movement or a quantity on hand, and says to retire instead, so
+                  the ledger can never be orphaned by a click here. */}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        `Delete "${item.name}"? This only works if no stock has ever moved through it — otherwise retire it instead.`
+                      )
+                    )
+                      return;
+                    deleteInventoryItem(getDb(), actor, item.id, item.name).catch(
+                      (e) =>
+                        onError(
+                          e instanceof Error ? e.message : "Could not delete the item."
+                        )
+                    );
+                  }}
+                  className="flex cursor-pointer items-center gap-2 text-sm text-cream-500 transition-colors hover:text-red-400"
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+              )}
             </div>
           )}
 

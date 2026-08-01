@@ -489,7 +489,75 @@ export async function markSalaryRunPaid(
   });
 }
 
-/** Discards a draft salary run. Approved and paid runs are the record of what was paid. */
+/**
+ * Returns an approved or paid salary run to draft so it can be corrected.
+ *
+ * The wage-run twin of this is `reopenWageRun`, and the reasoning is identical: a run
+ * approved for the wrong month, or paid with a deduction missed, has to be fixable,
+ * but not by silently rewriting what was paid. The audit entry records the status it
+ * came from and the net it stood at, and the run keeps `reopenedFrom` for anyone
+ * reading the document later.
+ *
+ * Reopening a paid run removes the expense that payment booked. That expense is keyed
+ * on the run id and `recordPayrollExpense` refuses to write a second for the same
+ * source, so leaving it would overstate costs for a payment being unwound *and* stop
+ * the corrected run booking its own.
+ */
+export async function reopenSalaryRun(
+  db: Firestore,
+  actor: AuditActor,
+  runId: string
+): Promise<void> {
+  const ref = doc(db, COL.salaryRuns, runId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Salary run not found.");
+  const run = snap.data();
+  const from = String(run.status ?? "draft");
+  if (from === "draft") throw new Error("This run is already a draft.");
+
+  if (from === "paid") {
+    const booked = await getDocs(
+      query(
+        collection(db, COL.expenses),
+        where("sourceCollection", "==", COL.salaryRuns),
+        where("sourceId", "==", runId)
+      )
+    );
+    for (const d of booked.docs) await deleteDoc(d.ref);
+  }
+
+  await updateDoc(ref, {
+    status: "draft",
+    approvedAt: null,
+    approvedBy: null,
+    paidAt: null,
+    reopenedFrom: from,
+    reopenedNetKobo: run.netPayableKobo ?? 0,
+    reopenedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "status_change",
+    collectionName: COL.salaryRuns,
+    docId: runId,
+    summary:
+      `Reopened a ${from} salary run for editing` +
+      (from === "paid"
+        ? ` and reversed the ${run.netPayableKobo ?? 0} kobo payroll expense it had booked`
+        : ""),
+    before: { status: from, netPayableKobo: run.netPayableKobo ?? 0 },
+    after: { status: "draft" },
+  });
+}
+
+/**
+ * Deletes a salary run.
+ *
+ * An approved or paid run has to be reopened first, which is what forces the payroll
+ * expense to be reversed and leaves the audit trail behind.
+ */
 export async function deleteDraftSalaryRun(
   db: Firestore,
   actor: AuditActor,
@@ -499,7 +567,9 @@ export async function deleteDraftSalaryRun(
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error("Salary run not found.");
   if (snap.data().status !== "draft") {
-    throw new Error("Only a draft run can be discarded.");
+    throw new Error(
+      `This run is ${snap.data().status}. Reopen it first — that reverses the payroll expense and records what it stood at before anything is deleted.`
+    );
   }
 
   await deleteDoc(ref);

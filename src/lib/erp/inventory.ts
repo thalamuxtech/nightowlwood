@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -125,6 +126,142 @@ export async function setInventoryItemActive(
     docId: itemId,
     summary: `${active ? "Restored" : "Retired"} inventory item "${name}"`,
     after: { active },
+  });
+}
+
+/**
+ * Deletes an inventory item outright, but only one with no history.
+ *
+ * The movement ledger beneath an item is append-only by rule — `allow update,
+ * delete: if false` — so a client cannot remove it. Deleting the parent doc would
+ * therefore leave the ledger permanently unreachable and undeletable, and stock
+ * that genuinely passed through the workshop would stop reconciling.
+ *
+ * So this is for the mistake case only: an item typed in wrongly and noticed
+ * straight away. The opening-balance movement written at creation is allowed — it is
+ * the item's own birth record, not history of anything real — and goes with it.
+ * Anything more than that, or any quantity still on hand, is refused and
+ * `setInventoryItemActive` is the answer instead.
+ *
+ * The opening balance is identified by its reason rather than a distinct type: it is
+ * written as an ordinary "in" (see createInventoryItem), so the wording is the only
+ * thing that separates it from a real receipt. A receipt someone happened to label
+ * "Opening balance" would therefore be treated as one — acceptable, because the
+ * quantity check has already established the item is empty.
+ */
+export async function deleteInventoryItem(
+  db: Firestore,
+  actor: AuditActor,
+  itemId: string,
+  name: string
+): Promise<void> {
+  const ref = doc(db, COL.inventoryCompany, itemId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+
+  const onHand = (snap.data().quantityOnHand as number) ?? 0;
+  if (onHand !== 0) {
+    throw new Error(
+      `"${name}" still has ${onHand} on hand. Issue or write off the stock first, or retire the item instead of deleting it.`
+    );
+  }
+
+  const movements = await getDocs(collection(db, inventoryMovementsPath(itemId)));
+  const realHistory = movements.docs.filter(
+    (d) => String(d.data().reason ?? "") !== "Opening balance"
+  );
+  if (realHistory.length > 0) {
+    throw new Error(
+      `"${name}" has ${realHistory.length} recorded movement${
+        realHistory.length === 1 ? "" : "s"
+      }, so deleting it would break the stock history. Retire it instead — the record stays and it drops out of the pickers.`
+    );
+  }
+
+  const batch = writeBatch(db);
+  movements.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(ref);
+  await batch.commit();
+
+  await writeAudit(db, {
+    actor,
+    action: "delete",
+    collectionName: COL.inventoryCompany,
+    docId: itemId,
+    summary: `Deleted unused inventory item "${name}"`,
+  });
+}
+
+/**
+ * Adds a supplier.
+ *
+ * Moved out of the screen, where it was an inline `addDoc` and the only create in
+ * the app that wrote no audit entry — so a supplier appearing in the list had no
+ * record of who added it.
+ */
+export async function createSupplier(
+  db: Firestore,
+  actor: AuditActor,
+  input: { name: string; phone?: string; categories?: string[] }
+): Promise<string> {
+  if (!input.name.trim()) throw new Error("A supplier needs a name.");
+
+  const ref = await addDoc(collection(db, COL.suppliers), {
+    name: input.name.trim(),
+    phone: input.phone?.trim() || null,
+    categories: input.categories ?? [],
+    active: true,
+    purchaseCount: 0,
+    totalSpendKobo: 0,
+    createdAt: serverTimestamp(),
+    createdBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "create",
+    collectionName: COL.suppliers,
+    docId: ref.id,
+    summary: `Added supplier "${input.name.trim()}"`,
+  });
+
+  return ref.id;
+}
+
+/**
+ * Deletes a supplier that has never been purchased from.
+ *
+ * Purchases and consumable cycles reference a supplier by id as well as carrying a
+ * copy of its name, so removing one with history leaves those documents pointing at
+ * nothing: the scorecard query finds no purchases, and lead-time and defect history
+ * silently reads as zero rather than as missing. A supplier that has been traded
+ * with is deactivated instead, which the list already honours.
+ */
+export async function deleteSupplier(
+  db: Firestore,
+  actor: AuditActor,
+  supplierId: string,
+  name: string
+): Promise<void> {
+  const purchases = await getDocs(
+    query(collection(db, COL.purchases), where("supplierId", "==", supplierId))
+  );
+  if (!purchases.empty) {
+    throw new Error(
+      `"${name}" has ${purchases.size} purchase${
+        purchases.size === 1 ? "" : "s"
+      } on record. Deactivate the supplier instead — deleting it would break that purchase history.`
+    );
+  }
+
+  await deleteDoc(doc(db, COL.suppliers, supplierId));
+
+  await writeAudit(db, {
+    actor,
+    action: "delete",
+    collectionName: COL.suppliers,
+    docId: supplierId,
+    summary: `Deleted unused supplier "${name}"`,
   });
 }
 
@@ -805,6 +942,168 @@ export async function returnTools(
   });
 
   return { complete };
+}
+
+/**
+ * Corrects a tool request's details and its item list.
+ *
+ * Everything a person typed is editable, because everything a person typed can be
+ * wrong: the wrong job, the wrong staff member, a tool that turns out not to be
+ * needed. Items are reconciled rather than replaced — rows still present are
+ * updated, new ones added, missing ones removed — so the issued and returned
+ * quantities recorded against a surviving row are not lost by rewriting it.
+ *
+ * Tool requests do not touch stock quantities or write inventory movements, so
+ * there is no ledger here to keep consistent. That is what makes this safe to edit
+ * freely where company stock is not.
+ */
+export async function updateToolRequest(
+  db: Firestore,
+  actor: AuditActor,
+  requestId: string,
+  requestNumber: string,
+  input: {
+    jobName: string;
+    jobLocation?: string;
+    requestedByStaffId?: string;
+    requestedByName: string;
+    expectedReturnDate?: Date | null;
+    items: Array<{
+      /** Present for a row that already exists; absent for a new one. */
+      id?: string;
+      name: string;
+      description?: string;
+      quantityRequested: number;
+    }>;
+  }
+): Promise<void> {
+  if (!input.jobName.trim()) throw new Error("Name the job.");
+  if (input.items.length === 0) throw new Error("A request needs at least one tool.");
+
+  const existing = await getDocs(collection(db, toolItemsPath(requestId)));
+  const keep = new Set(input.items.map((i) => i.id).filter(Boolean) as string[]);
+
+  const batch = writeBatch(db);
+
+  batch.update(doc(db, COL.toolRequests, requestId), {
+    jobName: input.jobName.trim(),
+    jobLocation: input.jobLocation?.trim() || null,
+    requestedByStaffId: input.requestedByStaffId ?? null,
+    requestedByName: input.requestedByName,
+    expectedReturnDate: input.expectedReturnDate
+      ? Timestamp.fromDate(input.expectedReturnDate)
+      : null,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  for (const item of input.items) {
+    if (item.id) {
+      batch.update(doc(db, `${toolItemsPath(requestId)}/${item.id}`), {
+        name: item.name.trim(),
+        description: item.description?.trim() || null,
+        quantityRequested: item.quantityRequested,
+      });
+    } else {
+      batch.set(doc(collection(db, toolItemsPath(requestId))), {
+        name: item.name.trim(),
+        description: item.description?.trim() || null,
+        quantityRequested: item.quantityRequested,
+        quantityIssued: 0,
+        quantityReturned: 0,
+      });
+    }
+  }
+
+  for (const d of existing.docs) {
+    if (!keep.has(d.id)) batch.delete(d.ref);
+  }
+
+  await batch.commit();
+
+  await writeAudit(db, {
+    actor,
+    action: "update",
+    collectionName: COL.toolRequests,
+    docId: requestId,
+    summary: `${requestNumber}: edited the request (${input.items.length} tool(s) for ${input.jobName.trim()})`,
+    after: { jobName: input.jobName.trim(), itemCount: input.items.length },
+  });
+}
+
+/**
+ * Sets a tool request's status directly.
+ *
+ * The normal path is `issueTools` and `returnTools`, which move the status as a
+ * consequence of recording what actually happened. This is the correction path: a
+ * request marked issued that never was, or one stuck at partly-returned because a
+ * tool was quietly put back. Recorded as a status change rather than an edit so the
+ * audit log distinguishes "we fixed the record" from "the tools moved".
+ *
+ * `overdue` is deliberately not settable: it is derived from the due date on read,
+ * so storing it would freeze a state that should follow the calendar.
+ */
+export async function setToolRequestStatus(
+  db: Firestore,
+  actor: AuditActor,
+  requestId: string,
+  requestNumber: string,
+  from: ToolRequestStatus,
+  to: ToolRequestStatus
+): Promise<void> {
+  if (to === "overdue") {
+    throw new Error("Overdue follows the due date and cannot be set by hand.");
+  }
+
+  await updateDoc(doc(db, COL.toolRequests, requestId), {
+    status: to,
+    // Cleared when moving back before issue, so a corrected record does not keep
+    // claiming tools went out on a date they did not.
+    ...(to === "requested" ? { issuedAt: null, issuedByName: null } : {}),
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "status_change",
+    collectionName: COL.toolRequests,
+    docId: requestId,
+    summary: `${requestNumber}: status ${from} to ${to}`,
+    before: { status: from },
+    after: { status: to },
+  });
+}
+
+/**
+ * Deletes a tool request and its items.
+ *
+ * Firestore does not cascade, so the items go explicitly or they are orphaned in a
+ * subcollection nothing can reach. The request number is not returned to the
+ * counter: a gap in numbering is honest, whereas reusing a number would give two
+ * different requests the same reference.
+ */
+export async function deleteToolRequest(
+  db: Firestore,
+  actor: AuditActor,
+  requestId: string,
+  requestNumber: string
+): Promise<void> {
+  const items = await getDocs(collection(db, toolItemsPath(requestId)));
+  for (let i = 0; i < items.docs.length; i += 400) {
+    const b = writeBatch(db);
+    items.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref));
+    await b.commit();
+  }
+  await deleteDoc(doc(db, COL.toolRequests, requestId));
+
+  await writeAudit(db, {
+    actor,
+    action: "delete",
+    collectionName: COL.toolRequests,
+    docId: requestId,
+    summary: `Deleted tool request ${requestNumber} and its ${items.size} item(s)`,
+  });
 }
 
 /** Board types recorded against held customer stock. */

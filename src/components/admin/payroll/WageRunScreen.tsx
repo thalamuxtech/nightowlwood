@@ -8,6 +8,7 @@ import {
   Loader2,
   PenLine,
   RefreshCw,
+  RotateCcw,
   ShieldAlert,
   Trash2,
   Wallet,
@@ -22,6 +23,7 @@ import {
   deleteDraftWageRun,
   markWageRunPaid,
   previewWageRun,
+  reopenWageRun,
   saveDraftWageRun,
   type RunPreview,
 } from "@/lib/erp/payroll";
@@ -63,6 +65,9 @@ function toDateInput(d: Date): string {
 export function WageRunScreen() {
   const session = useErpSession();
   const isAdmin = session.role === "admin";
+  // Reopening unwinds an approval, and for a paid run reverses a booked expense,
+  // so it sits with approval rather than with ordinary editing.
+  const canReopen = session.can("wage.approve");
 
   const lastWeek = useMemo(() => {
     const d = new Date();
@@ -189,6 +194,29 @@ export function WageRunScreen() {
       await markWageRunPaid(getDb(), actor, id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not mark as paid.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reopen(id: string, from: string) {
+    // Confirmed for a paid run specifically: undoing a payment record is not the
+    // same kind of action as correcting a draft, and the expense reversal is the
+    // part someone would not expect.
+    if (
+      from === "paid" &&
+      !window.confirm(
+        "Reopen this paid run? It returns to draft and the payroll expense it booked is reversed. What it was paid at stays in the audit log."
+      )
+    )
+      return;
+
+    setBusy(true);
+    setError("");
+    try {
+      await reopenWageRun(getDb(), actor, id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not reopen the run.");
     } finally {
       setBusy(false);
     }
@@ -322,8 +350,11 @@ export function WageRunScreen() {
                       <StatusPill tone={WAGE_RUN_STATUS_TONE[r.status]}>
                         {r.status}
                       </StatusPill>
-                      {/* Only a draft is editable: approving is the point at which
-                          the figures become a decision already taken. */}
+                      {/* A draft is edited in place. An approved or paid run is
+                          reopened first — that is what reverses the payroll expense
+                          and records what the run stood at, so a correction never
+                          silently detaches money that left the business from the
+                          record of it. */}
                       {r.status === "draft" && (
                         <>
                           <button
@@ -337,7 +368,15 @@ export function WageRunScreen() {
                           <button
                             type="button"
                             aria-label="Discard this draft"
-                            onClick={() => discard(r.id)}
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  "Discard this draft run and its lines? This cannot be undone."
+                                )
+                              )
+                                return;
+                              discard(r.id);
+                            }}
                             className="cursor-pointer text-cream-500 transition-colors hover:text-red-400"
                           >
                             <Trash2 size={16} />
@@ -351,6 +390,28 @@ export function WageRunScreen() {
                         <Button variant="secondary" onClick={() => pay(r.id)} busy={busy}>
                           Mark paid
                         </Button>
+                      )}
+                      {/* Nothing about payroll should be permanently stuck: a run
+                          approved for the wrong week, or paid with a share missed,
+                          has to be fixable. Reopening returns it to draft, and for
+                          a paid run it also reverses the payroll expense that
+                          payment booked — leaving that behind would overstate costs
+                          and block the corrected run from booking its own. What it
+                          stood at is recorded on the run and in the audit log. */}
+                      {r.status !== "draft" && canReopen && (
+                        <button
+                          type="button"
+                          aria-label="Reopen this run for editing"
+                          title={
+                            r.status === "paid"
+                              ? "Reopen to edit. The payroll expense this run booked is reversed."
+                              : "Reopen to edit."
+                          }
+                          onClick={() => reopen(r.id, r.status)}
+                          className="flex cursor-pointer items-center gap-1.5 text-xs text-cream-400 transition-colors hover:text-amber-300"
+                        >
+                          <RotateCcw size={14} /> Reopen
+                        </button>
                       )}
                     </div>
                   </div>

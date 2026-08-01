@@ -574,7 +574,7 @@ function WorkLogForm({
           label="Work type"
           value={workType}
           onChange={(v) => setWorkType(v as WageWorkType)}
-          placeholder="Selectâ€¦"
+          placeholder="Select…"
           required
           options={WAGE_WORK_TYPES.map((w) => ({
             value: w,

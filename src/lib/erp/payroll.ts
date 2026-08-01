@@ -448,6 +448,78 @@ export async function adjustWageRunStaff(
  * regenerating is the normal way to pick up a corrected log. Approved and paid runs
  * are never deletable: they are the record of what was actually paid.
  */
+/**
+ * Returns an approved or paid run to draft so its figures can be corrected.
+ *
+ * Nothing about payroll should be permanently stuck: a run approved against the
+ * wrong week, or paid with an assistant's share missed, has to be fixable. What must
+ * not happen is a silent rewrite of what was paid, so this leaves a trail — the
+ * audit entry records the status it came from and the net it stood at, and the
+ * reopened run carries `reopenedFrom` and `reopenedNetKobo` for anyone reading the
+ * document later.
+ *
+ * Reopening a *paid* run also removes the expense that payment booked. That expense
+ * is keyed on the run id and `recordPayrollExpense` refuses to write a second one
+ * for the same source, so leaving it would both overstate costs for a payment that
+ * is being unwound and prevent the corrected run from ever booking its own.
+ */
+export async function reopenWageRun(
+  db: Firestore,
+  actor: AuditActor,
+  runId: string
+): Promise<void> {
+  const ref = doc(db, COL.wageRuns, runId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Wage run not found.");
+  const run = snap.data();
+  const from = String(run.status ?? "draft");
+  if (from === "draft") throw new Error("This run is already a draft.");
+
+  if (from === "paid") {
+    const booked = await getDocs(
+      query(
+        collection(db, COL.expenses),
+        where("sourceCollection", "==", COL.wageRuns),
+        where("sourceId", "==", runId)
+      )
+    );
+    for (const d of booked.docs) await deleteDoc(d.ref);
+  }
+
+  await updateDoc(ref, {
+    status: "draft",
+    approvedAt: null,
+    approvedBy: null,
+    paidAt: null,
+    reopenedFrom: from,
+    reopenedNetKobo: run.netPayableKobo ?? 0,
+    reopenedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "status_change",
+    collectionName: COL.wageRuns,
+    docId: runId,
+    summary:
+      `Reopened a ${from} wage run for editing` +
+      (from === "paid"
+        ? ` and reversed the ${run.netPayableKobo ?? 0} kobo payroll expense it had booked`
+        : ""),
+    before: { status: from, netPayableKobo: run.netPayableKobo ?? 0 },
+    after: { status: "draft" },
+  });
+}
+
+/**
+ * Deletes a wage run and its lines.
+ *
+ * A run at any status can go, because a run created for the wrong period is not
+ * something to live with. An approved or paid one has to be reopened first, which is
+ * what forces the payroll expense to be reversed and leaves the audit trail — so the
+ * money that left the business is never quietly detached from the record of it.
+ */
 export async function deleteDraftWageRun(
   db: Firestore,
   actor: AuditActor,
@@ -457,7 +529,9 @@ export async function deleteDraftWageRun(
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error("Wage run not found.");
   if (snap.data().status !== "draft") {
-    throw new Error("Only a draft run can be discarded.");
+    throw new Error(
+      `This run is ${snap.data().status}. Reopen it first — that reverses the payroll expense and records what it stood at before anything is deleted.`
+    );
   }
 
   // Lines are a subcollection, so they are removed explicitly or they outlive the
