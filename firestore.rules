@@ -83,16 +83,52 @@ service cloud.firestore {
       return ['user.manage', 'settings.change'];
     }
 
-    /** True when the caller's role has been granted `capability` by an admin. */
+    /**
+     * The role's capabilities when an admin has not customised them.
+     *
+     * Mirrors MANAGER_CAPABILITIES and OPERATOR_CAPABILITIES in
+     * src/lib/erp/permissions.ts, and must be kept in step with them. Without this
+     * the two halves disagreed on a fresh project: no grants document meant the
+     * client fell back to the code defaults and showed a manager their screens,
+     * while the rules denied every read behind them.
+     */
+    function defaultCaps(role) {
+      return role == 'manager'
+        ? ['dashboard.view.ops', 'job.view', 'job.create', 'job.edit',
+           'job.advanceStatus', 'job.recordPayment', 'worklog.viewAll',
+           'worklog.viewOwn', 'worklog.create', 'project.view', 'project.create',
+           'project.edit', 'estimate.view', 'estimate.create', 'estimate.edit',
+           'estimate.sendForReview', 'inventory.view', 'inventory.edit',
+           'tool.request', 'tool.issue', 'supplier.view', 'supplier.edit',
+           'purchase.view', 'purchase.create', 'purchase.receive',
+           'customer.view', 'staff.view']
+        : role == 'operator'
+          ? ['worklog.viewOwn', 'worklog.create']
+          : [];
+    }
+
+    /** True when a saved override exists for the caller's role. */
+    function hasOverride() {
+      return exists(/databases/$(database)/documents/settings/rolePermissions)
+        && userDoc().data.role in grantsDoc().data.roles;
+    }
+
+    /**
+     * True when the caller's role holds `capability`.
+     *
+     * An admin's saved list replaces the default outright rather than adding to it,
+     * matching the client: unticking a box in Settings has to take the permission
+     * away, so an override cannot fall back to the default it was meant to narrow.
+     */
     function granted(capability) {
       return isStaff()
         && !(capability in ungrantable())
-        && exists(/databases/$(database)/documents/settings/rolePermissions)
-        && userDoc().data.role in grantsDoc().data.roles
-        && capability in grantsDoc().data.roles[userDoc().data.role];
+        && (hasOverride()
+              ? capability in grantsDoc().data.roles[userDoc().data.role]
+              : capability in defaultCaps(userDoc().data.role));
     }
 
-    /** Admin, or a role an admin has explicitly granted this capability to. */
+    /** Admin, or a role that holds this capability by default or by grant. */
     function isAdminOr(capability) {
       return isAdmin() || granted(capability);
     }
