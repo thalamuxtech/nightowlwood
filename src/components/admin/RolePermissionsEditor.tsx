@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
-import { Lock, RotateCcw, Save, ShieldCheck } from "lucide-react";
+import { Lock, RotateCcw, Save, ShieldCheck, TriangleAlert } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { ROLE_LABELS, type Role } from "@/lib/erp/enums";
 import { capabilitiesFor, type Capability } from "@/lib/erp/permissions";
-import { CAPABILITY_GROUPS } from "@/lib/erp/capabilityGroups";
+import { CAPABILITY_GROUPS, LOCKED_CAPABILITIES } from "@/lib/erp/capabilityGroups";
 import { ROLE_TONE } from "@/lib/erp/statusTone";
 import { writeAudit } from "@/lib/erp/audit";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
@@ -28,10 +28,14 @@ type Overrides = Partial<Record<Role, Capability[]>>;
  * top role can have capabilities removed is one lockout away from being
  * unadministrable.
  *
- * Manager and Operator are editable, but capabilities marked `adminOnly` stay
- * locked. Those are the ones the Firestore rules hard-deny for non-admins, so
- * offering them here would produce a checkbox that appears to work and silently
- * fails at the database.
+ * Manager and Operator are editable, and almost everything is grantable — the
+ * Firestore rules read these grants, so a checkbox here really does change what
+ * the database allows.
+ *
+ * Two stay locked: `user.manage` and `settings.change`. Each is a route to
+ * removing an admin's own access, so granting either is one mistake away from a
+ * system nobody can administer. High-impact grants that *are* allowed — payroll,
+ * deletion, marking invoices paid — are marked rather than blocked.
  */
 export function RolePermissionsEditor() {
   const session = useErpSession();
@@ -134,9 +138,16 @@ export function RolePermissionsEditor() {
     <section className="mt-12">
       <h2 className="font-display text-lg text-cream-100">What each role can do</h2>
       <p className="mt-2 max-w-2xl text-sm text-cream-400">
-        Admin access is fixed. Manager and Operator can be tailored, except for
-        the finance and system controls marked with a lock, which stay
-        administrator-only and are enforced by the database, not just this screen.
+        Admin access is fixed. Manager and Operator can be given almost anything —
+        payroll, wage rates, marking invoices paid, deleting records — and the
+        database honours it, not just this screen. Permissions with a{" "}
+        <TriangleAlert
+          size={11}
+          className="inline-block -translate-y-px text-amber-400"
+          aria-hidden
+        />{" "}
+        are worth pausing over. The two with a lock cannot be granted at all: each
+        would let the holder take away your own access.
       </p>
 
       {/* Admin, read-only summary */}
@@ -200,7 +211,11 @@ export function RolePermissionsEditor() {
                         <div className="space-y-2">
                           {group.capabilities.map((c) => {
                             const id = `${role}-${c.capability}`;
-                            const locked = Boolean(c.adminOnly);
+                            // Locked means genuinely ungrantable — the rules deny
+                            // it too. `adminOnly` now only marks a grant as
+                            // consequential, so it is styled rather than disabled.
+                            const locked = LOCKED_CAPABILITIES.includes(c.capability);
+                            const weighty = Boolean(c.adminOnly) && !locked;
                             return (
                               <div key={c.capability}>
                                 <label
@@ -219,7 +234,9 @@ export function RolePermissionsEditor() {
                                     onChange={(e) =>
                                       toggle(role, c.capability, e.target.checked)
                                     }
-                                    className="mt-0.5 h-4 w-4 shrink-0 accent-brass-500 disabled:opacity-40"
+                                    className={`mt-0.5 h-4 w-4 shrink-0 disabled:opacity-40 ${
+                                      weighty ? "accent-amber-500" : "accent-brass-500"
+                                    }`}
                                   />
                                   <span className="min-w-0">
                                     {c.label}
@@ -227,7 +244,18 @@ export function RolePermissionsEditor() {
                                       <Lock
                                         size={11}
                                         className="ml-1.5 inline-block -translate-y-px text-cream-600"
-                                        aria-label="Administrator only"
+                                        aria-label="Cannot be granted"
+                                      />
+                                    )}
+                                    {/* Marked rather than blocked: handing someone
+                                        payroll approval or deletion is the admin's
+                                        call, but it should not look like granting
+                                        a customer list. */}
+                                    {weighty && (
+                                      <TriangleAlert
+                                        size={11}
+                                        className="ml-1.5 inline-block -translate-y-px text-amber-400"
+                                        aria-label="High-impact permission"
                                       />
                                     )}
                                     {c.hint && (

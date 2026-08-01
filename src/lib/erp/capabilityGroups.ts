@@ -1,4 +1,4 @@
-import type { Capability } from "./permissions";
+import { ADMIN_ONLY_CAPABILITIES, type Capability } from "./permissions";
 
 /**
  * Capabilities grouped for the permissions editor.
@@ -14,7 +14,14 @@ export interface CapabilityMeta {
   label: string;
   /** Shown when the setting has a consequence worth stating outright. */
   hint?: string;
-  /** Admin-only by design; rendered locked in the editor. */
+  /**
+   * Consequential enough to warn about in the editor.
+   *
+   * No longer a lock. Almost all of these are now grantable — see
+   * ADMIN_ONLY_CAPABILITIES for the two that are not — but a checkbox that hands
+   * someone the ability to approve payroll or delete records should not look like
+   * one that lets them view a customer list.
+   */
   adminOnly?: boolean;
 }
 
@@ -94,7 +101,7 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
       {
         capability: "user.manage",
         label: "Manage users and roles",
-        hint: "Can grant anyone any level of access.",
+        hint: "Can grant anyone any level of access, so it is never grantable itself.",
         adminOnly: true,
       },
     ],
@@ -108,7 +115,7 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
       {
         capability: "invoice.markPaid",
         label: "Mark an invoice paid",
-        hint: "Settles a debt in the books. Admin only by design.",
+        hint: "Settles a debt in the books.",
         adminOnly: true,
       },
       { capability: "expense.view", label: "View expenses" },
@@ -137,12 +144,17 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
     title: "System",
     capabilities: [
       { capability: "dashboard.view.ops", label: "Operations dashboard" },
-      { capability: "settings.change", label: "Change settings", adminOnly: true },
+      {
+        capability: "settings.change",
+        label: "Change settings",
+        hint: "Includes this permissions screen, so it is never grantable itself.",
+        adminOnly: true,
+      },
       { capability: "audit.view", label: "View the audit log", adminOnly: true },
       {
         capability: "record.delete",
         label: "Delete records",
-        hint: "Permanent. Admin only by design.",
+        hint: "Permanent, and not undoable.",
         adminOnly: true,
       },
     ],
@@ -157,9 +169,10 @@ export const CAPABILITY_LABELS: Record<string, string> = Object.fromEntries(
 /**
  * Capabilities that cannot be granted to a non-admin role from the editor.
  *
- * Mirrors ADMIN_ONLY_CAPABILITIES in permissions.ts. Kept here as a derived
- * list so the editor and the enforcement layer cannot drift apart silently.
+ * Re-exported from permissions.ts rather than derived from the `adminOnly` flags
+ * below. The flags are presentation — they mark a capability as consequential, so
+ * the editor can warn — and the two lists had already diverged once the grantable
+ * set widened. Enforcement has exactly one source, and it is the one the Firestore
+ * rules also mirror.
  */
-export const LOCKED_CAPABILITIES: Capability[] = CAPABILITY_GROUPS.flatMap((g) =>
-  g.capabilities.filter((c) => c.adminOnly).map((c) => c.capability)
-);
+export const LOCKED_CAPABILITIES: Capability[] = [...ADMIN_ONLY_CAPABILITIES];

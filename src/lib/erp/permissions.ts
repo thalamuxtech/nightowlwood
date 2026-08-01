@@ -172,23 +172,27 @@ export function capabilitiesFor(role: Role): readonly Capability[] {
 }
 
 /**
- * Capabilities that must never be granted to a non-admin, mirrored in
- * `firestore.rules` and the Cloud Functions. Kept explicit so a future edit to
- * MANAGER_CAPABILITIES that accidentally adds one of these is caught by a test.
+ * Capabilities no override can grant, mirrored in `firestore.rules` and the
+ * Cloud Functions.
+ *
+ * Only two, and both for the same reason: each is a route to taking away an
+ * admin's own access. `user.manage` can change roles, including demoting the last
+ * administrator; `settings.change` can edit the very document that stores these
+ * grants. A system where a mis-grant leaves nobody able to administer it has no
+ * way back except editing Firestore by hand.
+ *
+ * Everything else is the admin's to give. Approving payroll, setting wage rates,
+ * marking invoices paid, approving loans and estimates, deleting records, editing
+ * staff, reading the audit log and seeing company finance figures were all locked
+ * here before, which meant a workshop large enough to have a payroll clerk or a
+ * bookkeeper had to make that person a full administrator. Those are now grantable
+ * per role, and the rules honour the grant rather than denying it behind the
+ * checkbox.
+ *
+ * Kept explicit so a future edit to MANAGER_CAPABILITIES that accidentally adds
+ * one of these is caught by a test.
  */
 export const ADMIN_ONLY_CAPABILITIES: Capability[] = [
-  "dashboard.view.finance",
-  "audit.view",
-  "procurement.viewPerformance",
-  "invoice.markPaid",
-  "wage.viewRates",
-  "wage.editRates",
-  "wage.run",
-  "wage.approve",
-  "loan.approve",
-  "estimate.approve",
-  "staff.edit",
   "user.manage",
   "settings.change",
-  "record.delete",
 ];

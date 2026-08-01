@@ -2,6 +2,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import { BrevoMailer, ConsoleMailer, type Mailer } from "./mailer";
+import { requireCapability, type Actor } from "./capabilities";
 import {
   detailTable,
   paragraph,
@@ -58,22 +59,21 @@ async function companyDetails(): Promise<CompanyDetails> {
   }
 }
 
-/** Re-reads the caller's role server-side. A token alone proves nothing here. */
+/**
+ * Re-reads the caller's standing server-side. A token alone proves nothing here.
+ *
+ * Admin, or a role an admin has granted `invoice.markPaid` to. The Firestore rules
+ * honour that grant, so refusing it here would leave the checkbox in Settings
+ * doing nothing for the one action it most plainly describes.
+ */
 async function requireAdmin(
   auth: { uid: string; token: { email?: string } } | undefined
-): Promise<{ uid: string; email: string }> {
-  if (!auth) throw new HttpsError("unauthenticated", "Sign in first.");
-  const snap = await getFirestore().doc(`users/${auth.uid}`).get();
-  if (!snap.exists || snap.data()?.active === false) {
-    throw new HttpsError("permission-denied", "This account is not active staff.");
-  }
-  if (snap.data()?.role !== "admin") {
-    throw new HttpsError(
-      "permission-denied",
-      "Only an administrator can mark an invoice paid."
-    );
-  }
-  return { uid: auth.uid, email: auth.token.email ?? snap.data()?.email ?? "" };
+): Promise<Actor> {
+  return requireCapability(
+    auth,
+    "invoice.markPaid",
+    "You do not have permission to mark an invoice paid."
+  );
 }
 
 function formatNaira(kobo: number): string {
@@ -143,7 +143,9 @@ export const markInvoicePaid = onCall(
     await db.collection("auditLog").add({
       actorUid: actor.uid,
       actorEmail: actor.email,
-      actorRole: "admin",
+      // The real role, not a hardcoded "admin": a manager granted invoice.markPaid
+      // now reaches this, and the log has to say who actually did it.
+      actorRole: actor.role,
       action: "invoice_mark_paid",
       collectionName: "invoices",
       docId: invoiceId,
