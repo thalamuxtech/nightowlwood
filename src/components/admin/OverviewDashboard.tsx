@@ -39,6 +39,7 @@ import {
 import { formatNaira, formatNairaCompact } from "@/lib/erp/money";
 import { LiveCounter } from "@/components/admin/ui/LiveCounter";
 import { InsightsPanel } from "@/components/admin/InsightsPanel";
+import { DashboardAlerts } from "@/components/admin/DashboardAlerts";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import {
   bucketFor,
@@ -437,6 +438,14 @@ export function OverviewDashboard() {
           {session.displayName ? `, ${session.displayName.split(" ")[0]}` : ""}
         </h1>
       </header>
+
+      {/* Above the charts, and outside the `hasData` guard: a meter that has not been
+          read today matters on a quiet week too, and it is the quiet weeks when the
+          reading gets forgotten. Each block hides itself when it has nothing to say,
+          so this is empty space rather than furniture most days. */}
+      <div className="mt-8">
+        <DashboardAlerts />
+      </div>
 
       {!hasData ? (
         <div className="mt-10 rounded-3xl border border-night-700/60 bg-night-900/40 p-12 text-center">

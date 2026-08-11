@@ -50,6 +50,7 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { CustomerProfilePanel } from "@/components/admin/directory/CustomerProfilePanel";
 
 /**
  * The directory: customers, staff and suppliers in one place.
@@ -484,6 +485,12 @@ function CustomerList({
               <Detail label="Phone" value={r.phone || "Not recorded"} />
               <Detail label="Email" value={r.email || "Not recorded"} />
               <Detail label="Address" value={r.address || "Not recorded"} />
+              {/* Where the workshop stands with this customer: money both ways, their
+                  boards still on site, and a single timeline. Rendered only when the row
+                  is expanded, because it reads across six collections. */}
+              <div className="sm:col-span-2 lg:col-span-3">
+                <CustomerProfilePanel customerId={r.id} />
+              </div>
             </>
           }
           form={

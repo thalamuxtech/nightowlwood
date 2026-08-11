@@ -5,12 +5,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  BarChart3,
   CalendarClock,
   ChevronDown,
+  ClipboardCheck,
   ClipboardList,
   Contact,
+  IdCard,
   Eye,
   EyeOff,
+  FileQuestion,
   FolderKanban,
   GalleryHorizontalEnd,
   Gauge,
@@ -21,16 +25,22 @@ import {
   Loader2,
   LogIn,
   LogOut,
+  MapPin,
   Newspaper,
   NotebookPen,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
   Receipt,
+  Ruler,
   ReceiptText,
+  ScrollText,
   Settings,
   ShieldAlert,
   ShieldCheck,
+  ShoppingCart,
+  Target,
+  TrendingUp,
   Truck,
   Users,
   Wallet,
@@ -89,6 +99,45 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/jobs/", label: "Service Jobs", icon: ClipboardList, capability: "job.view" },
       { href: "/admin/projects/", label: "Projects", icon: FolderKanban, capability: "project.view" },
       { href: "/admin/worklog/", label: "Work Log", icon: NotebookPen, capability: "worklog.create" },
+      // Sits with the jobs it describes: a cutting list is what a service job is cut from.
+      { href: "/admin/cutting-lists/", label: "Cutting Lists", icon: Ruler, capability: "job.view" },
+    ],
+  },
+  /*
+   * Marketing, between Operations and Stock.
+   *
+   * Placed here because it is where work *comes from* — a marketer's site visit today is a
+   * service job in three weeks. Grouping it under Website would have been wrong: the website
+   * collects enquiries from people who already found us, this is the team going out to find
+   * them, and the two have nothing in common but the word "leads".
+   */
+  {
+    title: "Marketing",
+    items: [
+      {
+        href: "/admin/marketing/visits/",
+        label: "Site Visits",
+        icon: MapPin,
+        capability: "marketing.view",
+      },
+      {
+        href: "/admin/marketing/leads/",
+        label: "Lead Tracker",
+        icon: Target,
+        capability: "marketing.view",
+      },
+      {
+        href: "/admin/marketing/quotations/",
+        label: "Quotation Requests",
+        icon: FileQuestion,
+        capability: "marketing.view",
+      },
+      {
+        href: "/admin/marketing/summary/",
+        label: "Weekly Summary",
+        icon: BarChart3,
+        capability: "marketing.view",
+      },
     ],
   },
   {
@@ -99,10 +148,26 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/procurement/", label: "Suppliers", icon: Truck, capability: "supplier.view" },
     ],
   },
+  /*
+   * Invoices, on their own.
+   *
+   * Previously one entry inside Finance, alongside payroll and meters. Billing is not
+   * an occasional finance errand — it is a daily activity with its own documents,
+   * states and follow-up, and whoever is chasing an unpaid invoice is not thinking
+   * about wage rates. Splitting it out also gives the sales counter somewhere to sit
+   * that is about money coming in rather than going out.
+   */
+  {
+    title: "Invoices & sales",
+    items: [
+      { href: "/admin/invoices/", label: "Invoices", icon: ReceiptText, capability: "invoice.view" },
+      { href: "/admin/pos/", label: "Counter Sales", icon: ShoppingCart, capability: "sale.view" },
+      { href: "/admin/profit/", label: "Profit & Loss", icon: TrendingUp, capability: "profit.view" },
+    ],
+  },
   {
     title: "Finance",
     items: [
-      { href: "/admin/invoices/", label: "Invoices", icon: ReceiptText, capability: "invoice.view" },
       { href: "/admin/expenses/", label: "Expenses", icon: Receipt, capability: "expense.view" },
       { href: "/admin/meters/", label: "Power Meters", icon: Gauge, capability: "expense.view" },
       { href: "/admin/payroll/", label: "Payroll", icon: Wallet, capability: "wage.run" },
@@ -136,7 +201,15 @@ export const NAV_GROUPS: NavGroup[] = [
       // customer and supplier lists, and the staff tab hides its own controls
       // from anyone without staff.edit.
       { href: "/admin/directory/", label: "Directory", icon: Contact, capability: "customer.edit" },
+      { href: "/admin/staff/", label: "Staff & HR", icon: IdCard, capability: "staff.view" },
+      // Gated on `request`, not `decide`: whoever asked has to be able to see the
+      // outcome, and per-row controls handle who may actually decide.
+      { href: "/admin/approvals/", label: "Approvals", icon: ClipboardCheck, capability: "approval.request" },
       { href: "/admin/users/", label: "Users & Roles", icon: ShieldCheck, capability: "user.manage" },
+      // Every mutation to money, payroll, stock or status already wrote an audit
+      // entry; until now there was no way to read them, which made the trail
+      // useless for the disputes it exists to settle.
+      { href: "/admin/audit/", label: "Activity Log", icon: ScrollText, capability: "audit.view" },
       { href: "/admin/settings/", label: "Settings", icon: Settings, capability: "settings.change" },
     ],
   },
