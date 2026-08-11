@@ -46,6 +46,20 @@ export type AuditAction =
   | "role_change"
   | "user_deactivate"
   | "settings_change"
+  /*
+   * Approval workflow.
+   *
+   * Both halves are recorded separately and deliberately: `approval_request` says who
+   * asked and why, `approval_approve` says who allowed it. One combined entry would lose
+   * the fact that two different people were involved, which is the entire point of the
+   * workflow.
+   */
+  | "approval_request"
+  | "approval_approve"
+  | "approval_reject"
+  | "approval_cancel"
+  | "holiday_set"
+  | "staff_document"
   | "login";
 
 export interface WriteAuditInput {

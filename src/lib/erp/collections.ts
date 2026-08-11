@@ -25,10 +25,26 @@ export const COL = {
   invoices: "invoices",
   expenses: "expenses",
   meterReadings: "meterReadings",
+  // Counter sales: boards, edge tape and accessories sold over the counter.
+  // Separate from serviceJobs because nothing is being worked on — money and
+  // stock change hands once, so there is no pipeline to move through.
+  sales: "sales",
 
   // Payroll
   wageRates: "wageRates",
   wageRuns: "wageRuns",
+  /**
+   * Per-person rate overrides.
+   *
+   * `wageRates` holds the rate for a *kind of work*; this holds the rate for a
+   * *person* doing it, because two operators on the same machine are not
+   * necessarily paid the same and a raise for one must not raise everyone. A
+   * person with no row here falls back to the work-type rate, so this collection
+   * is empty until someone is actually paid differently.
+   */
+  staffRates: "staffRates",
+  /** Deductions raised at the work log, applied by the next wage or salary run. */
+  deductions: "deductions",
   // Monthly salaried staff are paid on their own cycle, so a salary run is a
   // separate record from a weekly wage run rather than a variant of it.
   salaryRuns: "salaryRuns",
@@ -48,6 +64,50 @@ export const COL = {
   // Tools
   toolRequests: "toolRequests",
 
+  /**
+   * Change requests awaiting an admin's decision.
+   *
+   * Every delete and every consequential edit routes through here rather than straight
+   * at the record, so a second pair of eyes sees it and the reason is captured while the
+   * person still remembers it.
+   */
+  approvals: "approvals",
+
+  /**
+   * Days the workshop was shut.
+   *
+   * Recorded so an empty work log is explained. Without it, a public holiday and a day
+   * nobody bothered logging look identical, and the first question about a light week is
+   * always "did we not work, or did we not write it down?".
+   */
+  holidays: "holidays",
+
+  /** Recurring fixed costs — rent, subscriptions, contributions. */
+  fixedCosts: "fixedCosts",
+
+  /**
+   * Cutting lists.
+   *
+   * The panel-by-panel document a customer brings in. Fillable through a public link, because
+   * the customer is the one who knows what they want cut — and because the paper copy is the
+   * thing that gets lost.
+   */
+  cuttingLists: "cuttingLists",
+
+  /*
+   * Marketing.
+   *
+   * Four collections because they have four different lifetimes. A site visit is a dated
+   * event that never changes; a lead has a status that moves for months; a follow-up is one
+   * attempt against a lead, of which there are many; a quotation request is a handover to
+   * the office with its own answer. Folding any pair together would mean editing history to
+   * record the present — see the note at the top of `marketing.ts`.
+   */
+  siteVisits: "siteVisits",
+  leads: "leads",
+  followUps: "followUps",
+  quoteRequests: "quoteRequests",
+
   // System
   auditLog: "auditLog",
   counters: "counters",
@@ -60,12 +120,21 @@ export const SUB = {
   jobPayments: "payments",
   components: "components",
   features: "features",
+  /** Kitchenwares, appliances and other bought-in extras on a component. */
+  addons: "addons",
   estimateLines: "lines",
   wageRunLines: "lines",
   loanRepayments: "repayments",
   inventoryMovements: "movements",
   toolItems: "items",
   purchaseLines: "lines",
+  saleLines: "lines",
+  /** Items bought against a project, the actual-cost side of the estimate. */
+  projectPurchases: "purchases",
+  /** Supporting files on an invoice — cutting lists, drawings, signed sheets. */
+  invoiceAttachments: "attachments",
+  /** Employment history, letters and documents for one staff member. */
+  staffDocuments: "documents",
 } as const;
 
 export const jobLinesPath = (jobId: string) => `${COL.serviceJobs}/${jobId}/${SUB.jobLines}`;
@@ -83,6 +152,15 @@ export const toolItemsPath = (requestId: string) =>
   `${COL.toolRequests}/${requestId}/${SUB.toolItems}`;
 export const purchaseLinesPath = (purchaseId: string) =>
   `${COL.purchases}/${purchaseId}/${SUB.purchaseLines}`;
+export const addonsPath = (projectId: string, componentId: string) =>
+  `${COL.projects}/${projectId}/${SUB.components}/${componentId}/${SUB.addons}`;
+export const saleLinesPath = (saleId: string) => `${COL.sales}/${saleId}/${SUB.saleLines}`;
+export const projectPurchasesPath = (projectId: string) =>
+  `${COL.projects}/${projectId}/${SUB.projectPurchases}`;
+export const invoiceAttachmentsPath = (invoiceId: string) =>
+  `${COL.invoices}/${invoiceId}/${SUB.invoiceAttachments}`;
+export const staffDocumentsPath = (staffId: string) =>
+  `${COL.staff}/${staffId}/${SUB.staffDocuments}`;
 
 /** Document-number counters, incremented atomically in a transaction. */
 export const COUNTER = {
@@ -90,6 +168,8 @@ export const COUNTER = {
   project: "project",
   invoice: "invoice",
   toolRequest: "toolRequest",
+  sale: "sale",
+  cuttingList: "cuttingList",
 } as const;
 
 export type CounterName = (typeof COUNTER)[keyof typeof COUNTER];
@@ -100,4 +180,6 @@ export const NUMBER_PREFIX: Record<CounterName, string> = {
   project: "PRJ",
   invoice: "INV",
   toolRequest: "TR",
+  sale: "RCP",
+  cuttingList: "CL",
 };

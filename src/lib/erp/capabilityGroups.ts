@@ -99,6 +99,12 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
       { capability: "staff.view", label: "View staff" },
       { capability: "staff.edit", label: "Edit staff records", adminOnly: true },
       {
+        capability: "hr.manage",
+        label: "HR records, letters and ID cards",
+        hint: "Employment details, appointment letters, staff ID cards.",
+        adminOnly: true,
+      },
+      {
         capability: "user.manage",
         label: "Manage users and roles",
         hint: "Can grant anyone any level of access, so it is never grantable itself.",
@@ -107,15 +113,49 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
     ],
   },
   {
+    key: "approvals",
+    title: "Approvals & changes",
+    capabilities: [
+      {
+        capability: "approval.request",
+        label: "Request a deletion or change",
+        hint: "Raises a request with a reason. Does not carry it out.",
+      },
+      {
+        capability: "approval.decide",
+        label: "Approve or refuse requests",
+        hint: "Granting this to the same person who raises requests defeats the workflow.",
+        adminOnly: true,
+      },
+      {
+        capability: "holiday.manage",
+        label: "Mark public holidays and closures",
+        hint: "Affects how absence is counted in payroll.",
+        adminOnly: true,
+      },
+    ],
+  },
+  {
     key: "money",
-    title: "Money",
+    title: "Invoices & money",
     capabilities: [
       { capability: "invoice.view", label: "View invoices" },
       { capability: "invoice.create", label: "Create invoices" },
       {
+        capability: "invoice.edit",
+        label: "Edit a draft invoice",
+        hint: "Lines, tax, commission and discount, while it is still a draft.",
+      },
+      {
         capability: "invoice.markPaid",
         label: "Mark an invoice paid",
         hint: "Settles a debt in the books.",
+        adminOnly: true,
+      },
+      {
+        capability: "invoice.void",
+        label: "Void an invoice",
+        hint: "Cancels a document already issued to a customer.",
         adminOnly: true,
       },
       { capability: "expense.view", label: "View expenses" },
@@ -123,6 +163,30 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
       {
         capability: "dashboard.view.finance",
         label: "Company finances & P&L",
+        adminOnly: true,
+      },
+      {
+        capability: "profit.view",
+        label: "Profit & loss report",
+        hint: "Revenue against every cost, including payroll.",
+        adminOnly: true,
+      },
+    ],
+  },
+  {
+    key: "sales",
+    title: "Counter sales",
+    capabilities: [
+      { capability: "sale.view", label: "View sales and takings" },
+      {
+        capability: "sale.create",
+        label: "Sell at the counter",
+        hint: "Takes payment and deducts the stock sold.",
+      },
+      {
+        capability: "sale.void",
+        label: "Void a completed sale",
+        hint: "Reverses both the takings and the stock movement.",
         adminOnly: true,
       },
     ],
@@ -135,6 +199,11 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
       { capability: "wage.editRates", label: "Change wage rates", adminOnly: true },
       { capability: "wage.run", label: "Generate a wage run", adminOnly: true },
       { capability: "wage.approve", label: "Approve and pay wages", adminOnly: true },
+      {
+        capability: "deduction.create",
+        label: "Raise a pay deduction",
+        hint: "Advance, no-show or penalty. Applied by the next run, which still needs approval.",
+      },
       { capability: "loan.request", label: "Request a loan or advance" },
       { capability: "loan.approve", label: "Approve loans and advances", adminOnly: true },
     ],

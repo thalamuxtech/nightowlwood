@@ -55,21 +55,61 @@ export const CAPABILITIES = [
   "customer.edit",
   "staff.view",
   "staff.edit",
+  /** HR records, letters and ID cards. Separate from staff.edit, which is pay-facing. */
+  "hr.manage",
   "user.manage",
   "settings.change",
+
+  /*
+   * Approvals.
+   *
+   * `approval.request` is held by anyone who can reach a delete button — it is the
+   * ability to *ask*. `approval.decide` is the gate, and giving it to the same person who
+   * raised the request defeats the workflow, which is why they are separate capabilities
+   * rather than one.
+   */
+  "approval.request",
+  "approval.decide",
 
   // Money, finance-sensitive
   "invoice.view",
   "invoice.create",
+  "invoice.edit",
   "invoice.markPaid",
+  "invoice.void",
   "expense.view",
   "expense.create",
+  /** Counter sales. Selling is routine; voiding a completed sale is not. */
+  "sale.view",
+  "sale.create",
+  "sale.void",
+  /** Company-wide profit and loss, so admin-level by default. */
+  "profit.view",
   "wage.viewRates",
   "wage.editRates",
   "wage.run",
   "wage.approve",
+  /** Deductions reduce someone's pay, so raising one is its own permission. */
+  "deduction.create",
   "loan.request",
   "loan.approve",
+
+  /** Marking days the workshop was shut, which affects absence and payroll. */
+  "holiday.manage",
+
+  /*
+   * Marketing.
+   *
+   * Split three ways because three different people touch it. A marketer *records* — visits,
+   * leads, follow-ups, quotation requests — and that is the bulk of the daily traffic.
+   * `marketing.view` reads the pipeline without adding to it, which is what the office needs
+   * to answer a quotation request. `marketing.manage` is the supervisor's half: setting the
+   * daily targets and closing a lead as won or lost, both of which are judgements about
+   * someone else's work rather than a record of your own.
+   */
+  "marketing.view",
+  "marketing.record",
+  "marketing.manage",
 
   // Destructive
   "record.delete",
@@ -125,12 +165,52 @@ const MANAGER_CAPABILITIES: Capability[] = [
   "purchase.view",
   "purchase.create",
   "purchase.receive",
+  /*
+   * The counter.
+   *
+   * Selling over the counter is exactly the manager's job — it is the shop floor,
+   * and an admin is not standing at it. Voiding a completed sale is not: that
+   * reverses stock and takings after the fact, so it stays with the admin along
+   * with everything else that can rewrite what money did.
+   */
+  "sale.view",
+  "sale.create",
+  /*
+   * Raising a deduction, but not approving the run that applies it.
+   *
+   * A no-show or a penalty is observed on the floor by whoever was there, and a
+   * deduction nobody can record until the admin is available is one that gets
+   * forgotten. The safeguard is that it only ever *proposes* the reduction — the
+   * wage run that consumes it still needs wage.approve.
+   */
+  "deduction.create",
+  /*
+   * Marketing, in full.
+   *
+   * The whole module is floor work — a marketer walks sites and a manager runs the marketer.
+   * Nothing in it moves money, so there is no reason to hold any of it back: the worst a
+   * wrong entry does is misstate how many sites were walked, and the audit log says who
+   * wrote it. `marketing.manage` is included because setting the daily targets and calling a
+   * lead won or lost is exactly the manager's judgement, not the admin's.
+   */
+  "marketing.view",
+  "marketing.record",
+  "marketing.manage",
   // Customers are needed to raise a job or a project against someone. Kept at
   // view: editing the directory is admin's, and customer.edit also gates the
   // website screens, which a manager has no part in.
   "customer.view",
   // Staff names, to log work against them. Not staff.edit.
   "staff.view",
+  /*
+   * Asking to delete or change something, but never deciding it.
+   *
+   * A manager needs a working delete button — a record entered against the wrong customer
+   * has to be fixable by whoever noticed. What they get is a request with a reason
+   * attached; `approval.decide` stays with the admin, because a workflow where the
+   * requester approves their own request is not a workflow.
+   */
+  "approval.request",
 ];
 
 /**

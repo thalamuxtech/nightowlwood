@@ -95,3 +95,17 @@ export function parseNairaInput(raw: string): number {
   const value = Number.parseFloat(cleaned);
   return Number.isFinite(value) ? toKobo(value) : 0;
 }
+
+/**
+ * The tax already contained within a gross amount.
+ *
+ * For an inclusive rate the tax is *not* `gross × percent`: at 7.5% a ₦1,075 gross
+ * contains ₦75 of tax, not ₦80.63. The correct extraction is
+ * `gross × percent / (100 + percent)`, which is the algebraic inverse of adding
+ * the rate on. Getting this wrong overstates the tax and understates the net on
+ * every inclusive invoice, which is the kind of error a tax authority finds.
+ */
+export function taxWithinKobo(grossKobo: number, percent: number): number {
+  if (!Number.isFinite(percent) || percent <= 0) return 0;
+  return Math.round((grossKobo * percent) / (100 + percent));
+}

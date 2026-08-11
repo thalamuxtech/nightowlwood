@@ -57,14 +57,31 @@ export const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
   mortise: "Mortise",
 };
 
-/** Board / sheet materials, from the `Inventory` and `C & E` sheets. */
+/**
+ * Board / sheet materials.
+ *
+ * **The order of this list is the order they appear everywhere** — intake forms, the
+ * job sheet, board reconciliation. It follows the sequence the workshop counts stock
+ * in rather than alphabetical or historical order, because a form whose fields run in
+ * a different order from the person reading the stack out loud produces transposed
+ * numbers. Egger and MDF lead because they are the two highest-volume lines.
+ *
+ * MFC comes in two sheet sizes (9×7 and 9×4 feet) which are stocked and counted
+ * separately, so they are distinct types rather than one type with a size field: a
+ * customer who brought ten 9×4 sheets is not owed ten 9×7 ones.
+ */
 export const BOARD_TYPES = [
-  "mdf",
   "egger",
+  "mdf",
   "hdf",
-  "quarter",
+  "mfc_9x7",
+  "mfc_9x4",
   "kwali",
+  "quarter",
+  "tape",
   "high_glossy",
+  // Bangaji is MFC 9x7 — see BOARD_TYPE_LABELS. Not a separate type.
+  "marine",
   "aluko",
   "glass",
   "other",
@@ -72,16 +89,83 @@ export const BOARD_TYPES = [
 export type BoardType = (typeof BOARD_TYPES)[number];
 
 export const BOARD_TYPE_LABELS: Record<BoardType, string> = {
-  mdf: "MDF",
   egger: "Egger",
+  mdf: "MDF",
   hdf: "HDF",
-  quarter: "Quarter",
+  /*
+   * MFC 9×7 is the board the workshop calls Bangaji.
+   *
+   * One board, two names — the rate card gives it as "MFC(9x7) Bangaji". Kept as a single
+   * type with both names in the label, because modelling them separately (as this first did)
+   * would let the same sheet be counted twice on one job and priced under two different
+   * rates.
+   */
+  mfc_9x7: "MFC 9×7 (Bangaji)",
+  mfc_9x4: "MFC 9×4",
   kwali: "Kwali",
+  quarter: "Quarter",
+  tape: "Edge Tape",
   high_glossy: "High Glossy",
+  marine: "Marine",
   aluko: "Aluko",
   glass: "Glass",
   other: "Other",
 };
+
+/**
+ * Cutting & edging rate per board, by material.
+ *
+ * The rates genuinely differ by material — Bangaji at ₦6,400 is more than twice MDF — so a
+ * single blended C&E rate would either overcharge the cheap boards or undercharge the
+ * expensive ones. Seeds `settings/boardRateCard` on first run and is editable from
+ * Settings; nothing reads these constants once that document exists.
+ *
+ * These are the figures confirmed by the workshop, in naira per board.
+ */
+export const DEFAULT_BOARD_CE_RATES: Partial<Record<BoardType, number>> = {
+  high_glossy: 3000,
+  mdf: 3000,
+  egger: 3200,
+  // MFC 9×7, which the workshop calls Bangaji.
+  mfc_9x7: 6400,
+  kwali: 3000,
+  marine: 3200,
+};
+
+/** Board types the C&E rate card prices, in the order they are quoted. */
+export const CE_RATED_BOARD_TYPES = [
+  "high_glossy",
+  "mdf",
+  "egger",
+  "mfc_9x7",
+  "kwali",
+  "marine",
+] as const;
+export type CeRatedBoardType = (typeof CE_RATED_BOARD_TYPES)[number];
+
+/**
+ * The board types counted on intake, in counting order.
+ *
+ * A subset of BOARD_TYPES: these are the ones the Job Order Tracker has a box for and
+ * that `BoardBreakdown` carries. The rest exist as line-item materials but are not
+ * part of the per-job count, so listing them on the intake form would invite counts
+ * that nothing reconciles against.
+ *
+ * `tape` is included because the workshop receives it per job, but it is measured in
+ * rolls rather than sheets — see `receivedBoards` in boards.ts, which excludes it from
+ * the board remainder for exactly that reason.
+ */
+export const COUNTED_BOARD_TYPES = [
+  "egger",
+  "mdf",
+  "hdf",
+  "mfc_9x7",
+  "mfc_9x4",
+  "kwali",
+  "quarter",
+  "tape",
+] as const;
+export type CountedBoardType = (typeof COUNTED_BOARD_TYPES)[number];
 
 /**
  * Service job lifecycle. Mirrors the physical Job Order Tracker: boards come
@@ -203,6 +287,23 @@ export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
   void: "Void",
 };
 
+/**
+ * Whether the tax rate is added on top of the line total or already inside it.
+ *
+ * Nigerian trade quotes both ways: a workshop price is usually the price the
+ * customer pays (inclusive), while a corporate client with a TIN expects VAT
+ * shown as an addition (exclusive). Getting this wrong changes what is owed by
+ * the tax amount, so it is recorded per invoice rather than assumed.
+ */
+export const TAX_MODES = ["none", "exclusive", "inclusive"] as const;
+export type TaxMode = (typeof TAX_MODES)[number];
+
+export const TAX_MODE_LABELS: Record<TaxMode, string> = {
+  none: "No tax",
+  exclusive: "Added on top (exclusive)",
+  inclusive: "Already included (inclusive)",
+};
+
 export const PAYMENT_METHODS = ["cash", "transfer", "pos", "cheque", "other"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
@@ -214,35 +315,154 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   other: "Other",
 };
 
+/**
+ * Expense categories.
+ *
+ * `salary` is separate from `wages` because the two are different pay cycles with
+ * different people on them — a monthly salaried fitter and a piece-rate machine
+ * operator — and the profit report breaks labour down by both. `tax` exists so
+ * remitted VAT and company tax are a cost line rather than being buried in
+ * `admin`, which would understate what the business actually pays out.
+ */
 export const EXPENSE_CATEGORIES = [
   "wages",
+  "salary",
   "food",
   "transport",
   "fuel",
   "power",
   "consumables",
   "materials",
+  "purchases",
   "tools",
   "maintenance",
   "rent",
+  "tax",
   "admin",
   "other",
 ] as const;
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
 
 export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, string> = {
-  wages: "Wages & Salary",
+  wages: "Wages (piece rate)",
+  salary: "Salaries (monthly)",
   food: "Food",
   transport: "Transport",
   fuel: "Fuel",
   power: "Power / Utilities",
   consumables: "Consumables",
   materials: "Materials",
+  purchases: "Project purchases",
   tools: "Tools",
   maintenance: "Maintenance",
   rent: "Rent",
+  tax: "Tax remitted",
   admin: "Administration",
   other: "Other",
+};
+
+/**
+ * Cost groups for the profit report.
+ *
+ * Every expense category maps to exactly one group, so the P&L cannot omit a
+ * category or count one twice — adding a category without placing it here is a
+ * type error rather than a silently missing cost line.
+ */
+export const COST_GROUPS = ["labour", "materials", "power", "overhead", "tax"] as const;
+export type CostGroup = (typeof COST_GROUPS)[number];
+
+export const COST_GROUP_LABELS: Record<CostGroup, string> = {
+  labour: "Labour",
+  materials: "Materials & stock",
+  power: "Power",
+  overhead: "Overheads",
+  tax: "Tax",
+};
+
+export const EXPENSE_COST_GROUP: Record<ExpenseCategory, CostGroup> = {
+  wages: "labour",
+  salary: "labour",
+  food: "overhead",
+  transport: "overhead",
+  fuel: "power",
+  power: "power",
+  consumables: "materials",
+  materials: "materials",
+  purchases: "materials",
+  tools: "overhead",
+  maintenance: "overhead",
+  rent: "overhead",
+  tax: "tax",
+  admin: "overhead",
+  other: "overhead",
+};
+
+/**
+ * Whether a cost is fixed or moves with output.
+ *
+ * The distinction the workshop actually manages by. Rent, salaries and subscriptions
+ * are owed whether or not a single board is cut; wages, power, gum and blades scale with
+ * how busy the week was. Knowing the fixed monthly figure is what answers "how much do
+ * we have to turn over before we break even", which a single cost total cannot.
+ *
+ * `salary` is fixed and `wages` is variable — the same reason they are separate
+ * categories at all. Maintenance is variable because it follows machine hours.
+ */
+export const COST_BEHAVIOURS = ["fixed", "variable"] as const;
+export type CostBehaviour = (typeof COST_BEHAVIOURS)[number];
+
+export const COST_BEHAVIOUR_LABELS: Record<CostBehaviour, string> = {
+  fixed: "Fixed",
+  variable: "Variable",
+};
+
+export const EXPENSE_COST_BEHAVIOUR: Record<ExpenseCategory, CostBehaviour> = {
+  // Owed regardless of output.
+  salary: "fixed",
+  rent: "fixed",
+  admin: "fixed",
+  // Moves with how much work goes through the shop.
+  wages: "variable",
+  power: "variable",
+  fuel: "variable",
+  consumables: "variable",
+  materials: "variable",
+  purchases: "variable",
+  maintenance: "variable",
+  tools: "variable",
+  food: "variable",
+  transport: "variable",
+  tax: "variable",
+  other: "variable",
+};
+
+// ---------------------------------------------------------------------------
+// Counter sales (POS)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a counter sale is for.
+ *
+ * The workshop sells boards, edge tape and fittings over the counter as well as
+ * doing service work, and that trade never appeared in the records at all. A sale
+ * is its own document rather than a service job because there is no work to
+ * track: money and stock change hands once.
+ */
+/**
+ * A counter sale's state.
+ *
+ * `credit` is a completed sale whose money has not all arrived — the goods left, the stock came
+ * off the shelf, and the customer owes the balance. Kept distinct from `completed` so the till
+ * can list what is owed rather than treating every sale as settled, which is how a trade
+ * customer's account ends up in a notebook.
+ */
+export const SALE_STATUSES = ["completed", "credit", "voided"] as const;
+export type SaleStatus = (typeof SALE_STATUSES)[number];
+
+export const SALE_STATUS_LABELS: Record<SaleStatus, string> = {
+  completed: "Paid",
+  credit: "On account",
+  voided: "Voided",
 };
 
 // ---------------------------------------------------------------------------
@@ -285,6 +505,109 @@ export const WAGE_WORK_TYPE_LABELS: Record<WageWorkType, string> = {
 
 export const WAGE_RUN_STATUSES = ["draft", "approved", "paid"] as const;
 export type WageRunStatus = (typeof WAGE_RUN_STATUSES)[number];
+
+/**
+ * Why money was withheld from someone's pay.
+ *
+ * Kept as a controlled list because the reason changes how it should be read: an
+ * advance is money already handed over and is genuinely owed back, while a
+ * penalty or a no-show is a reduction in what was earned. Lumping both under one
+ * "deduction" figure makes a wage dispute unarguable, since nobody can say which
+ * of the two a given amount was.
+ *
+ * These are recorded at the work log, so the wage run applies them automatically
+ * rather than someone remembering to subtract them at pay time.
+ */
+export const DEDUCTION_TYPES = ["advance", "no_show", "penalty", "general"] as const;
+export type DeductionType = (typeof DEDUCTION_TYPES)[number];
+
+export const DEDUCTION_TYPE_LABELS: Record<DeductionType, string> = {
+  advance: "Salary / wage advance",
+  no_show: "No show",
+  penalty: "Penalty / damage",
+  general: "General",
+};
+
+/**
+ * How each deduction's amount is arrived at.
+ *
+ * `no_show` is the one that can be computed: a day absent costs a day's pay, which for a
+ * salaried person is their monthly figure over the working days in the month. The others
+ * are judgements — what a broken panel cost, what advance was handed over — so they are
+ * entered. Recording which is which lets the form derive the figure where it can and
+ * insist on one where it cannot.
+ */
+export const DEDUCTION_AMOUNT_SOURCE: Record<DeductionType, "derived" | "entered"> = {
+  no_show: "derived",
+  penalty: "entered",
+  advance: "entered",
+  general: "entered",
+};
+
+// ---------------------------------------------------------------------------
+// People / HR
+// ---------------------------------------------------------------------------
+
+/**
+ * How someone is paid.
+ *
+ * Drives which pay run picks them up: `salary` staff appear in the monthly salary run,
+ * `wage` staff in the weekly piece-rate run. Stored explicitly rather than inferred from
+ * whether a salary figure is present, so a salaried employee on zero this month is still
+ * distinguishable from a piece-rate worker.
+ */
+export const EMPLOYMENT_TYPES = ["salary", "wage"] as const;
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+
+export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
+  salary: "Monthly salary",
+  wage: "Piece-rate wage",
+};
+
+/**
+ * Roles as the workshop names them.
+ *
+ * A controlled list because these appear on appointment letters and ID cards, where
+ * free text produced three spellings of "Assistant Operator". `other` exists so a new
+ * role never blocks a hire.
+ */
+export const STAFF_ROLES = [
+  "manager",
+  "accountant",
+  "store_keeper",
+  "secretary",
+  "cutting_operator",
+  "edging_operator",
+  "assistant_operator",
+  "security",
+  "janitor",
+  "other",
+] as const;
+export type StaffRole = (typeof STAFF_ROLES)[number];
+
+export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
+  manager: "Manager",
+  accountant: "Accountant",
+  store_keeper: "Store Keeper",
+  secretary: "Secretary",
+  cutting_operator: "Cutting Operator",
+  edging_operator: "Edging Operator",
+  assistant_operator: "Assistant Operator",
+  security: "Security",
+  janitor: "Janitor",
+  other: "Other",
+};
+
+/** Whether someone is still employed, and how they left if not. */
+export const STAFF_STATUSES = ["active", "suspended", "resigned", "terminated"] as const;
+export type StaffStatus = (typeof STAFF_STATUSES)[number];
+
+export const STAFF_STATUS_LABELS: Record<StaffStatus, string> = {
+  active: "Active",
+  suspended: "Suspended",
+  resigned: "Resigned",
+  terminated: "Terminated",
+};
 
 export const LOAN_TYPES = ["loan", "advance"] as const;
 export type LoanType = (typeof LOAN_TYPES)[number];
@@ -393,10 +716,26 @@ const BOARD_TYPE_ALIASES: Record<string, BoardType> = {
   eager: "egger",
   eegger: "egger",
   hdf: "hdf",
+  // MFC by size. A bare "mfc" cannot be resolved to a size, so it maps to the
+  // higher-volume 9×7 rather than being dropped — a board counted as the wrong size is
+  // recoverable, one counted as nothing is not.
+  mfc: "mfc_9x7",
+  mfc9x7: "mfc_9x7",
+  mfc97: "mfc_9x7",
+  mfc9x4: "mfc_9x4",
+  mfc94: "mfc_9x4",
   quarter: "quarter",
   qrt: "quarter",
   quarterplywood: "quarter",
   kwali: "kwali",
+  tape: "tape",
+  edgetape: "tape",
+  stape: "tape",
+  // Bangaji is the workshop's name for MFC 9×7, so both spellings resolve to it.
+  bangaji: "mfc_9x7",
+  bangagi: "mfc_9x7",
+  marine: "marine",
+  marineboard: "marine",
   highglossy: "high_glossy",
   highglosy: "high_glossy",
   aluko: "aluko",
@@ -419,3 +758,182 @@ export function normaliseBoardType(raw: string | null | undefined): BoardType | 
   if (!raw) return null;
   return BOARD_TYPE_ALIASES[slug(raw)] ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// Marketing
+// ---------------------------------------------------------------------------
+
+/**
+ * What kind of site a marketer walked onto.
+ *
+ * Two values because that is the real split in how the work is won: a homeowner
+ * decides alone and quickly, a commercial site goes through an engineer or a main
+ * contractor and takes months. The follow-up rhythm is different for each, so the
+ * distinction is worth recording at the door rather than inferring later.
+ */
+export const SITE_TYPES = ["residential", "commercial"] as const;
+export type SiteType = (typeof SITE_TYPES)[number];
+
+export const SITE_TYPE_LABELS: Record<SiteType, string> = {
+  residential: "Residential",
+  commercial: "Commercial",
+};
+
+/** Who was actually spoken to on site. */
+export const CONTACT_ROLES = ["engineer", "contractor", "owner", "other"] as const;
+export type ContactRole = (typeof CONTACT_ROLES)[number];
+
+export const CONTACT_ROLE_LABELS: Record<ContactRole, string> = {
+  engineer: "Engineer",
+  contractor: "Contractor",
+  owner: "Owner",
+  other: "Someone else",
+};
+
+/**
+ * How warm the prospect felt.
+ *
+ * A marketer's read, recorded at the time. Deliberately three coarse bands rather
+ * than a score out of ten: nobody can tell a 6 from a 7 standing in a dusty
+ * corridor, and a scale finer than the judgement behind it invents precision.
+ */
+export const INTEREST_LEVELS = ["high", "medium", "low"] as const;
+export type InterestLevel = (typeof INTEREST_LEVELS)[number];
+
+export const INTEREST_LEVEL_LABELS: Record<InterestLevel, string> = {
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+/**
+ * Where the building had got to.
+ *
+ * This is the single most useful field on the form, because it says *when* the work
+ * is winnable. A site that has not started is a diary entry for three months' time;
+ * one near finishing is either today's order or already lost to whoever is on site.
+ */
+export const SITE_SITUATIONS = [
+  "not_started",
+  "ongoing",
+  "near_finishing",
+  "has_carpenter",
+] as const;
+export type SiteSituation = (typeof SITE_SITUATIONS)[number];
+
+export const SITE_SITUATION_LABELS: Record<SiteSituation, string> = {
+  not_started: "Not started",
+  ongoing: "Ongoing work",
+  near_finishing: "Near finishing",
+  has_carpenter: "Already has a carpenter",
+};
+
+/** What was talked about. Several apply on one visit, so this is a multi-select. */
+export const DISCUSSED_SERVICES = [
+  "kitchen_cabinets",
+  "doors",
+  "cutting_edging",
+  "wardrobes",
+  "interior",
+  "glass",
+  "other",
+] as const;
+export type DiscussedService = (typeof DISCUSSED_SERVICES)[number];
+
+export const DISCUSSED_SERVICE_LABELS: Record<DiscussedService, string> = {
+  kitchen_cabinets: "Kitchen cabinets",
+  doors: "Doors",
+  cutting_edging: "Cutting & edging",
+  wardrobes: "Wardrobes",
+  interior: "General interior work",
+  glass: "Glass work",
+  other: "Other",
+};
+
+/** What happens next. One per visit — the single thing that has been committed to. */
+export const NEXT_ACTIONS = [
+  "follow_up_call",
+  "site_revisit",
+  "send_quotation",
+  "send_samples",
+  "none",
+] as const;
+export type NextAction = (typeof NEXT_ACTIONS)[number];
+
+export const NEXT_ACTION_LABELS: Record<NextAction, string> = {
+  follow_up_call: "Follow-up call",
+  site_revisit: "Site revisit",
+  send_quotation: "Send quotation",
+  send_samples: "Send samples",
+  none: "No follow-up needed",
+};
+
+/**
+ * A lead's state.
+ *
+ * `won` and `lost` are both terminal and deliberately distinct: a pipeline that only
+ * records wins cannot tell you why the losses happened, which is the more useful half
+ * of the information. `contacted` is the working middle where most of the file lives.
+ */
+export const LEAD_STATUSES = ["new", "contacted", "quoted", "won", "lost"] as const;
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
+  new: "New",
+  contacted: "Following up",
+  quoted: "Quoted",
+  won: "Won",
+  lost: "Lost",
+};
+
+/** Terminal states, where no further follow-up is expected. */
+export const CLOSED_LEAD_STATUSES: readonly LeadStatus[] = ["won", "lost"];
+
+/** Roughly what the client can spend. A band, because nobody states a figure at first contact. */
+export const BUDGET_LEVELS = ["high", "medium", "low", "unknown"] as const;
+export type BudgetLevel = (typeof BUDGET_LEVELS)[number];
+
+export const BUDGET_LEVEL_LABELS: Record<BudgetLevel, string> = {
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+  unknown: "Not known yet",
+};
+
+/** How a follow-up was made. Recorded because a visit and a call are not the same effort. */
+export const CONTACT_METHODS = ["call", "visit", "whatsapp", "sms", "email"] as const;
+export type ContactMethod = (typeof CONTACT_METHODS)[number];
+
+export const CONTACT_METHOD_LABELS: Record<ContactMethod, string> = {
+  call: "Call",
+  visit: "Visit",
+  whatsapp: "WhatsApp",
+  sms: "SMS",
+  email: "Email",
+};
+
+/** How soon the client needs it, as they described it. */
+export const URGENCY_LEVELS = ["high", "medium", "low"] as const;
+export type UrgencyLevel = (typeof URGENCY_LEVELS)[number];
+
+export const URGENCY_LEVEL_LABELS: Record<UrgencyLevel, string> = {
+  high: "High — wants it now",
+  medium: "Medium",
+  low: "Low — planning ahead",
+};
+
+/**
+ * A quotation request's state.
+ *
+ * The request is the marketer handing a serious client to the office; these three
+ * states are the handover's whole lifecycle. `quoted` carries the invoice or estimate
+ * that answered it, which is what closes the loop between marketing and billing.
+ */
+export const QUOTE_REQUEST_STATUSES = ["pending", "quoted", "declined"] as const;
+export type QuoteRequestStatus = (typeof QUOTE_REQUEST_STATUSES)[number];
+
+export const QUOTE_REQUEST_STATUS_LABELS: Record<QuoteRequestStatus, string> = {
+  pending: "Waiting on the office",
+  quoted: "Quotation sent",
+  declined: "Declined",
+};
