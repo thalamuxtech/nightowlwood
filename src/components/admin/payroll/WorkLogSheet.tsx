@@ -20,8 +20,8 @@ import { SHEET, sheetCss } from "@/components/admin/print/sheetStyles";
 export interface WorkLogPrintRow {
   id: string;
   staffName: string;
-  workType: WageWorkType;
-  units: number;
+  /** Every kind of work on the entry, each with its own count. */
+  items: Array<{ workType: WageWorkType; units: number }>;
   workDateMs: number | null;
   assistantNames: string[];
   assistantCount: number;
@@ -56,14 +56,22 @@ export function WorkLogSheet({
 
   const blanks = Math.max(0, MIN_ROWS - rows.length);
 
-  const totalUnits = rows.reduce((s, r) => s + r.units, 0);
+  const totalUnits = rows.reduce(
+    (s, r) => s + r.items.reduce((n, i) => n + i.units, 0),
+    0
+  );
   const unnamed = rows.filter(
     (r) => r.assistantNames.length === 0 && r.assistantCount > 0
   ).length;
 
-  // Units by work type, so the sheet reconciles against the wage run.
+  // Units by work type, so the sheet reconciles against the wage run. Summed across
+  // every item on every entry, since one entry can carry several types.
   const byType = new Map<WageWorkType, number>();
-  for (const r of rows) byType.set(r.workType, (byType.get(r.workType) ?? 0) + r.units);
+  for (const r of rows) {
+    for (const i of r.items) {
+      byType.set(i.workType, (byType.get(i.workType) ?? 0) + i.units);
+    }
+  }
 
   return (
     <>
@@ -114,8 +122,21 @@ export function WorkLogSheet({
                     : ""}
                 </td>
                 <td>{r.staffName}</td>
-                <td>{WAGE_WORK_TYPE_LABELS[r.workType]}</td>
-                <td className="sh-num">{r.units}</td>
+                {/* Stacked within the cell rather than split across rows, so the
+                    date, operator and assistants stay stated once per entry — a
+                    repeated operator name reads as two separate shifts. */}
+                <td>
+                  {r.items.map((i, n) => (
+                    <div key={`${i.workType}-${n}`}>
+                      {WAGE_WORK_TYPE_LABELS[i.workType]}
+                    </div>
+                  ))}
+                </td>
+                <td className="sh-num">
+                  {r.items.map((i, n) => (
+                    <div key={`${i.workType}-${n}`}>{i.units}</div>
+                  ))}
+                </td>
                 <td>{r.jobNumber ?? ""}</td>
                 <td>
                   {r.assistantNames.length > 0 ? (

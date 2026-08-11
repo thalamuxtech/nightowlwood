@@ -8,6 +8,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -15,16 +16,36 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { COL, loanRepaymentsPath, wageRunLinesPath } from "./collections";
-import type { ExpenseCategory, WageWorkType } from "./enums";
+import {
+  WAGE_WORK_TYPES,
+  type DeductionType,
+  type ExpenseCategory,
+  type WageWorkType,
+} from "./enums";
+import {
+  DEFAULT_WAGE_WORK_TYPE_SETTINGS,
+  SETTINGS_DOC,
+  type WageWorkTypeSettings,
+} from "./settings";
 import { sumKobo } from "./money";
-import type { Loan, WageRate, WorkLog } from "./types";
+import type { Loan, StaffRate, WageRate, WorkLog } from "./types";
 import { writeAudit, type AuditActor } from "./audit";
 import {
+  applyAllDeductions,
   applyDeductions,
   computeWageRun,
   resolveRates,
+  resolveStaffRates,
+  resolveWorkTypes,
+  workTypeIdFrom,
+  type ComputedStaffRow,
   type ComputedWageLine,
 } from "./wages";
+import {
+  loadPendingDeductions,
+  markDeductionsApplied,
+  releaseDeductionsForRun,
+} from "./workLogs";
 
 /**
  * Wage run persistence.
@@ -47,13 +68,27 @@ export interface RunPreview {
     operatorKobo: number;
     assistantKobo: number;
     totalKobo: number;
+    /** Loan repayments plus work-log deductions. */
     deductionKobo: number;
+    loanDeductionKobo: number;
+    /** Work-log deductions taken in this run, itemised for the payslip. */
+    otherDeductions: Array<{
+      id: string;
+      type: DeductionType;
+      amountKobo: number;
+      reason?: string;
+    }>;
     netKobo: number;
+    /** What this person was paid at, so the run can show the working. */
+    rateLines: ComputedStaffRow["rateLines"];
   }>;
   operatorTotalKobo: number;
   assistantTotalKobo: number;
   grandTotalKobo: number;
   deductionsKobo: number;
+  /** Split out so the run can say what was a loan and what was a penalty. */
+  loanDeductionsKobo: number;
+  otherDeductionsKobo: number;
   netPayableKobo: number;
   unattributedAssistantKobo: number;
   missingRates: WageWorkType[];
@@ -62,6 +97,16 @@ export interface RunPreview {
     operatorRateKobo: number;
     assistantRateKobo: number;
   }>;
+  /** Per-person overrides in force, snapshotted so history stays reproducible. */
+  staffRatesUsed: Array<{
+    staffId: string;
+    staffName: string;
+    role: "operator" | "assistant";
+    workType: WageWorkType | null;
+    rateKobo: number;
+  }>;
+  /** Deduction documents this run intends to claim on approval. */
+  deductionIds: string[];
   logCount: number;
 }
 
@@ -79,29 +124,41 @@ export async function previewWageRun(
   const startTs = Timestamp.fromDate(input.periodStart);
   const endTs = Timestamp.fromDate(input.periodEnd);
 
-  const [logSnap, rateSnap, loanSnap, staffSnap] = await Promise.all([
-    getDocs(
-      query(
-        collection(db, COL.workLogs),
-        where("workDate", ">=", startTs),
-        where("workDate", "<=", endTs)
-      )
-    ),
-    getDocs(collection(db, COL.wageRates)),
-    getDocs(
-      query(collection(db, COL.loans), where("status", "in", ["disbursed", "repaying"]))
-    ),
-    getDocs(collection(db, COL.staff)),
-  ]);
+  const [logSnap, rateSnap, staffRateSnap, loanSnap, staffSnap, pending] =
+    await Promise.all([
+      getDocs(
+        query(
+          collection(db, COL.workLogs),
+          where("workDate", ">=", startTs),
+          where("workDate", "<=", endTs)
+        )
+      ),
+      getDocs(collection(db, COL.wageRates)),
+      getDocs(collection(db, COL.staffRates)),
+      getDocs(
+        query(collection(db, COL.loans), where("status", "in", ["disbursed", "repaying"]))
+      ),
+      getDocs(collection(db, COL.staff)),
+      // Anything unapplied and dated on or before the period end. Not restricted to
+      // the period: a penalty raised before a run that never picked it up is still
+      // owed, and windowing it would let it fall permanently between two runs.
+      loadPendingDeductions(db, input.periodEnd),
+    ]);
 
   const logs = logSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as WorkLog[];
   const rates = rateSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as WageRate[];
+  const staffRates = staffRateSnap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  })) as StaffRate[];
 
   const staffNames = new Map<string, string>();
   for (const d of staffSnap.docs) staffNames.set(d.id, (d.data().name as string) ?? d.id);
 
-  const resolved = resolveRates(rates, input.periodEnd.getTime());
-  const computed = computeWageRun(logs, resolved, staffNames);
+  const atMs = input.periodEnd.getTime();
+  const resolved = resolveRates(rates, atMs);
+  const personal = resolveStaffRates(staffRates, atMs);
+  const computed = computeWageRun(logs, resolved, staffNames, personal);
 
   const loans = loanSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Loan[];
   // One staff member may hold several loans; deduct against the combined
@@ -114,19 +171,40 @@ export async function previewWageRun(
     );
   }
 
-  const { applied, totalDeductedKobo } = applyDeductions(
+  const {
+    byStaff,
+    appliedDeductionIds,
+    totalDeductedKobo,
+  } = applyAllDeductions(
     computed.perStaff,
     [...outstandingByStaff.entries()].map(([staffId, outstandingKobo]) => ({
       staffId,
       outstandingKobo,
+    })),
+    pending.map((d) => ({
+      id: d.id,
+      staffId: d.staffId,
+      type: d.type,
+      amountKobo: d.amountKobo,
+      reason: d.reason,
     }))
   );
-  const deductionByStaff = new Map(applied.map((a) => [a.staffId, a.deductedKobo]));
 
   const perStaff = computed.perStaff.map((s) => {
-    const deductionKobo = deductionByStaff.get(s.staffId) ?? 0;
-    return { ...s, deductionKobo, netKobo: s.totalKobo - deductionKobo };
+    const applied = byStaff.get(s.staffId);
+    const deductionKobo = applied?.totalDeductionKobo ?? 0;
+    return {
+      ...s,
+      deductionKobo,
+      loanDeductionKobo: applied?.loanDeductionKobo ?? 0,
+      otherDeductions: applied?.taken ?? [],
+      // Guarded even though applyAllDeductions never over-deducts, because this is
+      // the figure that becomes a payment.
+      netKobo: Math.max(0, s.totalKobo - deductionKobo),
+    };
   });
+
+  const loanDeductionsKobo = sumKobo(perStaff.map((s) => s.loanDeductionKobo));
 
   return {
     lines: computed.lines,
@@ -135,10 +213,26 @@ export async function previewWageRun(
     assistantTotalKobo: computed.assistantTotalKobo,
     grandTotalKobo: computed.grandTotalKobo,
     deductionsKobo: totalDeductedKobo,
-    netPayableKobo: computed.grandTotalKobo - totalDeductedKobo,
+    loanDeductionsKobo,
+    otherDeductionsKobo: totalDeductedKobo - loanDeductionsKobo,
+    netPayableKobo: Math.max(0, computed.grandTotalKobo - totalDeductedKobo),
     unattributedAssistantKobo: computed.unattributedAssistantKobo,
     missingRates: computed.missingRates,
     ratesUsed: [...resolved.values()],
+    staffRatesUsed: staffRates
+      .filter((r) => {
+        const fromMs = r.effectiveFrom?.toMillis?.() ?? 0;
+        const toMs = r.effectiveTo?.toMillis?.() ?? Number.POSITIVE_INFINITY;
+        return fromMs <= atMs && toMs > atMs;
+      })
+      .map((r) => ({
+        staffId: r.staffId,
+        staffName: staffNames.get(r.staffId) ?? r.staffName ?? r.staffId,
+        role: r.role,
+        workType: r.workType ?? null,
+        rateKobo: r.rateKobo,
+      })),
+    deductionIds: appliedDeductionIds,
     logCount: logs.length,
   };
 }
@@ -178,14 +272,23 @@ export async function saveDraftWageRun(
     periodEnd: Timestamp.fromDate(input.periodEnd),
     status: "draft",
     ratesSnapshot: preview.ratesUsed,
+    // Per-person overrides snapshotted alongside the work-type rates, for the same
+    // reason: without them a run cannot be re-explained after someone's rate changes.
+    staffRatesSnapshot: preview.staffRatesUsed,
     operatorTotalKobo: preview.operatorTotalKobo,
     assistantTotalKobo: preview.assistantTotalKobo,
     grandTotalKobo: preview.grandTotalKobo,
     deductionsKobo: preview.deductionsKobo,
+    loanDeductionsKobo: preview.loanDeductionsKobo,
+    otherDeductionsKobo: preview.otherDeductionsKobo,
     netPayableKobo: preview.netPayableKobo,
     unattributedAssistantKobo: preview.unattributedAssistantKobo,
     logCount: preview.logCount,
     perStaff: preview.perStaff,
+    // Recorded on the draft, claimed on approval. A draft that is discarded must
+    // leave its deductions available to the next attempt, so nothing is marked
+    // applied until the run is actually signed off.
+    deductionIds: preview.deductionIds,
     createdAt: serverTimestamp(),
     createdBy: actor.uid,
   });
@@ -245,6 +348,9 @@ export async function approveWageRun(
     requestedAtById.set(d.id, data.requestedAt?.toMillis?.() ?? 0);
   }
 
+  /** Set inside the transaction, consumed after it commits. */
+  let deductionIds: string[] = [];
+
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(runRef);
     if (!snap.exists()) throw new Error("Wage run not found.");
@@ -253,10 +359,23 @@ export async function approveWageRun(
       throw new Error(`This run is already ${run.status}, so it cannot be approved again.`);
     }
 
+    deductionIds = (run.deductionIds ?? []) as string[];
+
+    /*
+     * Loan repayments are driven by the loan half of the deduction only.
+     *
+     * `deductionKobo` on a row is loans *plus* work-log deductions, and posting that
+     * against the loan ledger would credit a no-show penalty as a loan repayment —
+     * quietly writing off part of a real debt. `loanDeductionKobo` is the figure that
+     * actually came off a loan. It is read with a fallback to the combined figure so
+     * runs drafted before the split existed still post correctly: those had no
+     * work-log deductions, so the two were the same number.
+     */
     const perStaff = (run.perStaff ?? []) as Array<{
       staffId: string;
       staffName: string;
       deductionKobo: number;
+      loanDeductionKobo?: number;
     }>;
 
     // Every loan this run might touch, read up front.
@@ -269,7 +388,7 @@ export async function approveWageRun(
     const relevantIds = [
       ...new Set(
         perStaff
-          .filter((s) => (s.deductionKobo ?? 0) > 0)
+          .filter((s) => (s.loanDeductionKobo ?? s.deductionKobo ?? 0) > 0)
           .flatMap((s) => candidatesByStaff.get(s.staffId) ?? [])
       ),
     ];
@@ -285,7 +404,8 @@ export async function approveWageRun(
     // Apply each staff member's deduction across their outstanding loans,
     // oldest first, so the ledger closes loans in the order they were taken.
     for (const s of perStaff) {
-      let remaining = s.deductionKobo ?? 0;
+      // The loan portion only — see the note above `perStaff`.
+      let remaining = s.loanDeductionKobo ?? s.deductionKobo ?? 0;
       if (remaining <= 0) continue;
 
       const ids = (candidatesByStaff.get(s.staffId) ?? []).sort(
@@ -343,12 +463,32 @@ export async function approveWageRun(
     });
   });
 
+  /*
+   * Claim the work-log deductions this run took.
+   *
+   * After the transaction rather than inside it: the deduction ids come from the run
+   * document, which is only read once the transaction opens, and Firestore requires
+   * every read to precede every write — so fetching them to update would have to
+   * happen before the run's own status check.
+   *
+   * Ordered so the failure mode is the harmless one. If this throws, the run is
+   * approved and the deductions stay pending, so the next run claims them: someone
+   * is deducted later than intended. The reverse order would mark them consumed
+   * against a run that then failed to approve, and the money would never be
+   * withheld at all.
+   */
+  await markDeductionsApplied(db, actor, deductionIds, runId, "wage");
+
   await writeAudit(db, {
     actor,
     action: "wage_run_approve",
     collectionName: COL.wageRuns,
     docId: runId,
-    summary: "Approved wage run and posted loan repayments",
+    summary:
+      "Approved wage run, posted loan repayments" +
+      (deductionIds.length
+        ? ` and applied ${deductionIds.length} work-log deduction(s)`
+        : ""),
   });
 }
 
@@ -486,6 +626,16 @@ export async function reopenWageRun(
     for (const d of booked.docs) await deleteDoc(d.ref);
   }
 
+  /*
+   * Return the work-log deductions to the pending pool.
+   *
+   * The money was never actually withheld — the run is being unwound — so the
+   * penalty or advance is still owed and has to be available to whatever run
+   * replaces this one. Without this, reopening a run quietly forgives every
+   * deduction in it, which is the opposite of what reopening is for.
+   */
+  const released = await releaseDeductionsForRun(db, actor, runId);
+
   await updateDoc(ref, {
     status: "draft",
     approvedAt: null,
@@ -506,7 +656,8 @@ export async function reopenWageRun(
       `Reopened a ${from} wage run for editing` +
       (from === "paid"
         ? ` and reversed the ${run.netPayableKobo ?? 0} kobo payroll expense it had booked`
-        : ""),
+        : "") +
+      (released ? `; released ${released} deduction(s) back to pending` : ""),
     before: { status: from, netPayableKobo: run.netPayableKobo ?? 0 },
     after: { status: "draft" },
   });
@@ -543,6 +694,12 @@ export async function deleteDraftWageRun(
     await batch.commit();
   }
 
+  // A draft should not hold claimed deductions — approval is what claims them, and
+  // reopening releases them — but a deduction pointing at a deleted run would be
+  // stranded as neither applied nor pending, so it is never claimable again. Cheap
+  // to be certain about.
+  await releaseDeductionsForRun(db, actor, runId);
+
   await deleteDoc(ref);
 
   await writeAudit(db, {
@@ -574,6 +731,15 @@ export async function recordPayrollExpense(
     purpose: string;
     sourceCollection: string;
     sourceId: string;
+    /**
+     * Which cost line this lands on.
+     *
+     * Weekly piece-rate wages and monthly salaries are both labour but are not the
+     * same cost to manage — one moves with how busy the workshop is and the other
+     * does not — so the profit report separates them. Defaults to `wages` for
+     * callers that predate the distinction.
+     */
+    category?: ExpenseCategory;
   }
 ): Promise<void> {
   if (input.amountKobo <= 0) return;
@@ -592,7 +758,7 @@ export async function recordPayrollExpense(
     payeeType: "staff",
     payeeName: "Payroll",
     purpose: input.purpose,
-    category: "wages" satisfies ExpenseCategory,
+    category: input.category ?? ("wages" satisfies ExpenseCategory),
     amountKobo: input.amountKobo,
     receiptUrl: null,
     // The link back to the run is what makes this idempotent, and what lets an
@@ -609,7 +775,7 @@ export async function recordPayrollExpense(
     collectionName: COL.expenses,
     docId: input.sourceId,
     summary: `Booked ${input.purpose} to expenses: ${input.amountKobo} kobo`,
-    after: { amountKobo: input.amountKobo, category: "wages" },
+    after: { amountKobo: input.amountKobo, category: input.category ?? "wages" },
   });
 }
 
@@ -867,7 +1033,14 @@ export async function rejectLoan(
 export async function setWageRate(
   db: Firestore,
   actor: AuditActor,
-  workType: WageWorkType,
+  /**
+   * A built-in work type, or the id of one the workshop added.
+   *
+   * Typed as a plain string rather than `WageWorkType` because the vocabulary is
+   * extensible — see `addWorkType`. The engine looks rates up by id and never enumerates
+   * the enum, so a custom type prices exactly like a built-in one.
+   */
+  workType: string,
   next: { operatorRateKobo: number; assistantRateKobo: number; effectiveFrom: Date; note?: string }
 ): Promise<void> {
   const effectiveFrom = Timestamp.fromDate(next.effectiveFrom);
@@ -911,6 +1084,258 @@ export async function setWageRate(
       operatorRateKobo: next.operatorRateKobo,
       assistantRateKobo: next.assistantRateKobo,
     },
+  });
+}
+
+/**
+ * Sets a rate for one person, closing whatever they were on before.
+ *
+ * Versioned rather than overwritten, exactly as `setWageRate` is: a wage run from
+ * before a raise has to stay reproducible, and an in-place edit would silently
+ * restate what somebody was already paid.
+ *
+ * `workType` null means every kind of work — the usual case, where one operator is
+ * simply on a better rate than the standard. A row naming a work type beats the
+ * general one (see `rateFor`), so a blanket uplift and a single exception can
+ * coexist without one erasing the other.
+ */
+export async function setStaffRate(
+  db: Firestore,
+  actor: AuditActor,
+  input: {
+    staffId: string;
+    staffName: string;
+    role: "operator" | "assistant";
+    workType?: WageWorkType | null;
+    rateKobo: number;
+    effectiveFrom: Date;
+    note?: string;
+  }
+): Promise<void> {
+  if (!input.staffId) throw new Error("Choose who this rate is for.");
+  if (!(input.rateKobo >= 0)) throw new Error("A rate cannot be negative.");
+
+  const effectiveFrom = Timestamp.fromDate(input.effectiveFrom);
+  const workType = input.workType ?? null;
+
+  // Close only the row this one replaces: the same person, the same role, the same
+  // work-type slot. Closing every rate a person holds would wipe a per-type
+  // exception the moment a general rate was set.
+  const currentSnap = await getDocs(
+    query(
+      collection(db, COL.staffRates),
+      where("staffId", "==", input.staffId),
+      where("role", "==", input.role),
+      where("workType", "==", workType),
+      where("effectiveTo", "==", null)
+    )
+  );
+
+  const batch = writeBatch(db);
+  for (const d of currentSnap.docs) {
+    batch.update(d.ref, { effectiveTo: effectiveFrom });
+  }
+  batch.set(doc(collection(db, COL.staffRates)), {
+    staffId: input.staffId,
+    staffName: input.staffName,
+    role: input.role,
+    workType,
+    rateKobo: input.rateKobo,
+    effectiveFrom,
+    effectiveTo: null,
+    note: input.note?.trim() || null,
+    createdAt: serverTimestamp(),
+    createdBy: actor.uid,
+  });
+  await batch.commit();
+
+  await writeAudit(db, {
+    actor,
+    action: "wage_rate_change",
+    collectionName: COL.staffRates,
+    docId: input.staffId,
+    summary:
+      `${input.staffName} (${input.role}, ${workType ?? "all work"}): ` +
+      `${input.rateKobo} kobo per unit`,
+    after: {
+      staffId: input.staffId,
+      role: input.role,
+      workType,
+      rateKobo: input.rateKobo,
+    },
+  });
+}
+
+/**
+ * Ends a per-person rate, returning that person to the standard rate.
+ *
+ * Closed rather than deleted, so a run from while it applied can still be explained.
+ * Effective from now, because a rate that stops applying retroactively would restate
+ * pay already agreed.
+ */
+export async function endStaffRate(
+  db: Firestore,
+  actor: AuditActor,
+  rateId: string
+): Promise<void> {
+  const ref = doc(db, COL.staffRates, rateId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("That rate no longer exists.");
+  const r = snap.data();
+
+  await updateDoc(ref, {
+    effectiveTo: Timestamp.fromDate(new Date()),
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "wage_rate_change",
+    collectionName: COL.staffRates,
+    docId: rateId,
+    summary:
+      `Ended the personal rate for ${r.staffName ?? "staff"} ` +
+      `(${r.role ?? "?"}, ${r.workType ?? "all work"}); back to the standard rate`,
+    before: { rateKobo: r.rateKobo ?? 0 },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Work-type vocabulary
+// ---------------------------------------------------------------------------
+
+/** The workshop's own additions and hidden built-ins. */
+export async function loadWorkTypeSettings(
+  db: Firestore
+): Promise<WageWorkTypeSettings> {
+  try {
+    const snap = await getDoc(doc(db, COL.settings, SETTINGS_DOC.wageWorkTypes));
+    if (!snap.exists()) return DEFAULT_WAGE_WORK_TYPE_SETTINGS;
+    const d = snap.data();
+    return {
+      custom: (d.custom ?? []) as Array<{ id: string; label: string }>,
+      hidden: (d.hidden ?? []) as string[],
+    };
+  } catch {
+    return DEFAULT_WAGE_WORK_TYPE_SETTINGS;
+  }
+}
+
+/**
+ * Adds a kind of work the built-in list does not cover.
+ *
+ * The id is derived from the label once and never recomputed, because every work log and
+ * wage line stores it — renaming the type later changes what it is called and leaves
+ * historical records attached to it.
+ */
+export async function addWorkType(
+  db: Firestore,
+  actor: AuditActor,
+  label: string
+): Promise<string> {
+  const trimmed = label.trim();
+  if (!trimmed) throw new Error("Name the kind of work.");
+
+  const id = workTypeIdFrom(trimmed);
+  if (!id) throw new Error("That name has no letters or numbers in it.");
+
+  const settings = await loadWorkTypeSettings(db);
+
+  if ((WAGE_WORK_TYPES as readonly string[]).includes(id)) {
+    throw new Error(
+      `"${trimmed}" already exists as a standard work type. Set its rate rather than adding it again.`
+    );
+  }
+  if (settings.custom.some((c) => c.id === id)) {
+    throw new Error(`"${trimmed}" has already been added.`);
+  }
+
+  await setDoc(
+    doc(db, COL.settings, SETTINGS_DOC.wageWorkTypes),
+    {
+      custom: [...settings.custom, { id, label: trimmed }],
+      // Adding back something previously hidden un-hides it, which is what someone
+      // re-adding a name they removed actually means.
+      hidden: settings.hidden.filter((h) => h !== id),
+    },
+    { merge: true }
+  );
+
+  await writeAudit(db, {
+    actor,
+    action: "settings_change",
+    collectionName: COL.settings,
+    docId: SETTINGS_DOC.wageWorkTypes,
+    summary: `Added work type "${trimmed}" (${id})`,
+    after: { id, label: trimmed },
+  });
+
+  return id;
+}
+
+/**
+ * Stops offering a work type, without erasing it.
+ *
+ * Hidden rather than deleted for two reasons: a work log or wage run from last year still
+ * references it and has to keep rendering a label, and a rate already set against it stays
+ * valid for reproducing that run. Hiding removes it from the pickers only.
+ *
+ * A type with work logged against it in the current period is refused, because hiding it
+ * would leave that work unpriceable in the run about to be generated.
+ */
+export async function hideWorkType(
+  db: Firestore,
+  actor: AuditActor,
+  workTypeId: string,
+  label: string
+): Promise<void> {
+  const settings = await loadWorkTypeSettings(db);
+  if (settings.hidden.includes(workTypeId)) return;
+
+  const remaining = resolveWorkTypes(settings).filter((t) => t.id !== workTypeId);
+  if (remaining.length === 0) {
+    throw new Error("At least one kind of work has to remain.");
+  }
+
+  await setDoc(
+    doc(db, COL.settings, SETTINGS_DOC.wageWorkTypes),
+    { hidden: [...settings.hidden, workTypeId] },
+    { merge: true }
+  );
+
+  await writeAudit(db, {
+    actor,
+    action: "settings_change",
+    collectionName: COL.settings,
+    docId: SETTINGS_DOC.wageWorkTypes,
+    summary:
+      `Stopped offering work type "${label}" (${workTypeId}). ` +
+      "Existing logs and rates keep it.",
+    after: { hidden: workTypeId },
+  });
+}
+
+/** Offers a hidden work type again. */
+export async function unhideWorkType(
+  db: Firestore,
+  actor: AuditActor,
+  workTypeId: string,
+  label: string
+): Promise<void> {
+  const settings = await loadWorkTypeSettings(db);
+  await setDoc(
+    doc(db, COL.settings, SETTINGS_DOC.wageWorkTypes),
+    { hidden: settings.hidden.filter((h) => h !== workTypeId) },
+    { merge: true }
+  );
+
+  await writeAudit(db, {
+    actor,
+    action: "settings_change",
+    collectionName: COL.settings,
+    docId: SETTINGS_DOC.wageWorkTypes,
+    summary: `Offering work type "${label}" (${workTypeId}) again`,
   });
 }
 

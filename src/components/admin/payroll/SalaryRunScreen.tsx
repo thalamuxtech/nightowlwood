@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
-import type { WageRunStatus } from "@/lib/erp/enums";
+import { DEDUCTION_TYPE_LABELS, type WageRunStatus } from "@/lib/erp/enums";
 import { formatNaira, parseNairaInput } from "@/lib/erp/money";
 import {
   adjustSalaryLine,
@@ -727,9 +727,37 @@ function DraftEditor({
                       bonus {formatNaira(l.bonusKobo)}
                     </span>
                   )}
-                  {l.deductionKobo > 0 && (
+                  {(l.loanDeductionKobo ?? 0) > 0 && (
                     <span className="text-amber-300">
-                      less {formatNaira(l.deductionKobo)}
+                      loan -{formatNaira(l.loanDeductionKobo ?? 0)}
+                    </span>
+                  )}
+                  {/* Each work-log deduction named. "Less ₦5,000" cannot be queried
+                      by the person it was taken from; "no show" can. */}
+                  {(l.otherDeductions ?? []).map((d) => (
+                    <span key={d.id} className="text-amber-300">
+                      {DEDUCTION_TYPE_LABELS[d.type].toLowerCase()} -
+                      {formatNaira(d.amountKobo)}
+                    </span>
+                  ))}
+                  {/* Anything the run deducted without itemising, so the figures
+                      always reconcile against the net. */}
+                  {l.deductionKobo >
+                    (l.loanDeductionKobo ?? 0) +
+                      (l.otherDeductions ?? []).reduce(
+                        (n, d) => n + d.amountKobo,
+                        0
+                      ) && (
+                    <span className="text-amber-300">
+                      less{" "}
+                      {formatNaira(
+                        l.deductionKobo -
+                          (l.loanDeductionKobo ?? 0) -
+                          (l.otherDeductions ?? []).reduce(
+                            (n, d) => n + d.amountKobo,
+                            0
+                          )
+                      )}
                     </span>
                   )}
                   <span className="text-cream-100">net {formatNaira(l.netKobo)}</span>

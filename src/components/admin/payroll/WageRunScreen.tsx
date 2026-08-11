@@ -11,11 +11,18 @@ import {
   RotateCcw,
   ShieldAlert,
   Trash2,
+  Users,
   Wallet,
 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
-import { WAGE_WORK_TYPE_LABELS, type WageRunStatus } from "@/lib/erp/enums";
+import {
+  DEDUCTION_TYPE_LABELS,
+  WAGE_WORK_TYPE_LABELS,
+  type DeductionType,
+  type WageRunStatus,
+  type WageWorkType,
+} from "@/lib/erp/enums";
 import { formatNaira, parseNairaInput } from "@/lib/erp/money";
 import {
   adjustWageRunStaff,
@@ -30,7 +37,7 @@ import {
 import { weekBounds } from "@/lib/erp/wages";
 import { WAGE_RUN_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
-import { Button, EmptyState, NumberField } from "@/components/admin/ui/Fields";
+import { Button, DateField, EmptyState, NumberField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 
 interface RunRow {
@@ -41,6 +48,8 @@ interface RunRow {
   grandTotalKobo: number;
   deductionsKobo: number;
   netPayableKobo: number;
+  loanDeductionsKobo: number;
+  otherDeductionsKobo: number;
   perStaff: Array<{
     staffId: string;
     staffName: string;
@@ -48,12 +57,46 @@ interface RunRow {
     assistantKobo: number;
     totalKobo: number;
     deductionKobo: number;
+    loanDeductionKobo?: number;
+    /** Work-log deductions taken, so a payslip can state the reason. */
+    otherDeductions?: Array<{
+      id: string;
+      type: DeductionType;
+      amountKobo: number;
+      reason?: string;
+    }>;
     netKobo: number;
+    /** What this person was paid at, work type by work type. */
+    rateLines?: Array<{
+      role: "operator" | "assistant";
+      workType: WageWorkType;
+      units: number;
+      rateKobo: number;
+      amountKobo: number;
+      personalRate?: boolean;
+    }>;
   }>;
 }
 
 function toDateInput(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * A run's period date, with the weekday named: "Mon 20 July 2026".
+ *
+ * The weekday is the point. A wage week runs Monday to Saturday, and a period that has
+ * slipped by a day is invisible in "20 Jul" but obvious in "Sun 19 July" — and a
+ * mis-dated period silently pays the wrong week's work.
+ */
+function fmtRunDate(ms: number | null): string {
+  if (ms === null) return "?";
+  return new Date(ms).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 /**
@@ -85,6 +128,8 @@ export function WageRunScreen() {
   const [busy, setBusy] = useState(false);
   /** The draft whose per-staff figures are open for adjustment. */
   const [editRunId, setEditRunId] = useState<string | null>(null);
+  /** The run whose named payslip breakdown is expanded. */
+  const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -107,6 +152,10 @@ export function WageRunScreen() {
               status: (x.status as WageRunStatus) ?? "draft",
               grandTotalKobo: x.grandTotalKobo ?? 0,
               deductionsKobo: x.deductionsKobo ?? 0,
+              // Runs saved before the split carried loans only, so falling back to
+              // the combined figure describes them correctly rather than as zero.
+              loanDeductionsKobo: x.loanDeductionsKobo ?? x.deductionsKobo ?? 0,
+              otherDeductionsKobo: x.otherDeductionsKobo ?? 0,
               netPayableKobo: x.netPayableKobo ?? 0,
               perStaff: x.perStaff ?? [],
             };
@@ -273,30 +322,8 @@ export function WageRunScreen() {
         <section className="mt-8 rounded-3xl border border-night-700/60 bg-night-900/30 p-6">
           <h2 className="font-display text-lg text-cream-100">Calculate a run</h2>
           <div className="mt-5 flex flex-wrap items-end gap-4">
-            <div>
-              <label htmlFor="run-start" className="mb-1.5 block text-sm text-cream-300">
-                From
-              </label>
-              <input
-                id="run-start"
-                type="date"
-                value={start}
-                onChange={(e) => setStart(e.target.value)}
-                className="rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label htmlFor="run-end" className="mb-1.5 block text-sm text-cream-300">
-                To
-              </label>
-              <input
-                id="run-end"
-                type="date"
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-                className="rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
-              />
-            </div>
+            <DateField id="run-start" label="From" value={start} onChange={setStart} />
+            <DateField id="run-end" label="To" value={end} onChange={setEnd} />
             <Button onClick={runPreview} busy={loading}>
               <span className="flex items-center gap-2">
                 <RefreshCw size={15} /> Calculate
@@ -326,26 +353,27 @@ export function WageRunScreen() {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
+                      {/* The weekday is spelled out on both ends. A wage period runs
+                          Monday to Saturday, and "20 Jul to 27 Jul" gives no way to
+                          check that at a glance — an off-by-one period is the kind of
+                          error that only shows up as somebody's short pay. */}
                       <p className="text-sm text-cream-100">
-                        {r.periodStartMs
-                          ? new Date(r.periodStartMs).toLocaleDateString("en-GB", {
-                              day: "numeric",
-                              month: "short",
-                            })
-                          : "?"}{" "}
-                        to{" "}
-                        {r.periodEndMs
-                          ? new Date(r.periodEndMs).toLocaleDateString("en-GB", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                            })
-                          : "?"}
+                        {fmtRunDate(r.periodStartMs)} to {fmtRunDate(r.periodEndMs)}
                       </p>
                       <p className="mt-1 text-xs text-cream-500">
                         {r.perStaff.length} staff · gross {formatNaira(r.grandTotalKobo)}
                         {r.deductionsKobo > 0 && ` · less ${formatNaira(r.deductionsKobo)}`}
                       </p>
+                      {/* Loans and work-log deductions split apart. One is a debt
+                          being repaid, the other is earnings being reduced, and a
+                          single "deductions" figure cannot be queried by the person
+                          it was taken from. */}
+                      {r.otherDeductionsKobo > 0 && (
+                        <p className="mt-0.5 text-xs text-cream-600">
+                          {formatNaira(r.loanDeductionsKobo)} loan repayment ·{" "}
+                          {formatNaira(r.otherDeductionsKobo)} other deductions
+                        </p>
+                      )}
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <span className="font-display text-xl text-cream-50">
@@ -417,8 +445,23 @@ export function WageRunScreen() {
                           <RotateCcw size={14} /> Reopen
                         </button>
                       )}
+                      <button
+                        type="button"
+                        aria-expanded={openRunId === r.id}
+                        onClick={() => setOpenRunId(openRunId === r.id ? null : r.id)}
+                        className="flex cursor-pointer items-center gap-1.5 text-xs text-cream-400 transition-colors hover:text-brass-300"
+                      >
+                        <Users size={14} />
+                        {openRunId === r.id ? "Hide" : "Who was paid"}
+                      </button>
                     </div>
                   </div>
+
+                  {/* The named breakdown. This is what a wage run is for: an
+                      assistant cannot check a line that says "assistants ₦12,000",
+                      and the figures only become auditable once each person, their
+                      units and the rate they were paid at are on the page. */}
+                  {openRunId === r.id && <PayslipBreakdown run={r} />}
 
                   {editRunId === r.id && r.status === "draft" && (
                     <DraftEditor
@@ -434,6 +477,139 @@ export function WageRunScreen() {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Who was paid what, and why.
+ *
+ * The gap this closes: a run that reported "operators ₦84,000, assistants ₦12,000"
+ * was not something either group could check. A payslip is only meaningful to the
+ * person holding it if it names them, states the units they were credited with, the
+ * rate applied, and every deduction with its reason.
+ *
+ * `rateLines` is absent on runs saved before it was recorded. Those still show the
+ * per-person totals, which is what they stored — better than an empty panel implying
+ * nobody was paid.
+ */
+function PayslipBreakdown({ run }: { run: RunRow }) {
+  if (run.perStaff.length === 0) {
+    return (
+      <p className="mt-4 border-t border-night-700/60 pt-4 text-sm text-cream-500">
+        This run has no per-person breakdown recorded.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-3 border-t border-night-700/60 pt-4">
+      {run.perStaff.map((s) => (
+        <div
+          key={s.staffId}
+          className="rounded-2xl border border-night-700/50 bg-night-950/40 p-4"
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <p className="font-medium text-cream-100">{s.staffName}</p>
+            <p className="font-display text-lg text-brass-300">
+              {formatNaira(s.netKobo)}
+            </p>
+          </div>
+
+          {/* The working: units × rate for each kind of work, in each role. */}
+          {s.rateLines && s.rateLines.length > 0 && (
+            <table className="mt-3 w-full text-left text-xs">
+              <thead className="text-cream-600">
+                <tr>
+                  <th className="pb-1 font-medium">Work</th>
+                  <th className="pb-1 font-medium">As</th>
+                  <th className="pb-1 text-right font-medium">Units</th>
+                  <th className="pb-1 text-right font-medium">Rate</th>
+                  <th className="pb-1 text-right font-medium">Earned</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-night-800/70">
+                {s.rateLines.map((l, i) => (
+                  <tr key={`${l.role}-${l.workType}-${i}`}>
+                    <td className="py-1.5 text-cream-300">
+                      {WAGE_WORK_TYPE_LABELS[l.workType]}
+                    </td>
+                    <td className="py-1.5 capitalize text-cream-500">{l.role}</td>
+                    <td className="py-1.5 text-right tabular-nums text-cream-300">
+                      {l.units}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-cream-400">
+                      {formatNaira(l.rateKobo)}
+                      {/* Flagged, because two people on the same work showing
+                          different rates otherwise looks like an error. */}
+                      {l.personalRate && (
+                        <span
+                          className="ml-1 text-brass-400"
+                          title="A rate set for this person specifically"
+                        >
+                          ★
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-cream-200">
+                      {formatNaira(l.amountKobo)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 border-t border-night-800 pt-2 text-xs">
+            <div className="flex gap-1.5">
+              <dt className="text-cream-500">Gross</dt>
+              <dd className="tabular-nums text-cream-200">
+                {formatNaira(s.totalKobo)}
+              </dd>
+            </div>
+            {(s.loanDeductionKobo ?? 0) > 0 && (
+              <div className="flex gap-1.5">
+                <dt className="text-cream-500">Loan repayment</dt>
+                <dd className="tabular-nums text-amber-300">
+                  −{formatNaira(s.loanDeductionKobo ?? 0)}
+                </dd>
+              </div>
+            )}
+            {/* Each deduction with its reason. "Less ₦5,000" is the line that
+                starts an argument; "no show, 12 Aug" is the line that ends one. */}
+            {(s.otherDeductions ?? []).map((d) => (
+              <div key={d.id} className="flex gap-1.5">
+                <dt className="text-cream-500">
+                  {DEDUCTION_TYPE_LABELS[d.type]}
+                  {d.reason && (
+                    <span className="ml-1 text-cream-600">({d.reason})</span>
+                  )}
+                </dt>
+                <dd className="tabular-nums text-amber-300">
+                  −{formatNaira(d.amountKobo)}
+                </dd>
+              </div>
+            ))}
+            {/* A deduction the run recorded but did not itemise: older runs, or the
+                combined figure. Shown so the totals always reconcile. */}
+            {s.deductionKobo >
+              (s.loanDeductionKobo ?? 0) +
+                (s.otherDeductions ?? []).reduce((n, d) => n + d.amountKobo, 0) && (
+              <div className="flex gap-1.5">
+                <dt className="text-cream-500">Other deductions</dt>
+                <dd className="tabular-nums text-amber-300">
+                  −
+                  {formatNaira(
+                    s.deductionKobo -
+                      (s.loanDeductionKobo ?? 0) -
+                      (s.otherDeductions ?? []).reduce((n, d) => n + d.amountKobo, 0)
+                  )}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </div>
+      ))}
     </div>
   );
 }
@@ -606,6 +782,35 @@ function PreviewPanel({
         />
         <Tile label="Net payable" value={formatNaira(preview.netPayableKobo)} tone="good" />
       </div>
+
+      {/* What the deductions are made of. A loan repayment and a penalty are both
+          money withheld, but only one of them reduces what somebody earned, and the
+          run has to be able to say which. */}
+      {preview.deductionsKobo > 0 && (
+        <p className="mt-3 text-xs text-cream-500">
+          Includes {formatNaira(preview.loanDeductionsKobo)} of loan repayment
+          {preview.otherDeductionsKobo > 0 && (
+            <>
+              {" "}
+              and {formatNaira(preview.otherDeductionsKobo)} of work-log deductions
+              across{" "}
+              {preview.perStaff.reduce(
+                (n, s) => n + (s.otherDeductions?.length ?? 0),
+                0
+              )}{" "}
+              entr
+              {preview.perStaff.reduce(
+                (n, s) => n + (s.otherDeductions?.length ?? 0),
+                0
+              ) === 1
+                ? "y"
+                : "ies"}
+            </>
+          )}
+          . Work-log deductions are claimed when this run is approved, so a discarded
+          draft leaves them pending.
+        </p>
+      )}
 
       {!hasWork ? (
         <p className="mt-5 text-sm text-cream-500">

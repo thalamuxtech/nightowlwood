@@ -1,21 +1,45 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { AlertTriangle, Coins, History, Loader2, PenLine, ShieldAlert } from "lucide-react";
+import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
+import {
+  AlertTriangle,
+  Coins,
+  History,
+  Loader2,
+  PenLine,
+  Plus,
+  ShieldAlert,
+  Trash2,
+} from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { WAGE_WORK_TYPES, WAGE_WORK_TYPE_LABELS, type WageWorkType } from "@/lib/erp/enums";
 import { formatNaira, parseNairaInput, toKobo } from "@/lib/erp/money";
-import { setWageRate } from "@/lib/erp/payroll";
-import { DEFAULT_WAGE_RATES } from "@/lib/erp/wages";
+import {
+  addWorkType,
+  hideWorkType,
+  setWageRate,
+  unhideWorkType,
+} from "@/lib/erp/payroll";
+import {
+  DEFAULT_WAGE_RATES,
+  labelForWorkType,
+  resolveWorkTypes,
+} from "@/lib/erp/wages";
+import {
+  DEFAULT_WAGE_WORK_TYPE_SETTINGS,
+  SETTINGS_DOC,
+  type WageWorkTypeSettings,
+} from "@/lib/erp/settings";
 import { toDateInputValue, fromDateInputValue } from "@/lib/erp/workLogs";
-import { Button, NumberField, TextField } from "@/components/admin/ui/Fields";
+import { Button, DateField, NumberField, TextField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { StaffRatesPanel } from "./StaffRatesPanel";
 
 interface RateRow {
   id: string;
-  workType: WageWorkType;
+  workType: string;
   operatorRateKobo: number;
   assistantRateKobo: number;
   effectiveFromMs: number | null;
@@ -44,8 +68,8 @@ export function WageRatesScreen() {
 
   const [rates, setRates] = useState<RateRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<WageWorkType | null>(null);
-  const [showHistory, setShowHistory] = useState<WageWorkType | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState<string | null>(null);
   const [operator, setOperator] = useState("");
   const [assistant, setAssistant] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState(toDateInputValue(new Date()));
@@ -53,6 +77,33 @@ export function WageRatesScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  /**
+   * The workshop's own work types, and any built-ins it has stopped using.
+   *
+   * Read from settings rather than hardcoded, so a new machine or a new service can be
+   * priced without a code change — which is what "ability to add or remove rates" needs.
+   */
+  const [workTypeSettings, setWorkTypeSettings] = useState<WageWorkTypeSettings>(
+    DEFAULT_WAGE_WORK_TYPE_SETTINGS
+  );
+  const [newTypeLabel, setNewTypeLabel] = useState("");
+  const [addingType, setAddingType] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    return onSnapshot(
+      doc(getDb(), COL.settings, SETTINGS_DOC.wageWorkTypes),
+      (snap) => {
+        const d = snap.data();
+        setWorkTypeSettings({
+          custom: (d?.custom ?? []) as Array<{ id: string; label: string }>,
+          hidden: (d?.hidden ?? []) as string[],
+        });
+      },
+      () => {}
+    );
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -67,7 +118,7 @@ export function WageRatesScreen() {
             const x = d.data();
             return {
               id: d.id,
-              workType: x.workType as WageWorkType,
+              workType: (x.workType as string) ?? "",
               operatorRateKobo: x.operatorRateKobo ?? 0,
               assistantRateKobo: x.assistantRateKobo ?? 0,
               effectiveFromMs: x.effectiveFrom?.toMillis?.() ?? null,
@@ -88,7 +139,7 @@ export function WageRatesScreen() {
 
   /** The row in force for each work type: the one with no end date. */
   const current = useMemo(() => {
-    const map = new Map<WageWorkType, RateRow>();
+    const map = new Map<string, RateRow>();
     for (const r of rates) {
       if (r.effectiveToMs === null) map.set(r.workType, r);
     }
@@ -96,7 +147,7 @@ export function WageRatesScreen() {
   }, [rates]);
 
   const history = useMemo(() => {
-    const map = new Map<WageWorkType, RateRow[]>();
+    const map = new Map<string, RateRow[]>();
     for (const r of rates) {
       if (r.effectiveToMs === null) continue;
       const list = map.get(r.workType) ?? [];
@@ -118,10 +169,31 @@ export function WageRatesScreen() {
     [session.user, session.role]
   );
 
-  /** Seeded default, shown when a work type has no saved rate at all. */
-  const fallbackFor = (wt: WageWorkType) => DEFAULT_WAGE_RATES.find((d) => d.workType === wt);
+  /** The types currently offered, built-in and custom together. */
+  const activeTypes = useMemo(
+    () => resolveWorkTypes(workTypeSettings),
+    [workTypeSettings]
+  );
 
-  function beginEdit(wt: WageWorkType) {
+  /**
+   * Types that exist but are no longer offered.
+   *
+   * Shown with a way back, so it is clear they were hidden rather than lost — and that
+   * historical runs still price against them.
+   */
+  const hiddenTypes = useMemo(
+    () =>
+      workTypeSettings.hidden.map((id) => ({
+        id,
+        label: labelForWorkType(id, workTypeSettings.custom),
+      })),
+    [workTypeSettings]
+  );
+
+  /** Seeded default, shown when a work type has no saved rate at all. */
+  const fallbackFor = (wt: string) => DEFAULT_WAGE_RATES.find((d) => d.workType === wt);
+
+  function beginEdit(wt: string) {
     const live = current.get(wt);
     const seed = fallbackFor(wt);
     setEditing(wt);
@@ -140,7 +212,7 @@ export function WageRatesScreen() {
     setError("");
   }
 
-  async function save(wt: WageWorkType) {
+  async function save(wt: string) {
     const op = parseNairaInput(operator);
     const as = parseNairaInput(assistant);
     if (op <= 0) {
@@ -161,7 +233,7 @@ export function WageRatesScreen() {
         note: note.trim() || undefined,
       });
       setNotice(
-        `${WAGE_WORK_TYPE_LABELS[wt]} now ${formatNaira(op)} per unit, from ${effectiveFrom}.`
+        `${labelForWorkType(wt, workTypeSettings.custom)} now ${formatNaira(op)} per unit, from ${effectiveFrom}.`
       );
       setEditing(null);
       setTimeout(() => setNotice(""), 6000);
@@ -241,8 +313,93 @@ export function WageRatesScreen() {
         </p>
       )}
 
+      {/* Adding and removing kinds of work.
+          The built-in list came from the legacy sheets; new work turns up, and previously
+          pricing it meant a code change. A removed type is hidden rather than erased,
+          because last year's work logs and wage runs still reference it. */}
+      <section className="mt-8 rounded-3xl border border-night-700/60 bg-night-900/30 p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-cream-200">Kinds of work</h2>
+            <p className="mt-1 text-xs text-cream-500">
+              {activeTypes.length} in use
+              {hiddenTypes.length > 0 && ` · ${hiddenTypes.length} not offered`}
+            </p>
+          </div>
+          {!addingType && (
+            <Button variant="secondary" onClick={() => setAddingType(true)}>
+              <span className="flex items-center gap-1.5">
+                <Plus size={14} /> Add a kind of work
+              </span>
+            </Button>
+          )}
+        </div>
+
+        {addingType && (
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+            <TextField
+              id="new-work-type"
+              label="What is it called"
+              value={newTypeLabel}
+              onChange={setNewTypeLabel}
+              placeholder="e.g. CNC routing"
+            />
+            <Button
+              busy={busy}
+              onClick={() => {
+                setBusy(true);
+                setError("");
+                addWorkType(getDb(), actor, newTypeLabel)
+                  .then(() => {
+                    setNotice(
+                      `Added "${newTypeLabel.trim()}". Set its rate below before logging work against it.`
+                    );
+                    setNewTypeLabel("");
+                    setAddingType(false);
+                    setTimeout(() => setNotice(""), 8000);
+                  })
+                  .catch((e) =>
+                    setError(e instanceof Error ? e.message : "Could not add it.")
+                  )
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Add
+            </Button>
+            <Button variant="ghost" onClick={() => setAddingType(false)}>
+              Cancel
+            </Button>
+          </div>
+        )}
+
+        {/* Hidden types, with a way back. Kept visible so it is clear they still exist and
+            are still priced on historical runs. */}
+        {hiddenTypes.length > 0 && (
+          <div className="mt-4 border-t border-night-800 pt-4">
+            <p className="text-xs text-cream-500">No longer offered:</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {hiddenTypes.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() =>
+                    unhideWorkType(getDb(), actor, t.id, t.label).catch((e) =>
+                      setError(e instanceof Error ? e.message : "Could not restore it.")
+                    )
+                  }
+                  className="cursor-pointer rounded-full border border-night-600 px-3 py-1.5 text-xs text-cream-400 transition-colors hover:border-brass-500/60 hover:text-brass-300"
+                >
+                  {t.label} · offer again
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
       <ul className="mt-6 space-y-3">
-        {WAGE_WORK_TYPES.map((wt) => {
+        {activeTypes.map((type) => {
+          const wt = type.id;
           const live = current.get(wt);
           const seed = fallbackFor(wt);
           const past = history.get(wt) ?? [];
@@ -256,7 +413,12 @@ export function WageRatesScreen() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2 text-cream-100">
-                    {WAGE_WORK_TYPE_LABELS[wt]}
+                    {type.label}
+                    {!type.builtIn && (
+                      <span className="rounded-full border border-night-600 px-2 py-0.5 text-[11px] text-cream-500">
+                        added here
+                      </span>
+                    )}
                     {live?.estimated && (
                       <span className="rounded-full border border-amber-500/50 px-2 py-0.5 text-[11px] text-amber-300">
                         estimated
@@ -300,6 +462,35 @@ export function WageRatesScreen() {
                       <History size={13} /> {past.length} past
                     </button>
                   )}
+                  {/* Removing a kind of work hides it from the pickers. Never deletes:
+                      last year's work logs and wage runs reference it and have to keep
+                      rendering a name, and the rate stays valid for reproducing them. */}
+                  <button
+                    type="button"
+                    aria-label={`Stop offering ${type.label}`}
+                    title="Stop offering this kind of work. Existing logs and rates keep it."
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          `Stop offering "${type.label}"?\n\nIt disappears from the work log and rate pickers. Work already logged against it keeps its rate and still pays.`
+                        )
+                      )
+                        return;
+                      hideWorkType(getDb(), actor, wt, type.label)
+                        .then(() => {
+                          setNotice(`"${type.label}" is no longer offered.`);
+                          setTimeout(() => setNotice(""), 6000);
+                        })
+                        .catch((e) =>
+                          setError(
+                            e instanceof Error ? e.message : "Could not remove it."
+                          )
+                        );
+                    }}
+                    className="cursor-pointer px-2 text-cream-500 transition-colors hover:text-red-400"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                   <Button variant="secondary" onClick={() => beginEdit(wt)}>
                     <span className="flex items-center gap-1.5">
                       <PenLine size={14} /> {live ? "Change" : "Set"}
@@ -322,17 +513,12 @@ export function WageRatesScreen() {
                     value={assistant}
                     onChange={setAssistant}
                   />
-                  <label className="block">
-                    <span className="mb-1.5 block text-sm text-cream-300">
-                      In force from
-                    </span>
-                    <input
-                      type="date"
-                      value={effectiveFrom}
-                      onChange={(e) => setEffectiveFrom(e.target.value)}
-                      className="w-full rounded-xl border border-night-600 bg-night-950/60 px-4 py-2.5 text-sm text-cream-100 outline-none transition-colors focus:border-brass-500"
-                    />
-                  </label>
+                  <DateField
+                    id={`from-${wt}`}
+                    label="In force from"
+                    value={effectiveFrom}
+                    onChange={setEffectiveFrom}
+                  />
                   <div className="flex gap-2">
                     <Button onClick={() => save(wt)} busy={busy}>
                       Save
@@ -378,6 +564,9 @@ export function WageRatesScreen() {
           );
         })}
       </ul>
+
+      {/* Rates for named people, which override the work-type rates above. */}
+      <StaffRatesPanel />
     </div>
   );
 }

@@ -14,9 +14,15 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { COL } from "./collections";
+import type { DeductionType } from "./enums";
 import { sumKobo } from "./money";
-import { applyDeductions } from "./wages";
+import { applyAllDeductions } from "./wages";
 import { recordPayrollExpense } from "./payroll";
+import {
+  loadPendingDeductions,
+  markDeductionsApplied,
+  releaseDeductionsForRun,
+} from "./workLogs";
 import type { Loan, Staff } from "./types";
 import { writeAudit, type AuditActor } from "./audit";
 
@@ -59,7 +65,16 @@ export interface SalaryLine {
   bonusKobo: number;
   bonusNote?: string;
   grossKobo: number;
+  /** Loan repayments plus work-log deductions. */
   deductionKobo: number;
+  loanDeductionKobo?: number;
+  /** Work-log deductions taken, itemised so the payslip can state the reason. */
+  otherDeductions?: Array<{
+    id: string;
+    type: DeductionType;
+    amountKobo: number;
+    reason?: string;
+  }>;
   netKobo: number;
 }
 
@@ -70,7 +85,11 @@ export interface SalaryRunPreview {
   unpaidTotalKobo: number;
   grossTotalKobo: number;
   deductionsKobo: number;
+  loanDeductionsKobo: number;
+  otherDeductionsKobo: number;
   netPayableKobo: number;
+  /** Deduction documents this run intends to claim on approval. */
+  deductionIds: string[];
   /** Salaried staff with no figure set, so they cannot be paid yet. */
   missingSalary: string[];
 }
@@ -115,11 +134,14 @@ export async function previewSalaryRun(
     workingDays?: number;
   }
 ): Promise<SalaryRunPreview> {
-  const [staffSnap, loanSnap] = await Promise.all([
+  const [staffSnap, loanSnap, pending] = await Promise.all([
     getDocs(query(collection(db, COL.staff), where("active", "==", true))),
     getDocs(
       query(collection(db, COL.loans), where("status", "in", ["disbursed", "repaying"]))
     ),
+    // Unapplied deductions dated on or before the month end. A salaried person can
+    // have a no-show or an advance exactly as a piece-rate one can.
+    loadPendingDeductions(db, input.periodEnd),
   ]);
 
   const workingDays = input.workingDays ?? DEFAULT_WORKING_DAYS;
@@ -157,8 +179,17 @@ export async function previewSalaryRun(
     };
   });
 
-  // Loan repayments, through the same engine the wage run uses so the cap and the
-  // ordering behave identically for both kinds of staff.
+  /*
+   * Loan repayments and work-log deductions, through the same engine the wage run
+   * uses.
+   *
+   * Shared deliberately: an advance, a no-show or a penalty applies to a salaried
+   * fitter exactly as it does to a piece-rate operator, and two separate
+   * implementations would be two chances for the two kinds of staff to be treated
+   * differently for the same conduct. It also means a deduction raised at the work
+   * log reaches a salaried person's payslip without anyone having to notice which
+   * cycle they are on.
+   */
   const loans = loanSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Loan);
   const outstandingByStaff = new Map<string, number>();
   for (const l of loans) {
@@ -168,7 +199,7 @@ export async function previewSalaryRun(
     );
   }
 
-  const { applied, totalDeductedKobo } = applyDeductions(
+  const { byStaff, appliedDeductionIds, totalDeductedKobo } = applyAllDeductions(
     draftLines.map((l) => ({
       staffId: l.staffId,
       staffName: l.staffName,
@@ -177,16 +208,30 @@ export async function previewSalaryRun(
     [...outstandingByStaff.entries()].map(([staffId, outstandingKobo]) => ({
       staffId,
       outstandingKobo,
+    })),
+    pending.map((d) => ({
+      id: d.id,
+      staffId: d.staffId,
+      type: d.type,
+      amountKobo: d.amountKobo,
+      reason: d.reason,
     }))
   );
-  const deductionByStaff = new Map(applied.map((a) => [a.staffId, a.deductedKobo]));
 
   const lines: SalaryLine[] = draftLines.map((l) => {
-    const deductionKobo = deductionByStaff.get(l.staffId) ?? 0;
-    return { ...l, deductionKobo, netKobo: Math.max(0, l.grossKobo - deductionKobo) };
+    const applied = byStaff.get(l.staffId);
+    const deductionKobo = applied?.totalDeductionKobo ?? 0;
+    return {
+      ...l,
+      deductionKobo,
+      loanDeductionKobo: applied?.loanDeductionKobo ?? 0,
+      otherDeductions: applied?.taken ?? [],
+      netKobo: Math.max(0, l.grossKobo - deductionKobo),
+    };
   });
 
   const grossTotalKobo = sumKobo(lines.map((l) => l.grossKobo));
+  const loanDeductionsKobo = sumKobo(lines.map((l) => l.loanDeductionKobo ?? 0));
 
   return {
     lines,
@@ -195,7 +240,10 @@ export async function previewSalaryRun(
     unpaidTotalKobo: sumKobo(lines.map((l) => l.unpaidKobo)),
     grossTotalKobo,
     deductionsKobo: totalDeductedKobo,
+    loanDeductionsKobo,
+    otherDeductionsKobo: totalDeductedKobo - loanDeductionsKobo,
     netPayableKobo: Math.max(0, grossTotalKobo - totalDeductedKobo),
+    deductionIds: appliedDeductionIds,
     missingSalary,
   };
 }
@@ -226,7 +274,12 @@ export async function saveDraftSalaryRun(
       unpaidTotalKobo: preview.unpaidTotalKobo,
       grossTotalKobo: preview.grossTotalKobo,
       deductionsKobo: preview.deductionsKobo,
+      loanDeductionsKobo: preview.loanDeductionsKobo,
+      otherDeductionsKobo: preview.otherDeductionsKobo,
       netPayableKobo: preview.netPayableKobo,
+      // Recorded on the draft, claimed on approval, so discarding a draft leaves
+      // the deductions available to the next run.
+      deductionIds: preview.deductionIds,
       staffCount: preview.lines.length,
       createdAt: serverTimestamp(),
       createdBy: actor.uid,
@@ -360,6 +413,9 @@ export async function approveSalaryRun(
     requestedAtById.set(d.id, d.data().requestedAt?.toMillis?.() ?? 0);
   }
 
+  /** Set inside the transaction, consumed after it commits. */
+  let deductionIds: string[] = [];
+
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(runRef);
     if (!snap.exists()) throw new Error("Salary run not found.");
@@ -369,11 +425,20 @@ export async function approveSalaryRun(
     }
 
     const lines = (run.lines ?? []) as SalaryLine[];
+    deductionIds = (run.deductionIds ?? []) as string[];
 
+    /*
+     * Only the loan half drives loan repayments.
+     *
+     * `deductionKobo` is loans plus work-log deductions, and posting the combined
+     * figure would credit a penalty as a loan repayment — writing off a real debt.
+     * The fallback to the combined figure keeps runs drafted before the split
+     * correct: those had no work-log deductions, so the two were the same number.
+     */
     const relevantIds = [
       ...new Set(
         lines
-          .filter((l) => (l.deductionKobo ?? 0) > 0)
+          .filter((l) => (l.loanDeductionKobo ?? l.deductionKobo ?? 0) > 0)
           .flatMap((l) => candidatesByStaff.get(l.staffId) ?? [])
       ),
     ];
@@ -386,7 +451,8 @@ export async function approveSalaryRun(
     });
 
     for (const line of lines) {
-      let remaining = line.deductionKobo ?? 0;
+      // The loan portion only — see the note above `relevantIds`.
+      let remaining = line.loanDeductionKobo ?? line.deductionKobo ?? 0;
       if (remaining <= 0) continue;
 
       // Oldest first, so the ledger closes loans in the order they were taken.
@@ -436,12 +502,21 @@ export async function approveSalaryRun(
     });
   });
 
+  // After the transaction, for the same reasons as the wage run: the ids come from
+  // the run document, and a failure here leaves the deductions pending for the next
+  // run rather than consumed against a run that did not approve.
+  await markDeductionsApplied(db, actor, deductionIds, runId, "salary");
+
   await writeAudit(db, {
     actor,
     action: "wage_run_approve",
     collectionName: COL.salaryRuns,
     docId: runId,
-    summary: "Approved salary run and posted loan repayments",
+    summary:
+      "Approved salary run, posted loan repayments" +
+      (deductionIds.length
+        ? ` and applied ${deductionIds.length} work-log deduction(s)`
+        : ""),
   });
 }
 
@@ -476,6 +551,10 @@ export async function markSalaryRunPaid(
     amountKobo: run.netPayableKobo ?? 0,
     date: new Date(),
     purpose: `Salaries, ${fmt(run.periodStart?.toDate?.() ?? new Date())}`,
+    // Its own cost line: a monthly salary bill does not move with how busy the
+    // workshop was, and the profit report reads very differently if it is mixed in
+    // with piece-rate wages.
+    category: "salary",
     sourceCollection: COL.salaryRuns,
     sourceId: runId,
   });
@@ -526,6 +605,10 @@ export async function reopenSalaryRun(
     for (const d of booked.docs) await deleteDoc(d.ref);
   }
 
+  // The deductions this run took are still owed — nothing was actually withheld —
+  // so they return to the pending pool for whatever run replaces this one.
+  const released = await releaseDeductionsForRun(db, actor, runId);
+
   await updateDoc(ref, {
     status: "draft",
     approvedAt: null,
@@ -546,7 +629,8 @@ export async function reopenSalaryRun(
       `Reopened a ${from} salary run for editing` +
       (from === "paid"
         ? ` and reversed the ${run.netPayableKobo ?? 0} kobo payroll expense it had booked`
-        : ""),
+        : "") +
+      (released ? `; released ${released} deduction(s) back to pending` : ""),
     before: { status: from, netPayableKobo: run.netPayableKobo ?? 0 },
     after: { status: "draft" },
   });
@@ -571,6 +655,10 @@ export async function deleteDraftSalaryRun(
       `This run is ${snap.data().status}. Reopen it first — that reverses the payroll expense and records what it stood at before anything is deleted.`
     );
   }
+
+  // A draft should hold no claimed deductions, but one pointing at a deleted run
+  // would be stranded as neither applied nor pending and could never be claimed.
+  await releaseDeductionsForRun(db, actor, runId);
 
   await deleteDoc(ref);
 
