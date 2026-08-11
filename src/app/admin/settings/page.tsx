@@ -6,6 +6,15 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import { EmailTester } from "@/components/admin/EmailTester";
 import { ReportRangesEditor } from "@/components/admin/ReportRangesEditor";
+import { CompanySettingsEditor } from "@/components/admin/settings/CompanySettingsEditor";
+import { HrSettingsEditor } from "@/components/admin/settings/HrSettingsEditor";
+import { BoardCatalogueEditor } from "@/components/admin/settings/BoardCatalogueEditor";
+import { BoardRatesEditor } from "@/components/admin/settings/BoardRatesEditor";
+import { InvoiceSettingsEditor } from "@/components/admin/settings/InvoiceSettingsEditor";
+import { MarketingTargetsEditor } from "@/components/admin/settings/MarketingTargetsEditor";
+import { MetersEditor } from "@/components/admin/settings/MetersEditor";
+import { PosSettingsEditor } from "@/components/admin/settings/PosSettingsEditor";
+import { ServiceRatesEditor } from "@/components/admin/settings/ServiceRatesEditor";
 import type { SiteSettings } from "@/lib/types";
 import { RequireCapability } from "@/components/admin/RequireCapability";
 
@@ -107,6 +116,46 @@ function SettingsPageInner() {
           </div>
         </form>
       )}
+
+      {/* Company details first among the ERP groups: they print on every document the other
+          groups produce, and an invoice with no address or account number cannot be paid. */}
+      <div className="mt-8">
+        <CompanySettingsEditor />
+      </div>
+
+      <div className="mt-8">
+        <InvoiceSettingsEditor />
+      </div>
+
+      <div className="mt-8">
+        <ServiceRatesEditor />
+      </div>
+
+      <div className="mt-8">
+        <BoardRatesEditor />
+      </div>
+
+      <div className="mt-8">
+        <MetersEditor />
+      </div>
+
+      <div className="mt-8">
+        <PosSettingsEditor />
+      </div>
+
+      <div className="mt-8">
+        <HrSettingsEditor />
+      </div>
+
+      <div className="mt-8">
+        <MarketingTargetsEditor />
+      </div>
+
+      {/* The website-facing half of the boards: what a customer sees, as opposed to what
+          cutting them costs. */}
+      <div className="mt-8">
+        <BoardCatalogueEditor />
+      </div>
 
       <div className="mt-8">
         <ReportRangesEditor />

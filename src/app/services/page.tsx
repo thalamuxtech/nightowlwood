@@ -8,6 +8,7 @@ import { SectionHeading } from "@/components/site/SectionHeading";
 import { ServiceIcon } from "@/components/site/ServiceIcon";
 import { Reveal } from "@/components/motion/Reveal";
 import { PageHero } from "@/components/site/PageHero";
+import { BoardShowcase } from "@/components/site/BoardShowcase";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/services/" },
@@ -75,6 +76,10 @@ export default function ServicesPage() {
           </div>
         </div>
       </section>
+
+      {/* Materials, after the machines and before the process. A customer who has just read
+          what the line can do is next asking what it does it to. */}
+      <BoardShowcase />
 
       <section className="mx-auto max-w-4xl px-5 py-20 sm:px-8 lg:py-28">
         <SectionHeading

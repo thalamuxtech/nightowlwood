@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240" width="400" height="240" role="img" aria-label="Edge tape board sample">
+  <defs>
+    <linearGradient id="shade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.18"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="240" fill="#b98f5f"/>
+  <g>
+    <rect x="0" y="96" width="400" height="48" fill="#8f6b42" opacity="0.35"/>
+    <path d="M0 96 L400 96 M0 144 L400 144" stroke="#00000040" stroke-width="1.5"/>
+    <path d="M0 100 C 120 98, 260 102, 400 100" stroke="#8f6b42" stroke-width="0.9" fill="none" opacity="0.5"/>
+    <path d="M0 108 C 120 106, 260 110, 400 108" stroke="#8f6b42" stroke-width="0.9" fill="none" opacity="0.5"/>
+    <path d="M0 116 C 120 114, 260 118, 400 116" stroke="#8f6b42" stroke-width="0.9" fill="none" opacity="0.5"/>
+    <path d="M0 124 C 120 122, 260 126, 400 124" stroke="#8f6b42" stroke-width="0.9" fill="none" opacity="0.5"/>
+    <path d="M0 132 C 120 130, 260 134, 400 132" stroke="#8f6b42" stroke-width="0.9" fill="none" opacity="0.5"/>
+    <path d="M0 140 C 120 138, 260 142, 400 140" stroke="#8f6b42" stroke-width="0.9" fill="none" opacity="0.5"/>
+  </g>
+  <rect width="400" height="240" fill="url(#shade)"/>
+  <rect x="0.5" y="0.5" width="399" height="239" fill="none" stroke="#00000030" stroke-width="1"/>
+</svg>

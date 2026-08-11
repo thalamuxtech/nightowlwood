@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240" width="400" height="240" role="img" aria-label="MFC 9x7 board sample">
+  <defs>
+    <linearGradient id="shade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.18"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="240" fill="#8b5e3c"/>
+  <g>
+    <path d="M0 8 C 100 -3, 200 19, 400 8" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+    <path d="M0 30 C 100 19, 200 41, 400 30" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+    <path d="M0 52 C 100 41, 200 63, 400 52" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+    <path d="M0 74 C 100 63, 200 85, 400 74" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+    <path d="M0 96 C 100 85, 200 107, 400 96" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+    <path d="M0 118 C 100 107, 200 129, 400 118" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+    <path d="M0 140 C 100 129, 200 151, 400 140" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+    <path d="M0 162 C 100 151, 200 173, 400 162" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+    <path d="M0 184 C 100 173, 200 195, 400 184" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+    <path d="M0 206 C 100 195, 200 217, 400 206" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+    <path d="M0 228 C 100 217, 200 239, 400 228" stroke="#6d472c" stroke-width="2.6" fill="none" opacity="0.45"/>
+  </g>
+  <rect width="400" height="240" fill="url(#shade)"/>
+  <rect x="0.5" y="0.5" width="399" height="239" fill="none" stroke="#00000030" stroke-width="1"/>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240" width="400" height="240" role="img" aria-label="Glass board sample">
+  <defs>
+    <linearGradient id="shade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.18"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="240" fill="#cfe0e3"/>
+  <g>
+    <path d="M-40 240 L200 -40 L300 -40 L60 240 Z" fill="#ffffff" opacity="0.35"/>
+    <path d="M180 240 L420 -40 L470 -40 L230 240 Z" fill="#ffffff" opacity="0.20"/>
+  </g>
+  <rect width="400" height="240" fill="url(#shade)"/>
+  <rect x="0.5" y="0.5" width="399" height="239" fill="none" stroke="#00000030" stroke-width="1"/>
+</svg>

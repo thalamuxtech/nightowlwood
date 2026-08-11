@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240" width="400" height="240" role="img" aria-label="Egger board sample">
+  <defs>
+    <linearGradient id="shade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.18"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="240" fill="#c9a06a"/>
+  <g>
+    <path d="M0 8 C 100 3, 200 13, 400 8" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 21 C 100 16, 200 26, 400 21" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 34 C 100 29, 200 39, 400 34" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 47 C 100 42, 200 52, 400 47" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 60 C 100 55, 200 65, 400 60" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 73 C 100 68, 200 78, 400 73" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 86 C 100 81, 200 91, 400 86" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 99 C 100 94, 200 104, 400 99" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 112 C 100 107, 200 117, 400 112" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 125 C 100 120, 200 130, 400 125" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 138 C 100 133, 200 143, 400 138" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 151 C 100 146, 200 156, 400 151" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 164 C 100 159, 200 169, 400 164" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 177 C 100 172, 200 182, 400 177" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 190 C 100 185, 200 195, 400 190" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 203 C 100 198, 200 208, 400 203" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 216 C 100 211, 200 221, 400 216" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+    <path d="M0 229 C 100 224, 200 234, 400 229" stroke="#a97f4c" stroke-width="1.4" fill="none" opacity="0.45"/>
+  </g>
+  <rect width="400" height="240" fill="url(#shade)"/>
+  <rect x="0.5" y="0.5" width="399" height="239" fill="none" stroke="#00000030" stroke-width="1"/>
+</svg>
