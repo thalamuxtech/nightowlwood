@@ -101,7 +101,18 @@ service cloud.firestore {
            'estimate.sendForReview', 'inventory.view', 'inventory.edit',
            'tool.request', 'tool.issue', 'supplier.view', 'supplier.edit',
            'purchase.view', 'purchase.create', 'purchase.receive',
-           'customer.view', 'staff.view']
+           'customer.view', 'staff.view',
+           // The counter is the manager's job; voiding a completed sale is not.
+           'sale.view', 'sale.create',
+           // Observed on the floor, and it only proposes the reduction — the run
+           // that applies it still needs wage.approve.
+           'deduction.create',
+           // Marketing in full: floor work that moves no money, and running the marketers
+           // is the manager's job rather than the admin's.
+           'marketing.view', 'marketing.record', 'marketing.manage',
+           // Asking to delete or change something, never deciding it. A manager needs a
+           // working delete button; approval.decide stays with the admin.
+           'approval.request']
         : role == 'operator'
           ? ['worklog.viewOwn', 'worklog.create']
           : [];
@@ -217,6 +228,38 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    /*
+     * The board catalogue, ahead of the general settings rule so it wins.
+     *
+     * Publicly readable, because it is what the materials section of the website renders from —
+     * the same reasoning as `settings/public`. It holds nothing private: display names, one-line
+     * descriptions, sheet sizes and image URLs, all of it written to be read by customers.
+     *
+     * Writing needs `settings.change` like any other settings document — which is on the
+     * ungrantable list, so only a real administrator can write here, not a role an admin has
+     * widened. `boardCatalogue.ts` restricts the image URL to a path or an http(s) address, and
+     * the components that render it re-check the same thing; note that neither is enforced *by
+     * this rule*, so the guarantee is "no non-admin can write a bad URL", not "no bad URL can
+     * exist in the document".
+     */
+    match /settings/boardCatalogue {
+      allow read: if true;
+      allow write: if isAdminOr('settings.change');
+    }
+
+    /*
+     * Marketing targets, ahead of the general settings rule so it wins.
+     *
+     * Everything else under `settings` changes how the system computes — tax rates, meter
+     * rates, wage defaults — so it is admin-only. This document holds four activity targets
+     * for the marketing team, which is a management decision about people rather than a
+     * change to any calculation. Requiring an admin for it would mean the person running the
+     * marketers cannot set what they are aiming at.
+     */
+    match /settings/marketing {
+      allow read: if isStaff();
+      allow write: if isAdminOr('marketing.manage');
+    }
     match /settings/{id} {
       allow read: if isStaff();
       allow write: if isAdmin();
@@ -242,6 +285,22 @@ service cloud.firestore {
       allow read: if isStaff();
       allow create, update: if isAdminOr('staff.edit');
       allow delete: if isAdminOr('record.delete');
+
+      /*
+       * Employment documents: appointment letters, ID cards, certificates.
+       *
+       * Written with `hr.manage` rather than `staff.edit`, because the two are different
+       * jobs: editing a staff record is pay-facing and belongs with whoever runs payroll,
+       * while issuing a letter is a personnel matter. Never updated — a document that was
+       * issued was issued, and a reprint records a new issue rather than editing the old
+       * one, which is what keeps a copy in someone's file matchable to a record.
+       */
+      match /documents/{docId} {
+        allow read: if isStaff();
+        allow create: if isAdminOr('hr.manage');
+        allow update: if false;
+        allow delete: if isAdminOr('record.delete');
+      }
     }
 
     // Failed work-log code attempts, per caller. Written only by the redeem
@@ -312,6 +371,27 @@ service cloud.firestore {
           allow read: if isAdminOr('project.view');
           allow write: if isOps();
         }
+
+        // Bought-in extras — kitchenwares, appliances, fittings. Part of the
+        // estimate, so guarded as its line items are.
+        match /addons/{addonId} {
+          allow read: if isAdminOr('project.view');
+          allow write: if isOps();
+        }
+      }
+
+      /*
+       * What was actually bought for the project.
+       *
+       * Reading needs project access; writing needs the expense grant, because saving
+       * one also books an expense. Without that alignment the purchase would be
+       * written and the paired expense refused, leaving a project cost that never
+       * reached the company books — which silently overstates profit.
+       */
+      match /purchases/{purchaseId} {
+        allow read: if isAdminOr('project.view');
+        allow create, update: if isAdminOr('expense.create');
+        allow delete: if isAdminOr('record.delete') || isAdminOr('expense.create');
       }
     }
 
@@ -350,15 +430,115 @@ service cloud.firestore {
       allow read: if isAdminOr('invoice.view');
       allow create: if isAdminOr('invoice.create');
 
-      // The paid state and its audit fields are held back: marking an invoice
-      // paid is the single most abusable action in the system, so it needs its
-      // own grant. Everything else on an invoice is editable by whoever was
-      // given invoice.create — previously any manager at all, granted or not.
+      /*
+       * Four tiers of update, narrowest first.
+       *
+       * `invoice.markPaid` is the settling grant — the single most abusable action in
+       * the system — and it alone may set `paidAt`/`paidBy`.
+       *
+       * `invoice.void` cancels a document already issued. It changes `status`, so it
+       * cannot go through the ordinary editing path, but it must not imply the ability
+       * to mark something paid either: voiding writes off a debt while settling claims
+       * it was collected, and those are different powers.
+       *
+       * `job.recordPayment` takes money in. That is ordinary counter work — a customer
+       * paying a deposit — so it may move `amountPaidKobo`, `balanceKobo` and the
+       * `partial` status, but never the paid stamps, which is what keeps "part paid"
+       * and "settled" separable. `recordInvoicePayment` enforces the same split in
+       * code, and the rule is what makes it true regardless of the client.
+       *
+       * Everything else — lines, tax, commission, discount, issuing a draft — is
+       * billing work for whoever holds invoice.create or invoice.edit, with the money
+       * fields held back.
+       */
       allow update: if isAdminOr('invoice.markPaid')
-        || (isAdminOr('invoice.create')
-            && fieldsUnchanged(['status', 'paidAt', 'paidBy', 'amountPaidKobo', 'balanceKobo']));
+        || isAdminOr('invoice.void')
+        || (isAdminOr('job.recordPayment')
+            && fieldsUnchanged(['paidAt', 'paidBy', 'lines', 'subtotalKobo', 'totalKobo',
+                                'taxKobo', 'commissionKobo', 'discountKobo']))
+        || ((isAdminOr('invoice.create') || isAdminOr('invoice.edit'))
+            && fieldsUnchanged(['paidAt', 'paidBy', 'amountPaidKobo']));
 
       allow delete: if isAdminOr('record.delete');
+
+      /*
+       * Supporting files — most often the customer's cutting list.
+       *
+       * Attached with the same grant that creates or edits an invoice, because attaching
+       * the cutting list is part of raising the document rather than a separate act. The
+       * whole point is that the customer's own paper stops getting lost, so read is as wide
+       * as invoice read.
+       */
+      match /attachments/{attachmentId} {
+        allow read: if isAdminOr('invoice.view');
+        allow create, update: if isAdminOr('invoice.create') || isAdminOr('invoice.edit');
+        allow delete: if isAdminOr('record.delete') || isAdminOr('invoice.edit');
+      }
+    }
+
+    /*
+     * Counter sales.
+     *
+     * Selling is routine floor work. Voiding a completed sale reverses both the
+     * takings and the stock movement after the fact, so it is held separately — and
+     * because a void is an update to `status`, the ordinary create grant deliberately
+     * cannot perform one.
+     */
+    match /sales/{saleId} {
+      allow read: if isAdminOr('sale.view');
+      allow create: if isAdminOr('sale.create');
+      /*
+       * Two different acts share this one write.
+       *
+       * Voiding a sale reverses it and needs `sale.void`. Collecting money owed on a credit
+       * sale only moves the paid and balance figures, and that is the cashier's daily work —
+       * requiring `sale.void` for it would mean either no one can collect a debt or every
+       * cashier can cancel a sale. So a payment is allowed with `sale.create` provided it
+       * touches nothing but the settlement fields and leaves the total alone.
+       */
+      allow update: if isAdminOr('sale.void')
+        || (isAdminOr('sale.create')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                 'amountPaidKobo', 'balanceKobo', 'status', 'settledAt',
+                 'lastPaymentMethod', 'updatedAt', 'updatedBy'
+               ])
+            /*
+             * A voided sale is finished, and this path must not resurrect it.
+             *
+             * Voiding leaves `totalKobo` and `amountPaidKobo` intact and zeroes the balance, so
+             * without this line every condition below is satisfiable on a voided sale: raise the
+             * paid figure by a kobo, recompute the balance, set the status back to `credit`, and
+             * the sale is live again — back on the debtors list and back in takings — while the
+             * stock the void returned to the shelf stays returned. That is the one thing the
+             * `sale.create` branch was written to be incapable of.
+             */
+            && resource.data.status != 'voided'
+            && request.resource.data.status in ['completed', 'credit']
+            && request.resource.data.amountPaidKobo is int
+            // Defaulted for any sale written before credit existed: those were paid in full,
+            // so there is nothing left to collect and the comparison below rejects them.
+            && request.resource.data.amountPaidKobo >
+                 resource.data.get('amountPaidKobo', resource.data.totalKobo)
+            && request.resource.data.amountPaidKobo <= resource.data.totalKobo
+            && request.resource.data.balanceKobo ==
+                 resource.data.totalKobo - request.resource.data.amountPaidKobo
+            /*
+             * `settledAt` says when the debt was cleared, so it is either the server's clock or
+             * nothing. Left unconstrained a cashier could stamp it with any timestamp, including
+             * one backdated into a closed month, which would misplace the money in any report
+             * that keys off it. Nothing reads it that way today; this keeps it that way.
+             */
+            && (request.resource.data.balanceKobo > 0
+                  ? request.resource.data.settledAt == null
+                  : request.resource.data.settledAt == request.time)
+            && request.resource.data.updatedAt == request.time);
+      allow delete: if isAdminOr('record.delete');
+
+      match /lines/{lineId} {
+        allow read: if isAdminOr('sale.view');
+        allow create: if isAdminOr('sale.create');
+        allow update, delete: if isAdminOr('record.delete');
+      }
     }
 
     match /expenses/{id} {
@@ -386,6 +566,40 @@ service cloud.firestore {
     match /wageRates/{id} {
       allow read: if isAdminOr('wage.viewRates') || isAdminOr('wage.run');
       allow write: if isAdminOr('wage.editRates');
+    }
+
+    /*
+     * Per-person rate overrides.
+     *
+     * Guarded exactly as the work-type rates are, because they do the same job: they
+     * decide what somebody is paid. Kept readable by whoever can generate a run, since
+     * a run that cannot read them would silently price everyone at the standard rate
+     * and underpay the people on an override.
+     */
+    match /staffRates/{id} {
+      allow read: if isAdminOr('wage.viewRates') || isAdminOr('wage.run');
+      allow write: if isAdminOr('wage.editRates');
+    }
+
+    /*
+     * Pay deductions raised at the work log.
+     *
+     * Creating one is floor work: a no-show or a breakage is observed by whoever was
+     * there, and a deduction nobody can record until an admin is free is one that gets
+     * forgotten. It only ever *proposes* a reduction — the run that applies it still
+     * needs wage.approve.
+     *
+     * Updates are the run claiming or releasing a deduction, so they follow the run
+     * grants rather than the create grant. Someone who can raise a deduction must not
+     * be able to quietly mark their own as already applied.
+     */
+    match /deductions/{id} {
+      allow read: if isAdminOr('deduction.create')
+        || isAdminOr('wage.run')
+        || isAdminOr('wage.approve');
+      allow create: if isAdminOr('deduction.create');
+      allow update: if isAdminOr('wage.run') || isAdminOr('wage.approve');
+      allow delete: if isAdminOr('record.delete');
     }
 
     match /wageRuns/{runId} {
@@ -436,15 +650,33 @@ service cloud.firestore {
       allow delete: if isAdminOr('record.delete');
     }
 
+    /*
+     * Company stock.
+     *
+     * `sale.create` writes here as well as `inventory.edit`, because completing a
+     * counter sale decrements the stock it sold in the same transaction. Without that
+     * grant a cashier on a role holding sale.create but not inventory.edit would have
+     * every sale refused by the rules — the sale document and the stock decrement are
+     * one atomic write, so a partial permission fails the whole thing.
+     *
+     * Read is widened for the same reason: the till has to list what is sellable and
+     * check what is on hand before taking money.
+     */
     match /inventoryCompany/{itemId} {
-      allow read: if isAdminOr('inventory.view');
-      allow create, update: if isOps();
+      allow read: if isAdminOr('inventory.view') || isAdminOr('sale.view');
+      allow create, update: if isOps()
+        || isAdminOr('inventory.edit')
+        || isAdminOr('sale.create')
+        || isAdminOr('sale.void');
       allow delete: if isAdminOr('record.delete');
 
       // Movements are an append-only ledger: never edited, never deleted.
       match /movements/{movementId} {
-        allow read: if isAdminOr('inventory.view');
-        allow create: if isOps();
+        allow read: if isAdminOr('inventory.view') || isAdminOr('sale.view');
+        allow create: if isOps()
+          || isAdminOr('inventory.edit')
+          || isAdminOr('sale.create')
+          || isAdminOr('sale.void');
         allow update, delete: if false;
       }
     }
@@ -520,6 +752,219 @@ service cloud.firestore {
 
     // Append-only. No client may update or delete an audit entry — not even an
     // admin — so the trail cannot be rewritten after the fact.
+    /*
+     * Change requests awaiting a decision.
+     *
+     * `create` needs `approval.request` — the ability to *ask*. `update` needs
+     * `approval.decide`, because deciding is the gate, and letting the requester update
+     * their own request would let them mark it approved and defeat the whole workflow.
+     *
+     * The one exception is withdrawing: `cancelRequest` lets whoever raised a request take
+     * it back. That is an update by the requester, so it is allowed only when they are the
+     * requester *and* the request is still pending — and it may set nothing but the
+     * cancelled state, which `fieldsUnchanged` on the substance enforces.
+     *
+     * Never deletable. A refused request is the record of a refusal, and being able to
+     * remove it would erase exactly the history the queue exists to keep.
+     */
+    match /approvals/{id} {
+      allow read: if isAdminOr('approval.request') || isAdminOr('approval.decide');
+      allow create: if isAdminOr('approval.request')
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedByUid == request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 3;
+
+      allow update: if isAdminOr('approval.decide')
+        || (resource.data.requestedByUid == request.auth.uid
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'cancelled'
+            && fieldsUnchanged(['kind', 'targetCollection', 'targetId', 'reason',
+                                'payload', 'before', 'requestedByUid']));
+
+      allow delete: if false;
+    }
+
+    /*
+     * Days the workshop was shut.
+     *
+     * Readable by any staff member, because a work log screen showing "no entries" needs to
+     * be able to say whether that was a holiday. Writing affects how absence is counted in
+     * payroll, so it is held separately.
+     */
+    match /holidays/{id} {
+      allow read: if isStaff();
+      allow create, update: if isAdminOr('holiday.manage');
+      allow delete: if isAdminOr('holiday.manage') || isAdminOr('record.delete');
+    }
+
+    /*
+     * Recurring fixed costs.
+     *
+     * Read alongside the finance dashboard, since the monthly floor is part of reading a
+     * profit figure. Written with the expense grant, because recording a payment against
+     * one writes an expense.
+     */
+    match /fixedCosts/{id} {
+      allow read: if isAdminOr('expense.view') || isAdminOr('profit.view');
+      allow create, update: if isAdminOr('expense.create');
+      allow delete: if isAdminOr('record.delete');
+    }
+
+    /*
+     * Marketing.
+     *
+     * One shape across all four collections, because they are one module and the split between
+     * them is about lifetime rather than about who may touch them:
+     *
+     * - **read** on `marketing.view` — the office answering a quotation request needs to see the
+     *   pipeline without being able to add to it.
+     * - **create** on `marketing.record` — the marketer's daily work.
+     * - **update** on `marketing.record` too, deliberately. A visit gains a `leadId` when it is
+     *   promoted, a lead gains a follow-up count and a next-action date every time it is worked.
+     *   Requiring a supervisor for those would mean a marketer cannot log their own follow-up.
+     * - **delete** on `record.delete` — the same bar as everywhere else in the system. A mistyped
+     *   visit is removed by an admin, and the audit entry keeps what it said.
+     *
+     * No field validation here beyond the capability, unlike `cuttingLists` above. That rule is
+     * strict because it is open to the public; these are staff-only collections holding notes
+     * about conversations, with no money, stock or payroll consequence to protect. The
+     * validations that matter — a contact needs a phone number, a lost lead needs a reason — are
+     * judgements about usefulness rather than about safety, and they live in `marketing.ts`
+     * where they can say why.
+     */
+    match /siteVisits/{id} {
+      allow read: if isAdminOr('marketing.view');
+      allow create, update: if isAdminOr('marketing.record');
+      allow delete: if isAdminOr('record.delete');
+    }
+    /*
+     * Leads, where the record/manage split has to be real.
+     *
+     * A marketer needs `update` for their daily work: logging a follow-up patches the lead's
+     * next-action date and its follow-up count. But calling a lead **won** is a judgement about
+     * that marketer's own performance — the weekly summary counts `status == "won"` — so a
+     * marketer who could write it would be marking their own homework, and could also clear
+     * `nextActionOn` to make an overdue call disappear from the due list.
+     *
+     * So: `marketing.manage` may write anything, `marketing.record` may write anything except the
+     * three closing fields. Mirrors how the invoices block fences off its own status.
+     */
+    match /leads/{id} {
+      allow read: if isAdminOr('marketing.view');
+      allow create: if isAdminOr('marketing.record');
+      allow update: if isAdminOr('marketing.manage')
+        || (isAdminOr('marketing.record')
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['closedAt', 'closeReason'])
+            /*
+             * Status may move, but only forward through the working states.
+             *
+             * Logging a follow-up promotes `new` to `contacted`, and raising a quotation request
+             * sets `quoted` — both are things a marketer does in the ordinary course of the work,
+             * so denying them outright would break the module for a record-only role. What stays
+             * out of reach is `won` and `lost`: those are the figures the marketer is judged on.
+             */
+            && request.resource.data.status in ['new', 'contacted', 'quoted']);
+      allow delete: if isAdminOr('record.delete');
+    }
+    match /followUps/{id} {
+      allow read: if isAdminOr('marketing.view');
+      allow create, update: if isAdminOr('marketing.record');
+      allow delete: if isAdminOr('record.delete');
+    }
+    match /quoteRequests/{id} {
+      allow read: if isAdminOr('marketing.view');
+      allow create, update: if isAdminOr('marketing.record');
+      allow delete: if isAdminOr('record.delete');
+    }
+
+    /*
+     * Cutting lists.
+     *
+     * The one collection a member of the public may write to, and the reasoning is the same as
+     * for the enquiry forms above: the customer is the person who knows what they want cut, and
+     * the paper list they would otherwise carry in is the document that gets lost.
+     *
+     * The create rule is tight because it is open. It requires the shape a real submission has —
+     * a name, a phone number, at least one part, a `submitted` status and the
+     * `submittedByCustomer` marker — and caps the part count so one request cannot write a
+     * multi-megabyte document. It cannot set `customerId`, so a stranger cannot attach a list to
+     * somebody else's account; staff link it afterwards.
+     *
+     * Reading is staff-only. A customer gets a reference number on screen and quotes it, rather
+     * than a link that would let anyone enumerate other people's lists.
+     */
+    match /cuttingLists/{id} {
+      allow read: if isAdminOr('job.view') || isAdminOr('customer.view');
+
+      allow create: if request.resource.data.keys().hasAll(
+                         ['listNumber', 'customerName', 'customerPhone', 'parts',
+                          'status', 'submittedByCustomer', 'totals', 'createdAt'])
+        /*
+         * `hasOnly` as well as `hasAll`, which is the part that matters.
+         *
+         * `hasAll` is a subset test — it permits any *additional* key. Without this line an
+         * anonymous caller could bolt on a 900KB string, or set `createdBy` to a staff uid,
+         * or add fields the admin screen renders. The allowed set is the exact shape the
+         * builder writes and nothing else.
+         */
+        && request.resource.data.keys().hasOnly(
+             ['listNumber', 'customerName', 'customerPhone', 'customerId',
+              'jobId', 'jobNumber', 'title', 'parts', 'wastePercent', 'offsetMm',
+              'totals', 'status', 'notes', 'submittedAt', 'submittedByCustomer',
+              'createdAt', 'createdBy'])
+        && request.resource.data.status == 'submitted'
+        /*
+         * The reference must look like a public one.
+         *
+         * Unvalidated, a caller could submit `CL-2026-0001` and wear the shape of a
+         * staff-sequenced number — so a customer quoting it at the counter pulls up the
+         * wrong list, or an anonymous list is treated as staff-entered and cut without
+         * anybody confirming the figures. The pattern is exactly what `publicReference()`
+         * produces: CL-YYMMDD-XXXX from an alphabet with no easily-misread characters.
+         */
+        && request.resource.data.listNumber is string
+        && request.resource.data.listNumber.matches('^CL-[0-9]{6}-[A-Z2-9]{4}$')
+        // Never false: this marker is what tells staff to confirm the figures before
+        // cutting, so a submission cannot suppress it.
+        && request.resource.data.submittedByCustomer == true
+        && request.resource.data.customerName is string
+        && request.resource.data.customerName.size() > 1
+        && request.resource.data.customerName.size() < 200
+        && request.resource.data.customerPhone is string
+        && request.resource.data.customerPhone.size() > 5
+        && request.resource.data.customerPhone.size() < 40
+        && request.resource.data.parts is list
+        && request.resource.data.parts.size() > 0
+        // A cutting list of more than 300 panels is not a cutting list, it is an attack.
+        && request.resource.data.parts.size() <= 300
+        /*
+         * Typed and bounded, so a malformed value cannot be stored and then crash the admin
+         * screen when React is handed an object where a string belongs.
+         *
+         * `totals` cannot be verified here — rules cannot loop over a list to recompute it —
+         * so it is only shape-checked. The screens recompute it for customer-submitted lists
+         * and flag any divergence, which is where a fabricated figure is actually caught.
+         */
+        && request.resource.data.totals is map
+        && (!('notes' in request.resource.data.keys())
+            || request.resource.data.notes == null
+            || request.resource.data.notes.size() < 2000)
+        && (!('title' in request.resource.data.keys())
+            || request.resource.data.title == null
+            || request.resource.data.title.size() < 200)
+        // Never set by a public submission: staff attach the list to a customer once they
+        // have matched it up, and letting the caller choose would attach it to anyone.
+        && request.resource.data.customerId == null
+        && request.resource.data.jobId == null
+        && request.resource.data.createdBy == null;
+
+      // Staff only, once it is in: linking it to a customer, and moving it through production.
+      allow update: if isOps() || isAdminOr('job.edit');
+      allow delete: if isAdminOr('record.delete');
+    }
+
     match /auditLog/{id} {
       allow read: if isAdminOr('audit.view');
       allow create: if isStaff();
@@ -528,9 +973,20 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Document-number sequences, allocated in a client transaction.
+    /*
+     * Document-number sequences, allocated in a client transaction.
+     *
+     * Any staff member who can create a numbered document needs this, so it is gated on
+     * being staff rather than on a role. Narrowing it to isOps() meant a granted role —
+     * a cashier with sale.create, or a clerk with invoice.create — could pass every
+     * other rule and still fail here, at the point where the number is drawn, which
+     * fails the whole write for a reason nothing on screen could explain.
+     *
+     * The exposure is only the ability to advance a counter, which wastes a number in
+     * the sequence and nothing more.
+     */
     match /counters/{name} {
-      allow read, write: if isOps();
+      allow read, write: if isStaff();
     }
 
     // Deny everything not matched above.
