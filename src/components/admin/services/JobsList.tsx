@@ -19,6 +19,7 @@ import type { BoardBreakdown } from "@/lib/erp/types";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { Button, EmptyState } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { BoardsPanel } from "@/components/admin/services/BoardsPanel";
 
 interface JobRow {
   id: string;
@@ -264,6 +265,11 @@ export function JobsList() {
           </table>
         </div>
       )}
+
+      {/* Boards received against boards cut. Sits under the job list because it is a
+          question about the same records read the other way round: the list says what
+          work is in progress, this says whose property is still on site. */}
+      <BoardsPanel />
     </div>
   );
 }

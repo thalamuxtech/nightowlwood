@@ -55,6 +55,8 @@ interface MovementRow {
   type: MovementType;
   quantity: number;
   reason: string;
+  /** Who took it. Recorded for stock going out; absent on receipts and stock-takes. */
+  issuedToName?: string;
   balanceAfter: number;
   atMs: number | null;
 }
@@ -296,6 +298,25 @@ function ItemPanel({
   const [editing, setEditing] = useState(false);
   const [qty, setQty] = useState("");
   const [reason, setReason] = useState("");
+  /** Who the stock is going to. Required when issuing. */
+  const [issuedTo, setIssuedTo] = useState("");
+  /** Staff names, offered as suggestions so the common case is one keystroke. */
+  const [staff, setStaff] = useState<Array<{ id: string; name: string }>>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    return onSnapshot(
+      query(collection(getDb(), COL.staff), orderBy("name", "asc")),
+      (snap) =>
+        setStaff(
+          snap.docs
+            .filter((d) => d.data().active !== false)
+            .map((d) => ({ id: d.id, name: (d.data().name as string) ?? "" }))
+        ),
+      // A missing staff list only costs the suggestions; the field still accepts a name.
+      () => {}
+    );
+  }, [open]);
   const [busy, setBusy] = useState(false);
 
   // Only the open item subscribes to its ledger: a shelf of 40 items would
@@ -315,6 +336,7 @@ function ItemPanel({
             type: (d.data().type as MovementType) ?? "in",
             quantity: d.data().quantity ?? 0,
             reason: d.data().reason ?? "",
+            issuedToName: (d.data().issuedToName as string | null) ?? undefined,
             balanceAfter: d.data().balanceAfter ?? 0,
             atMs: d.data().createdAt?.toMillis?.() ?? null,
           }))
@@ -333,16 +355,34 @@ function ItemPanel({
       onError("Enter a quantity.");
       return;
     }
+    // Stock going out has to name a receiver. The write layer enforces it too; catching
+    // it here means the message lands next to the field rather than as a thrown error.
+    if (mode === "out" && !issuedTo.trim()) {
+      onError("Record who the stock is being issued to.");
+      return;
+    }
     setBusy(true);
     try {
       await recordMovement(getDb(), actor, item.id, {
         type: mode,
         quantity: n,
         reason: reason.trim() || defaultReason(mode),
+        ...(mode === "out"
+          ? {
+              issuedToName: issuedTo.trim(),
+              // Linked to a staff record where the name matches one, so the movement can
+              // be counted against a person later. Free text still stands on its own for
+              // a fitter on site or a driver collecting.
+              issuedToStaffId: staff.find(
+                (s) => s.name.toLowerCase() === issuedTo.trim().toLowerCase()
+              )?.id,
+            }
+          : {}),
       });
       setMode(null);
       setQty("");
       setReason("");
+      setIssuedTo("");
     } catch (e) {
       onError(e instanceof Error ? e.message : "Could not record the movement.");
     } finally {
@@ -520,6 +560,34 @@ function ItemPanel({
                       onChange={setReason}
                       placeholder={defaultReason(mode)}
                     />
+                    {/* Who is taking it. Only for stock going out: an `in` movement has a
+                        supplier, and an `adjust` is a stock-take where nobody took
+                        anything. A datalist rather than a locked dropdown, because the
+                        receiver is often not on the staff list — a fitter on site, a
+                        driver collecting. */}
+                    {mode === "out" && (
+                      <div className="sm:col-span-2">
+                        <label
+                          htmlFor={`issued-${item.id}`}
+                          className="mb-1.5 block text-sm text-cream-300"
+                        >
+                          Issued to <span className="ml-1 text-brass-400">*</span>
+                        </label>
+                        <input
+                          id={`issued-${item.id}`}
+                          list={`staff-list-${item.id}`}
+                          value={issuedTo}
+                          onChange={(e) => setIssuedTo(e.target.value)}
+                          placeholder="Who is taking it"
+                          className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 placeholder:text-cream-600 focus:border-brass-500 focus:outline-none"
+                        />
+                        <datalist id={`staff-list-${item.id}`}>
+                          {staff.map((s) => (
+                            <option key={s.id} value={s.name} />
+                          ))}
+                        </datalist>
+                      </div>
+                    )}
                   </div>
                   {mode === "out" && (
                     <p className="mt-2 text-xs text-cream-500">
@@ -574,6 +642,11 @@ function ItemPanel({
                     </span>
                     <span className="block truncate text-xs text-cream-500">
                       {m.reason}
+                      {/* The receiver, where one was recorded. This is what makes the log
+                          a record of custody rather than only of quantities. */}
+                      {m.issuedToName && (
+                        <span className="text-cream-400"> → {m.issuedToName}</span>
+                      )}
                       {m.atMs
                         ? ` · ${new Date(m.atMs).toLocaleDateString("en-GB")}`
                         : ""}

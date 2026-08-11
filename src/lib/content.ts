@@ -26,8 +26,16 @@ export const NAV_LINKS = [
   { href: "/contact/", label: "Get a Quote" },
 ];
 
+/**
+ * Footer links.
+ *
+ * The cutting list builder lives here rather than in the main nav: it is a tool for a customer
+ * who has already decided to use the workshop and needs to send panel sizes, not a page that
+ * belongs in the browsing path. Somebody sent the link, or somebody was told where to find it.
+ */
 export const FOOTER_LINKS = [
   ...NAV_LINKS,
+  { href: "/cutting-list/", label: "Cutting List Builder" },
   { href: "/careers/", label: "Internships & Careers" },
 ];
 

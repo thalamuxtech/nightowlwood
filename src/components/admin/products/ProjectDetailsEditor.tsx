@@ -6,7 +6,7 @@ import { getDb } from "@/lib/firebase";
 import { updateProjectDetails } from "@/lib/erp/projects";
 import { fromDateInputValue, toDateInputValue } from "@/lib/erp/workLogs";
 import type { AuditActor } from "@/lib/erp/audit";
-import { Button, TextAreaField, TextField } from "@/components/admin/ui/Fields";
+import { Button, DateField, TextAreaField, TextField } from "@/components/admin/ui/Fields";
 import { CustomerPicker, type PickedCustomer } from "@/components/admin/services/CustomerPicker";
 
 export interface EditableProject {
@@ -104,15 +104,12 @@ export function ProjectDetailsEditor({
         <div className="sm:col-span-2">
           <CustomerPicker value={customer} onChange={setCustomer} createdBy={actor.uid} />
         </div>
-        <label className="block">
-          <span className="mb-1.5 block text-sm text-cream-300">Target date</span>
-          <input
-            type="date"
-            value={targetDate}
-            onChange={(e) => setTargetDate(e.target.value)}
-            className="w-full rounded-xl border border-night-600 bg-night-950/60 px-4 py-2.5 text-sm text-cream-100 outline-none transition-colors focus:border-brass-500"
-          />
-        </label>
+        <DateField
+          id="proj-target-date"
+          label="Target date"
+          value={targetDate}
+          onChange={setTargetDate}
+        />
         <div className="sm:col-span-2">
           <TextAreaField id="proj-notes" label="Notes" value={notes} onChange={setNotes} />
         </div>

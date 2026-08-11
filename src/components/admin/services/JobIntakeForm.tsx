@@ -9,9 +9,11 @@ import { COL } from "@/lib/erp/collections";
 import {
   BOARD_TYPES,
   BOARD_TYPE_LABELS,
+  COUNTED_BOARD_TYPES,
   SERVICE_TYPES,
   SERVICE_TYPE_LABELS,
   type BoardType,
+  type CountedBoardType,
   type ServiceType,
 } from "@/lib/erp/enums";
 import { formatNaira, lineAmountKobo, parseNairaInput, sumKobo, toNaira } from "@/lib/erp/money";
@@ -32,15 +34,16 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 
-/** Board fields from the paper tracker's checkbox row. */
-const BOARD_FIELDS: Array<{ key: string; label: string }> = [
-  { key: "mdf", label: "MDF" },
-  { key: "egger", label: "Egger" },
-  { key: "hdf", label: "HDF" },
-  { key: "quarter", label: "Quarter" },
-  { key: "kwali", label: "Kwali" },
-  { key: "tape", label: "Tape" },
-];
+/**
+ * Board fields, in the order the workshop counts a stack.
+ *
+ * Derived from `COUNTED_BOARD_TYPES` rather than listed again here, so the form, the
+ * job sheet and the reconciliation cannot fall out of order with each other. A form
+ * whose fields run in a different order from the person reading the stack aloud is how
+ * two counts get transposed.
+ */
+const BOARD_FIELDS: Array<{ key: CountedBoardType; label: string }> =
+  COUNTED_BOARD_TYPES.map((key) => ({ key, label: BOARD_TYPE_LABELS[key] }));
 
 interface DraftLine {
   key: string;
@@ -143,9 +146,25 @@ export function JobIntakeForm() {
       setError("Select or create a customer.");
       return;
     }
+    /*
+     * Work lines are optional at intake.
+     *
+     * The boards arrive before anyone knows what will be done to them: a customer drops
+     * off a stack, and what gets cut, edged or grooved is settled later. Requiring a
+     * priced line up front meant the counter either invented one to get past the form or
+     * left the job unrecorded until someone had time — and an unrecorded job is a stack
+     * of boards nobody is accountable for.
+     *
+     * Nothing downstream needs a line: the job totals start at zero, and
+     * `createInvoiceFromJob` already refuses a job with no priced work, which is the
+     * right place for that check.
+     */
     const ready = lines.filter((l) => l.serviceType && Number(l.quantity) > 0);
-    if (ready.length === 0) {
-      setError("Add at least one work line with a quantity.");
+    const hasBoards = BOARD_FIELDS.some((f) => Number(boards[f.key]) > 0);
+    if (ready.length === 0 && !hasBoards) {
+      setError(
+        "Record what came in: either the boards received, or the work to be done. A job with neither has nothing to track."
+      );
       return;
     }
 
@@ -291,10 +310,16 @@ export function JobIntakeForm() {
         </div>
       </Section>
 
-      {/* Work lines */}
+      {/* Work lines. Optional: the boards often arrive before anyone has settled what
+          will be done to them, so a job can be opened on the board count alone and
+          priced later from the job's own screen. */}
       <Section
-        title="Work & pricing"
-        hint={rateCard.autofillEnabled ? "Prices prefill from the rate card" : undefined}
+        title="Work & pricing (optional)"
+        hint={
+          rateCard.autofillEnabled
+            ? "Prices prefill from the rate card. Leave blank to price later."
+            : "Leave blank to price later."
+        }
       >
         <div className="space-y-4">
           {lines.map((line, i) => {

@@ -33,6 +33,7 @@ import { TOOL_REQUEST_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import {
   Button,
+  DateField,
   EmptyState,
   NumberField,
   TextField,
@@ -752,18 +753,12 @@ function NewRequestForm({
           label="Requested by"
           required
         />
-        <div>
-          <label htmlFor="tool-due" className="mb-1.5 block text-sm text-cream-300">
-            Due back
-          </label>
-          <input
-            id="tool-due"
-            type="date"
-            value={dueBack}
-            onChange={(e) => setDueBack(e.target.value)}
-            className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
-          />
-        </div>
+        <DateField
+          id="tool-due"
+          label="Due back"
+          value={dueBack}
+          onChange={setDueBack}
+        />
       </div>
 
       <h3 className="mt-6 text-sm text-cream-300">Tools</h3>
@@ -958,21 +953,12 @@ function EditRequestForm({
           onChange={setStaff}
           createdBy={actor.uid}
         />
-        <div>
-          <label
-            htmlFor={`ed-due-${request.id}`}
-            className="mb-1.5 block text-sm text-cream-300"
-          >
-            Due back
-          </label>
-          <input
-            id={`ed-due-${request.id}`}
-            type="date"
-            value={dueBack}
-            onChange={(e) => setDueBack(e.target.value)}
-            className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
-          />
-        </div>
+        <DateField
+          id={`ed-due-${request.id}`}
+          label="Due back"
+          value={dueBack}
+          onChange={setDueBack}
+        />
       </div>
 
       <p className="mt-5 text-sm text-cream-300">Tools</p>

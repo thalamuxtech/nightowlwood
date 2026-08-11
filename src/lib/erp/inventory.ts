@@ -351,9 +351,30 @@ export async function recordMovement(
     jobId?: string;
     projectId?: string;
     unitCostKobo?: number;
+    /**
+     * Who the stock went to.
+     *
+     * "Gum, 2 bags out" answers what left but not who has it — which is the question asked
+     * when the count comes up short. Naming the receiver turns the movement log into a
+     * record of custody, and somebody who knows their name goes against the line tends to
+     * draw what they need rather than what is available.
+     *
+     * Required for an `out` movement below. The free-text name carries the cases a staff
+     * link cannot: a fitter on site, a driver collecting.
+     */
+    issuedToStaffId?: string;
+    issuedToName?: string;
+    /** Who handed it over — a different person from the receiver. */
+    issuedByName?: string;
   }
 ): Promise<{ balanceAfter: number }> {
   if (input.quantity <= 0) throw new Error("Quantity must be greater than zero.");
+
+  // Only for stock going out. An `in` movement has a supplier rather than a receiver, and
+  // an `adjust` is a stock-take, where nobody took anything.
+  if (input.type === "out" && !input.issuedToName?.trim() && !input.issuedToStaffId) {
+    throw new Error("Record who the stock was issued to.");
+  }
 
   const itemRef = doc(db, COL.inventoryCompany, itemId);
   const moveRef = doc(collection(db, inventoryMovementsPath(itemId)));
@@ -386,6 +407,9 @@ export async function recordMovement(
       jobId: input.jobId ?? null,
       projectId: input.projectId ?? null,
       unitCostKobo: input.unitCostKobo ?? null,
+      issuedToStaffId: input.issuedToStaffId ?? null,
+      issuedToName: input.issuedToName?.trim() || null,
+      issuedByName: input.issuedByName?.trim() || actor.email,
       balanceAfter: next,
       createdAt: serverTimestamp(),
       createdBy: actor.uid,
@@ -405,8 +429,15 @@ export async function recordMovement(
     action: "inventory_movement",
     collectionName: COL.inventoryCompany,
     docId: itemId,
-    summary: `${input.type} ${input.quantity}: ${input.reason} (balance ${balanceAfter})`,
-    after: { type: input.type, quantity: input.quantity, balanceAfter },
+    summary:
+      `${input.type} ${input.quantity}: ${input.reason} (balance ${balanceAfter})` +
+      (input.issuedToName?.trim() ? ` — to ${input.issuedToName.trim()}` : ""),
+    after: {
+      type: input.type,
+      quantity: input.quantity,
+      balanceAfter,
+      issuedToName: input.issuedToName?.trim() ?? null,
+    },
   });
 
   return { balanceAfter };

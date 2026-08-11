@@ -15,7 +15,12 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { COL, COUNTER, componentsPath, featuresPath } from "./collections";
-import type { EstimateStatus, ProductCategory, ProjectStatus } from "./enums";
+import type {
+  BoardType,
+  EstimateStatus,
+  ProductCategory,
+  ProjectStatus,
+} from "./enums";
 import { applyPercentKobo, lineAmountKobo, sumKobo } from "./money";
 import { allocateDocNumber } from "./numbering";
 import { ESTIMATE_TEMPLATES } from "./estimateTemplates";
@@ -327,6 +332,16 @@ export async function saveFeature(
     /** Whether the line goes on the estimate. Omitted leaves the stored tick
      *  alone, so pricing a row does not silently include or drop it. */
     included?: boolean;
+    /**
+     * Whether this line is boards, and which material.
+     *
+     * Ticking it makes the line's quantity count toward the project's board total, which is
+     * what the cutting & edging charge is priced from. Both omitted leaves the stored values
+     * alone, for the same reason `included` does: a caller that only reprices a row must not
+     * silently un-flag it as boards.
+     */
+    isBoard?: boolean;
+    boardType?: BoardType | null;
   }
 ): Promise<void> {
   const amountKobo = lineAmountKobo(values.quantity, values.unitPriceKobo);
@@ -382,6 +397,10 @@ export async function saveFeature(
       // would convert a legacy row's "decide by price" into a fixed answer the first
       // time anyone edited its quantity, which is not a decision the user made.
       ...(values.included === undefined ? {} : { included: values.included }),
+      // Same omit-means-leave-alone rule as `included`: repricing a row must not un-flag it
+      // as boards, or the cutting charge would quietly drop those sheets.
+      ...(values.isBoard === undefined ? {} : { isBoard: values.isBoard }),
+      ...(values.boardType === undefined ? {} : { boardType: values.boardType }),
       actualQuantity: values.actualQuantity ?? null,
       notes: values.notes ?? null,
       // Only written when supplied: an absent label must not overwrite the

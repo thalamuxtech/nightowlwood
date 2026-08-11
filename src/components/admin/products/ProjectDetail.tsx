@@ -23,11 +23,14 @@ import {
 import { getDb } from "@/lib/firebase";
 import { COL, componentsPath, featuresPath } from "@/lib/erp/collections";
 import {
+  BOARD_TYPE_LABELS,
+  CE_RATED_BOARD_TYPES,
   ESTIMATE_STATUS_LABELS,
   PRODUCT_CATEGORIES,
   PRODUCT_CATEGORY_LABELS,
   PROJECT_STATUSES,
   PROJECT_STATUS_LABELS,
+  type BoardType,
   type EstimateStatus,
   type ProductCategory,
   type ProjectStatus,
@@ -53,6 +56,10 @@ import { DEFAULT_INVOICE_SETTINGS } from "@/lib/erp/settings";
 import { ESTIMATE_STATUS_TONE, PROJECT_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { ProjectDetailsEditor } from "@/components/admin/products/ProjectDetailsEditor";
+import { AddonsPanel } from "@/components/admin/products/AddonsPanel";
+import { ProjectCuttingPanel } from "@/components/admin/products/ProjectCuttingPanel";
+import type { BoardBreakdown } from "@/lib/erp/types";
+import { ProjectPurchasesPanel } from "@/components/admin/products/ProjectPurchasesPanel";
 import { EstimatePdfModal } from "@/components/admin/products/EstimatePdfModal";
 import { SendForReviewModal } from "@/components/admin/products/SendForReviewModal";
 import {
@@ -82,6 +89,9 @@ interface ProjectDoc {
   estimatedCostKobo: number;
   contractValueKobo?: number;
   targetDateMs: number | null;
+  /** Boards the job needs, priced by the Services cutting & edging rate card. */
+  boardCounts?: BoardBreakdown;
+  cuttingChargeKobo?: number;
   /* The estimate lives on the project; there is no separate document. */
   errorMarginPercent: number;
   nightowlChargePercent: number;
@@ -115,6 +125,9 @@ interface FeatureRow {
   unitPriceKobo: number;
   amountKobo: number;
   included: boolean;
+  /** Ticked when the line is boards, so its quantity feeds the cutting charge. */
+  isBoard?: boolean;
+  boardType?: BoardType;
   order: number;
 }
 
@@ -172,6 +185,8 @@ export function ProjectDetail() {
             status: (x.status as ProjectStatus) ?? "enquiry",
             estimatedCostKobo: x.estimatedCostKobo ?? 0,
             contractValueKobo: x.contractValueKobo ?? undefined,
+            boardCounts: (x.boardCounts as BoardBreakdown | undefined) ?? undefined,
+            cuttingChargeKobo: x.cuttingChargeKobo ?? 0,
             targetDateMs: ms(x.targetDate),
             errorMarginPercent:
               x.errorMarginPercent ?? DEFAULT_INVOICE_SETTINGS.defaultErrorMarginPercent,
@@ -637,6 +652,32 @@ export function ProjectDetail() {
         )}
       </section>
 
+      {/* Cutting & edging, priced from the board counts and the Services rate card.
+          Sits after the components because it is a charge on the boards rather than one
+          of the workshop's own line items. */}
+      <ProjectCuttingPanel
+        projectId={projectId}
+        boardCounts={project.boardCounts}
+        canEdit={canEdit}
+        actor={actor}
+        onError={setError}
+        onSaved={notify}
+      />
+
+      {/* What the job actually cost, against what it was quoted at. Placed after the
+          components because it is the other half of the same question: the estimate
+          above says what was expected, this says what was spent. */}
+      <ProjectPurchasesPanel
+        projectId={projectId}
+        projectNumber={project.projectNumber}
+        contractValueKobo={project.contractValueKobo}
+        estimatedCostKobo={project.estimatedCostKobo}
+        components={components.map((c) => ({ id: c.id, name: c.name }))}
+        canEdit={canEdit}
+        actor={actor}
+        onError={setError}
+      />
+
       {/* Status */}
       {canEdit && (
         <section className="mt-8 rounded-3xl border border-night-700/60 bg-night-900/30 p-6">
@@ -937,6 +978,8 @@ function ComponentPanel({
             unitPriceKobo: d.data().unitPriceKobo ?? 0,
             amountKobo: d.data().amountKobo ?? 0,
             included: isIncluded(d.data()),
+            isBoard: d.data().isBoard === true,
+            boardType: (d.data().boardType as BoardType | undefined) ?? undefined,
             order: d.data().order ?? 0,
           }))
         ),
@@ -1149,6 +1192,18 @@ function ComponentPanel({
               </Button>
             </div>
           )}
+
+          {/* Bought-in extras, below the workshop's own line items.
+              Kept as a separate block because they are priced differently: at
+              supplier cost plus an optional handling charge, with no manufacturing
+              margin applied. */}
+          <AddonsPanel
+            projectId={projectId}
+            componentId={component.id}
+            canEdit={canEdit}
+            actor={actor}
+            onError={onError}
+          />
         </div>
       )}
     </div>
@@ -1197,14 +1252,25 @@ function FeatureRowEditor({
 
   const amount = (Number(qty) || 0) * parseNairaInput(price);
 
-  async function commit(overrides: { included?: boolean } = {}) {
+  async function commit(
+    overrides: {
+      included?: boolean;
+      isBoard?: boolean;
+      boardType?: BoardType | null;
+    } = {}
+  ) {
     const nextQty = Number(qty) || 0;
     const nextPrice = parseNairaInput(price);
     // A blank label falls back to the stored one: templated rows are named for a
     // reason, and an accidental clear should not leave a nameless line.
     const nextItem = item.trim() || feature.item;
+    // Nothing typed and no flag toggled means nothing to write. The override keys are
+    // checked individually because any one of them being present is a real change even
+    // when the figures are untouched.
     if (
       overrides.included === undefined &&
+      overrides.isBoard === undefined &&
+      overrides.boardType === undefined &&
       nextQty === feature.quantity &&
       nextPrice === feature.unitPriceKobo &&
       nextItem === feature.item
@@ -1275,6 +1341,53 @@ function FeatureRowEditor({
           onChange={setQty}
           disabled={!canEdit}
         />
+        {/* Marks the line as boards, so its quantity counts toward the project's board
+            total — which is what the cutting & edging charge is priced from. Entering the
+            boards once, here, is what stops a separate board count disagreeing with the
+            items actually being bought. */}
+        <label
+          htmlFor={`b-${feature.id}`}
+          className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-[0.7rem] text-cream-500"
+        >
+          <input
+            id={`b-${feature.id}`}
+            type="checkbox"
+            checked={feature.isBoard === true}
+            disabled={!canEdit || saving}
+            onChange={(e) =>
+              commit({
+                isBoard: e.target.checked,
+                // Unticking clears the material too, so a line that is no longer boards
+                // cannot leave a stale type behind for the charge to price against.
+                ...(e.target.checked ? {} : { boardType: null }),
+              })
+            }
+            className="h-3.5 w-3.5 cursor-pointer accent-brass-500 disabled:cursor-not-allowed"
+          />
+          Boards
+        </label>
+        {/* The material, needed because the C&E rate differs per board: 10 Egger and 10
+            MFC 9×7 are the same quantity and nearly twice the charge. */}
+        {feature.isBoard && (
+          <select
+            aria-label={`Board type for ${feature.item}`}
+            value={feature.boardType ?? ""}
+            disabled={!canEdit || saving}
+            onChange={(e) =>
+              commit({ boardType: (e.target.value || null) as BoardType | null })
+            }
+            className={`mt-1.5 w-full cursor-pointer rounded-lg border bg-night-800/60 px-2 py-1 text-[0.7rem] text-cream-200 focus:border-brass-500 focus:outline-none ${
+              feature.boardType ? "border-night-600" : "border-amber-500/50"
+            }`}
+          >
+            <option value="">Which board?</option>
+            {CE_RATED_BOARD_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {BOARD_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       <div onBlur={() => commit()}>
         <NumberField
