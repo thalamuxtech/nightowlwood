@@ -103,7 +103,12 @@ async function loadInvoice(invoiceId: string): Promise<PdfInvoice> {
   const rawLines = Array.isArray(d.lines) ? d.lines : [];
   return {
     invoiceNumber: d.invoiceNumber ?? "",
-    type: d.type === "project" ? "project" : "service",
+    type:
+      d.type === "project"
+        ? "project"
+        : d.type === "standalone"
+          ? "standalone"
+          : "service",
     customerName: d.customerName ?? "",
     customerPhone: d.customerPhone || undefined,
     customerAddress: d.customerAddress || undefined,
@@ -115,9 +120,22 @@ async function loadInvoice(invoiceId: string): Promise<PdfInvoice> {
       amountKobo: Number(l.amountKobo ?? 0),
     })),
     subtotalKobo: Number(d.subtotalKobo ?? 0),
+    discountPercent: d.discountPercent ? Number(d.discountPercent) : undefined,
+    discountKobo: Number(d.discountKobo ?? 0),
+    // An invoice predating `taxMode` charged tax on top when it carried a rate, so
+    // that is how its PDF must continue to read.
+    taxMode:
+      d.taxMode === "inclusive"
+        ? "inclusive"
+        : d.taxMode === "exclusive"
+          ? "exclusive"
+          : Number(d.taxPercent ?? 0) > 0
+            ? "exclusive"
+            : "none",
     taxPercent: d.taxPercent ? Number(d.taxPercent) : undefined,
     taxKobo: Number(d.taxKobo ?? 0),
     taxLabel: d.taxLabel || undefined,
+    // Commission is not read here on purpose: it never appears on the customer's copy.
     totalKobo: Number(d.totalKobo ?? 0),
     amountPaidKobo: Number(d.amountPaidKobo ?? 0),
     balanceKobo: Number(d.balanceKobo ?? 0),

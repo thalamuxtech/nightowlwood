@@ -7,8 +7,10 @@ import {
   BadgeCheck,
   FileText,
   Loader2,
+  PenLine,
   Send,
   ShieldAlert,
+  Trash2,
 } from "lucide-react";
 import { getDb, getFirebaseApp } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
@@ -16,14 +18,18 @@ import {
   INVOICE_STATUSES,
   INVOICE_STATUS_LABELS,
   type InvoiceStatus,
+  type TaxMode,
 } from "@/lib/erp/enums";
 import { formatNaira, parseNairaInput } from "@/lib/erp/money";
 import {
   createInvoiceFromJob,
   createInvoiceFromProject,
+  deleteDraftInvoice,
   issueInvoice,
   recordInvoicePayment,
+  voidInvoice,
 } from "@/lib/erp/invoices";
+import { InvoiceEditor } from "@/components/admin/money/InvoiceEditor";
 import { INVOICE_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import {
@@ -41,6 +47,12 @@ const REGION = "europe-west1";
 interface InvoiceRow extends InvoiceLike {
   id: string;
   customerEmail?: string;
+  commissionPercent?: number;
+  commissionKobo?: number;
+  commissionNote?: string;
+  discountPercent?: number;
+  discountKobo?: number;
+  taxMode?: TaxMode;
 }
 
 interface SourceOption {
@@ -62,6 +74,12 @@ export function InvoicesScreen() {
   // Marking paid and emailing an invoice. Grantable, so read as a capability.
   const isAdmin = session.can("invoice.markPaid");
   const canCreate = session.can("invoice.create");
+  /** Editing a draft's lines, tax, commission and discount. */
+  const canEdit = session.can("invoice.edit");
+  /** Cancelling a document already issued to a customer. */
+  const canVoid = session.can("invoice.void");
+  /** Deleting a never-issued draft. */
+  const canDelete = session.can("record.delete");
 
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [jobs, setJobs] = useState<SourceOption[]>([]);
@@ -76,6 +94,10 @@ export function InvoicesScreen() {
   const [pdfFor, setPdfFor] = useState<InvoiceRow | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState("");
+  /** Open when raising a standalone invoice. */
+  const [composing, setComposing] = useState(false);
+  /** The draft being corrected. */
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(getDb(), COL.invoices), orderBy("createdAt", "desc"), limit(200));
@@ -95,9 +117,19 @@ export function InvoicesScreen() {
               reference: x.reference ?? undefined,
               lines: x.lines ?? [],
               subtotalKobo: x.subtotalKobo ?? 0,
+              discountPercent: x.discountPercent ?? 0,
+              discountKobo: x.discountKobo ?? 0,
+              // An invoice written before `taxMode` existed charged tax on top when
+              // it had a rate, so that is what it must keep saying.
+              taxMode:
+                (x.taxMode as TaxMode) ??
+                ((x.taxPercent ?? 0) > 0 ? "exclusive" : "none"),
               taxPercent: x.taxPercent ?? 0,
               taxKobo: x.taxKobo ?? 0,
               taxLabel: x.taxLabel ?? "VAT",
+              commissionPercent: x.commissionPercent ?? 0,
+              commissionKobo: x.commissionKobo ?? 0,
+              commissionNote: x.commissionNote ?? undefined,
               totalKobo: x.totalKobo ?? 0,
               amountPaidKobo: x.amountPaidKobo ?? 0,
               balanceKobo: x.balanceKobo ?? 0,
@@ -178,6 +210,10 @@ export function InvoicesScreen() {
         .filter((r) => r.balanceKobo > 0 && r.dueAtMs !== null && r.dueAtMs < Date.now())
         .reduce((s, r) => s + r.balanceKobo, 0),
       billed: live.reduce((s, r) => s + r.totalKobo, 0),
+      // Commission owed on issued invoices. A cost the business has committed to by
+      // raising them, so it belongs next to the receivable rather than hidden on
+      // each document.
+      commission: live.reduce((s, r) => s + (r.commissionKobo ?? 0), 0),
     };
   }, [rows]);
 
@@ -275,13 +311,24 @@ export function InvoicesScreen() {
           </p>
         )}
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-3">
+        <div
+          className={`mt-8 grid gap-4 ${
+            totals.commission > 0 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
+          }`}
+        >
           <Tile label="Outstanding" value={formatNaira(totals.outstanding)} tone={totals.outstanding > 0 ? "warn" : undefined} />
           <Tile label="Overdue" value={formatNaira(totals.overdue)} tone={totals.overdue > 0 ? "danger" : undefined} />
           <Tile label="Billed" value={formatNaira(totals.billed)} />
+          {totals.commission > 0 && (
+            <Tile
+              label="Commission owed"
+              value={formatNaira(totals.commission)}
+              tone="warn"
+            />
+          )}
         </div>
 
-        {canCreate && (
+        {canCreate && !composing && editingId === null && (
           <section className="mt-8 rounded-3xl border border-night-700/60 bg-night-900/30 p-6">
             <h2 className="flex items-center gap-2 font-display text-lg text-cream-100">
               <FileText size={18} className="text-brass-400" /> Create an invoice
@@ -301,9 +348,35 @@ export function InvoicesScreen() {
             </div>
             <p className="mt-2 text-xs text-cream-500">
               Jobs carry their payments across, so an invoice raised after a deposit
-              shows the real balance.
+              shows the real balance. Project invoices list each priced component and
+              addon as its own line.
             </p>
+
+            {/* The standalone route. Billing that is not a job or a project — a
+                delivery, a call-out, a one-off supply — previously had nowhere to go,
+                so it was either invoiced on paper or a fake job was raised for it. */}
+            <div className="mt-5 border-t border-night-700/60 pt-5">
+              <Button variant="secondary" onClick={() => setComposing(true)}>
+                <span className="flex items-center gap-1.5">
+                  <PenLine size={14} /> Invoice something else
+                </span>
+              </Button>
+              <p className="mt-2 text-xs text-cream-500">
+                Type the lines by hand for work with no job or project behind it.
+              </p>
+            </div>
           </section>
+        )}
+
+        {composing && (
+          <InvoiceEditor
+            actor={actor}
+            onClose={() => setComposing(false)}
+            onSaved={(m) => {
+              setNotice(m);
+              setTimeout(() => setNotice(""), 6000);
+            }}
+          />
         )}
 
         <div className="mt-8 flex flex-wrap gap-2">
@@ -361,6 +434,30 @@ export function InvoicesScreen() {
                           ? ` · due ${new Date(r.dueAtMs).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
                           : ""}
                       </p>
+                      {/* What makes up the figure, where it is not simply the sum of
+                          the lines. Discount, tax treatment and commission all change
+                          how the total should be read. */}
+                      {((r.discountKobo ?? 0) > 0 ||
+                        r.taxKobo > 0 ||
+                        (r.commissionKobo ?? 0) > 0) && (
+                        <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-cream-600">
+                          {(r.discountKobo ?? 0) > 0 && (
+                            <span>−{formatNaira(r.discountKobo ?? 0)} discount</span>
+                          )}
+                          {r.taxKobo > 0 && (
+                            <span>
+                              {formatNaira(r.taxKobo)} {r.taxLabel ?? "tax"}
+                              {r.taxMode === "inclusive" ? " (incl.)" : ""}
+                            </span>
+                          )}
+                          {(r.commissionKobo ?? 0) > 0 && (
+                            <span className="text-amber-400/80">
+                              {formatNaira(r.commissionKobo ?? 0)} commission
+                              {r.commissionNote ? ` · ${r.commissionNote}` : ""}
+                            </span>
+                          )}
+                        </p>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="font-display text-xl text-cream-50">
@@ -389,6 +486,17 @@ export function InvoicesScreen() {
                       </span>
                     </Button>
 
+                    {r.status === "draft" && canEdit && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => setEditingId(editingId === r.id ? null : r.id)}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <PenLine size={14} /> Edit
+                        </span>
+                      </Button>
+                    )}
+
                     {r.status === "draft" && canCreate && (
                       <Button
                         onClick={() =>
@@ -402,6 +510,67 @@ export function InvoicesScreen() {
                           <Send size={14} /> Issue
                         </span>
                       </Button>
+                    )}
+
+                    {/* A never-issued draft can go. Anything issued is voided
+                        instead, which keeps its number in the sequence — a gap in an
+                        invoice sequence is the first thing an auditor asks about. */}
+                    {r.status === "draft" && canDelete && (
+                      <button
+                        type="button"
+                        aria-label={`Delete draft ${r.invoiceNumber}`}
+                        disabled={busyId === r.id}
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Delete draft ${r.invoiceNumber}? It has never been issued, so nothing has reached the customer.`
+                            )
+                          )
+                            return;
+                          setBusyId(r.id);
+                          deleteDraftInvoice(getDb(), actor, r.id)
+                            .then(() => {
+                              setNotice(`${r.invoiceNumber} deleted.`);
+                              setTimeout(() => setNotice(""), 6000);
+                            })
+                            .catch((e) =>
+                              setError(
+                                e instanceof Error ? e.message : "Could not delete."
+                              )
+                            )
+                            .finally(() => setBusyId(null));
+                        }}
+                        className="cursor-pointer px-2 text-cream-500 transition-colors hover:text-red-400 disabled:opacity-40"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
+
+                    {r.status !== "draft" && r.status !== "void" && canVoid && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const reason = window.prompt(
+                            `Void ${r.invoiceNumber}? Give a reason — it stays on the record.`
+                          );
+                          if (!reason?.trim()) return;
+                          setBusyId(r.id);
+                          voidInvoice(getDb(), actor, r.id, r.invoiceNumber, reason.trim())
+                            .then(() => {
+                              setNotice(`${r.invoiceNumber} voided.`);
+                              setTimeout(() => setNotice(""), 6000);
+                            })
+                            .catch((e) =>
+                              setError(
+                                e instanceof Error ? e.message : "Could not void."
+                              )
+                            )
+                            .finally(() => setBusyId(null));
+                        }}
+                        className="cursor-pointer px-2 text-xs text-cream-500 transition-colors hover:text-red-400"
+                      >
+                        Void
+                      </button>
                     )}
 
                     {r.balanceKobo > 0 && r.status !== "draft" && r.status !== "void" && (
@@ -464,6 +633,36 @@ export function InvoicesScreen() {
                     <p className="mt-3 text-xs text-cream-600">
                       Marking an invoice paid is restricted to administrators.
                     </p>
+                  )}
+
+                  {/* The editor opens under the invoice it changes, so the figures
+                      being restated stay in view while they are retyped. */}
+                  {editingId === r.id && r.status === "draft" && (
+                    <InvoiceEditor
+                      actor={actor}
+                      editing={{
+                        id: r.id,
+                        invoiceNumber: r.invoiceNumber,
+                        customerName: r.customerName,
+                        customerPhone: r.customerPhone,
+                        customerEmail: r.customerEmail,
+                        reference: r.reference,
+                        lines: r.lines,
+                        taxMode: r.taxMode,
+                        taxPercent: r.taxPercent,
+                        taxLabel: r.taxLabel,
+                        commissionPercent: r.commissionPercent,
+                        commissionNote: r.commissionNote,
+                        discountPercent: r.discountPercent,
+                        discountKobo: r.discountKobo,
+                        notes: r.notes,
+                      }}
+                      onClose={() => setEditingId(null)}
+                      onSaved={(m) => {
+                        setNotice(m);
+                        setTimeout(() => setNotice(""), 6000);
+                      }}
+                    />
                   )}
                 </div>
               );

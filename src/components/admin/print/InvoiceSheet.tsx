@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { INVOICE_STATUS_LABELS, type InvoiceStatus } from "@/lib/erp/enums";
+import {
+  INVOICE_STATUS_LABELS,
+  type InvoiceStatus,
+  type TaxMode,
+} from "@/lib/erp/enums";
 import { formatNaira } from "@/lib/erp/money";
 import { SHEET, sheetCss } from "./sheetStyles";
 
@@ -28,16 +32,28 @@ export interface InvoiceLineLike {
 
 export interface InvoiceLike {
   invoiceNumber: string;
-  type: "service" | "project";
+  type: "service" | "project" | "standalone";
   customerName: string;
   customerPhone?: string;
   customerAddress?: string;
   reference?: string;
   lines: InvoiceLineLike[];
   subtotalKobo: number;
+  discountPercent?: number;
+  discountKobo?: number;
+  /** Decides whether the tax line adds to the total or sits inside it. */
+  taxMode?: TaxMode;
   taxPercent?: number;
   taxKobo: number;
   taxLabel?: string;
+  /*
+   * Commission is deliberately absent.
+   *
+   * It is what the business pays an introducer, not a charge to the customer, and
+   * printing it on the document the customer receives would both confuse the amount
+   * due and disclose a commercial arrangement that is none of their business. It is
+   * held on the invoice record and reported in Profit & Loss.
+   */
   totalKobo: number;
   amountPaidKobo: number;
   balanceKobo: number;
@@ -196,11 +212,27 @@ export function InvoiceSheet({
                 <td>Subtotal</td>
                 <td>{formatNaira(invoice.subtotalKobo)}</td>
               </tr>
+              {/* A discount has to be visible on the document. A customer who was
+                  given one and cannot see it on the invoice will ask, and an invoice
+                  that shows only the reduced subtotal cannot answer. */}
+              {(invoice.discountKobo ?? 0) > 0 && (
+                <tr>
+                  <td>
+                    Discount
+                    {invoice.discountPercent ? ` (${invoice.discountPercent}%)` : ""}
+                  </td>
+                  <td>−{formatNaira(invoice.discountKobo ?? 0)}</td>
+                </tr>
+              )}
               {invoice.taxKobo > 0 && (
                 <tr>
                   <td>
                     {invoice.taxLabel ?? "Tax"}
                     {invoice.taxPercent ? ` (${invoice.taxPercent}%)` : ""}
+                    {/* Stated, because an inclusive line does not add to the total
+                        and a reader tallying the column will otherwise think the
+                        arithmetic is wrong. */}
+                    {invoice.taxMode === "inclusive" ? " — included above" : ""}
                   </td>
                   <td>{formatNaira(invoice.taxKobo)}</td>
                 </tr>

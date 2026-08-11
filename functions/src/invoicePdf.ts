@@ -56,16 +56,25 @@ export interface PdfInvoiceLine {
 
 export interface PdfInvoice {
   invoiceNumber: string;
-  type: "service" | "project";
+  type: "service" | "project" | "standalone";
   customerName: string;
   customerPhone?: string;
   customerAddress?: string;
   reference?: string;
   lines: PdfInvoiceLine[];
   subtotalKobo: number;
+  discountPercent?: number;
+  discountKobo?: number;
+  /** Decides whether the tax line adds to the total or sits inside it. */
+  taxMode?: "none" | "exclusive" | "inclusive";
   taxPercent?: number;
   taxKobo: number;
   taxLabel?: string;
+  /*
+   * Commission is deliberately absent, matching the on-screen sheet: it is a cost to
+   * the business rather than a charge to the customer, and it must not appear on the
+   * document the customer receives.
+   */
   totalKobo: number;
   amountPaidKobo: number;
   balanceKobo: number;
@@ -387,10 +396,23 @@ function drawTotals(doc: Doc, invoice: PdfInvoice, y: number): number {
   const PAD = 12;
 
   const entries: Array<[string, number]> = [["Subtotal", invoice.subtotalKobo]];
+  // A discount the customer was given has to appear, or the document cannot explain
+  // why the total is lower than the lines add up to.
+  if ((invoice.discountKobo ?? 0) > 0) {
+    // "Less" carries the sign, matching how the paid row reads: the amount column is
+    // drawn as an absolute value, so a bare minus would be lost.
+    const label =
+      "Less discount" +
+      (invoice.discountPercent ? ` (${invoice.discountPercent}%)` : "");
+    entries.push([label, -(invoice.discountKobo ?? 0)]);
+  }
   if (invoice.taxKobo > 0) {
     const label =
       (invoice.taxLabel ?? "Tax") +
-      (invoice.taxPercent ? ` (${invoice.taxPercent}%)` : "");
+      (invoice.taxPercent ? ` (${invoice.taxPercent}%)` : "") +
+      // Marked, because an inclusive figure is part of the total rather than added
+      // to it, and a reader tallying the column would otherwise find it short.
+      (invoice.taxMode === "inclusive" ? " incl." : "");
     entries.push([label, invoice.taxKobo]);
   }
   entries.push(["Total", invoice.totalKobo]);
