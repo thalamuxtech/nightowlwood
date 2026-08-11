@@ -24,6 +24,7 @@ import { fromDateInputValue, toDateInputValue } from "@/lib/erp/workLogs";
 import { LiveCounter } from "@/components/admin/ui/LiveCounter";
 import {
   Button,
+  DateField,
   EmptyState,
   NumberField,
   SelectField,
@@ -529,19 +530,13 @@ function ExpenseForm({
         {editing ? "Correct this expense" : "Record an expense"}
       </h2>
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div>
-          <label htmlFor={`exp-date-${key}`} className="mb-1.5 block text-sm text-cream-300">
-            Date
-          </label>
-          <input
-            id={`exp-date-${key}`}
-            type="date"
-            value={date}
-            max={toDateInputValue(new Date())}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
-          />
-        </div>
+        <DateField
+          id={`exp-date-${key}`}
+          label="Date"
+          value={date}
+          max={toDateInputValue(new Date())}
+          onChange={setDate}
+        />
         <SelectField
           id={`exp-payee-type-${key}`}
           label="Paid to"

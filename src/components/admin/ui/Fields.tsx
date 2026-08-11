@@ -346,3 +346,12 @@ export function EmptyState({
     </div>
   );
 }
+
+/*
+ * Re-exported so the date control arrives with the rest of the form kit.
+ *
+ * It lives in its own file because it is an order of magnitude bigger than everything
+ * here — a roller picker with three scroll wheels — and mixing it in would bury the
+ * primitives. Callers should not have to know that.
+ */
+export { DateField, describeIso, todayIso } from "@/components/admin/ui/DateField";

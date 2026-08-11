@@ -11,7 +11,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  Timestamp,
+  where,
+} from "firebase/firestore";
 import {
   AlertTriangle,
   Gauge,
@@ -25,8 +34,10 @@ import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { formatNaira, formatNairaCompact, toNaira } from "@/lib/erp/money";
 import {
+  conversionFactorFor,
   deleteMeterReading,
   loadMeters,
+  meterCharge,
   recalculateMeterChain,
   recordMeterReading,
   type MeterConfigured,
@@ -35,6 +46,7 @@ import { fromDateInputValue, toDateInputValue } from "@/lib/erp/workLogs";
 import { LiveCounter } from "@/components/admin/ui/LiveCounter";
 import {
   Button,
+  DateField,
   EmptyState,
   NumberField,
   SelectField,
@@ -49,6 +61,8 @@ interface ReadingRow {
   reading: number;
   previousReading?: number | null;
   actualConsumed: number;
+  conversionFactor: number;
+  billedUnits: number;
   ratePerUnitKobo: number;
   amountKobo: number;
   warning?: string | null;
@@ -98,13 +112,23 @@ export function MetersScreen() {
         setRows(
           snap.docs.map((d) => {
             const x = d.data();
+            const consumed = x.actualConsumed ?? 0;
+            const factor =
+              Number.isFinite(x.conversionFactor) && x.conversionFactor > 0
+                ? (x.conversionFactor as number)
+                : 1;
             return {
               id: d.id,
               meterName: x.meterName ?? "",
               dateMs: x.date?.toMillis?.() ?? null,
               reading: x.reading ?? 0,
               previousReading: x.previousReading ?? null,
-              actualConsumed: x.actualConsumed ?? 0,
+              actualConsumed: consumed,
+              conversionFactor: factor,
+              // Readings written before the field existed were billed on raw dial
+              // units, which is a factor of 1 — so deriving it keeps their cost
+              // consistent with what they were actually charged.
+              billedUnits: x.billedUnits ?? Math.round(consumed * factor * 100) / 100,
               ratePerUnitKobo: x.ratePerUnitKobo ?? 0,
               amountKobo: x.amountKobo ?? 0,
               warning: x.warning ?? null,
@@ -160,9 +184,19 @@ export function MetersScreen() {
 
   const totals = useMemo(() => {
     const consumed = forMeter.reduce((s, r) => s + r.actualConsumed, 0);
+    const billed = forMeter.reduce((s, r) => s + r.billedUnits, 0);
     const cost = forMeter.reduce((s, r) => s + r.amountKobo, 0);
     const flagged = forMeter.filter((r) => r.warning).length;
-    return { consumed: Math.round(consumed * 100) / 100, cost, flagged };
+    // True when any reading on screen was scaled, which decides whether the
+    // billed-units tile is worth the space.
+    const converted = forMeter.some((r) => r.conversionFactor !== 1);
+    return {
+      consumed: Math.round(consumed * 100) / 100,
+      billed: Math.round(billed * 100) / 100,
+      cost,
+      flagged,
+      converted,
+    };
   }, [forMeter]);
 
   async function recompute() {
@@ -251,9 +285,13 @@ export function MetersScreen() {
         </div>
       )}
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+      <div
+        className={`mt-6 grid gap-4 ${
+          totals.converted ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
+        }`}
+      >
         <Tile
-          label="Units consumed"
+          label="Dial units"
           value={
             <LiveCounter
               value={totals.consumed}
@@ -261,7 +299,24 @@ export function MetersScreen() {
               className="font-display text-2xl text-cream-50"
             />
           }
+          hint={totals.converted ? "as read from the meter" : undefined}
         />
+        {/* Only shown where a conversion is in force: on a meter that reads
+            directly in billed units the two figures are identical, and two tiles
+            with the same number reads as a bug. */}
+        {totals.converted && (
+          <Tile
+            label="Billed units"
+            value={
+              <LiveCounter
+                value={totals.billed}
+                format={(n) => n.toFixed(2)}
+                className="font-display text-2xl text-cream-50"
+              />
+            }
+            hint="what the rate is applied to"
+          />
+        )}
         <Tile
           label="Power cost"
           value={
@@ -363,8 +418,12 @@ export function MetersScreen() {
                 <tr>
                   <th className="px-5 py-3 font-medium">Date</th>
                   <th className="px-5 py-3 font-medium">Meter</th>
+                  <th className="px-5 py-3 text-right font-medium">Previous</th>
                   <th className="px-5 py-3 text-right font-medium">Reading</th>
-                  <th className="px-5 py-3 text-right font-medium">Consumed</th>
+                  <th className="px-5 py-3 text-right font-medium">Units</th>
+                  {totals.converted && (
+                    <th className="px-5 py-3 text-right font-medium">Billed</th>
+                  )}
                   <th className="px-5 py-3 text-right font-medium">Rate</th>
                   <th className="px-5 py-3 text-right font-medium">Cost</th>
                   {isAdmin && <th className="px-5 py-3" />}
@@ -395,12 +454,25 @@ export function MetersScreen() {
                         </span>
                       )}
                     </td>
+                    <td className="px-5 py-3.5 text-right tabular-nums text-cream-500">
+                      {r.previousReading ?? "—"}
+                    </td>
                     <td className="px-5 py-3.5 text-right tabular-nums text-cream-200">
                       {r.reading}
                     </td>
                     <td className="px-5 py-3.5 text-right tabular-nums text-cream-100">
                       {r.actualConsumed}
                     </td>
+                    {totals.converted && (
+                      <td className="px-5 py-3.5 text-right tabular-nums text-cream-100">
+                        {r.billedUnits}
+                        {r.conversionFactor !== 1 && (
+                          <span className="ml-1 text-[0.65rem] text-cream-600">
+                            ×{r.conversionFactor}
+                          </span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-5 py-3.5 text-right text-xs text-cream-500">
                       {formatNairaCompact(r.ratePerUnitKobo)}
                     </td>
@@ -457,9 +529,71 @@ function AddReadingForm({
   const [date, setDate] = useState(toDateInputValue(new Date()));
   const [reading, setReading] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The reading this one will be measured against, fetched for the preview. */
+  const [previous, setPrevious] = useState<number | null>(null);
+  const [previousKnown, setPreviousKnown] = useState(false);
 
-  const rate =
-    meters.find((m) => m.name === meterName)?.ratePerUnitKobo ?? 0;
+  const meter = meters.find((m) => m.name === meterName);
+  const rate = meter?.ratePerUnitKobo ?? 0;
+  const factor = meter ? conversionFactorFor(meter) : 1;
+
+  /*
+   * The predecessor, looked up as the meter or date changes.
+   *
+   * Fetched rather than inferred so the preview shows the same figure the write
+   * will use — including when the entry is back-dated, where the predecessor is
+   * not the latest reading. Falls back to the configured opening reading, which is
+   * what makes a first entry chargeable.
+   */
+  useEffect(() => {
+    if (!meterName) {
+      setPrevious(null);
+      setPreviousKnown(false);
+      return;
+    }
+    let live = true;
+    setPreviousKnown(false);
+    getDocs(
+      query(
+        collection(getDb(), COL.meterReadings),
+        where("meterName", "==", meterName),
+        where("date", "<=", Timestamp.fromDate(fromDateInputValue(date))),
+        orderBy("date", "desc"),
+        limit(1)
+      )
+    )
+      .then((snap) => {
+        if (!live) return;
+        const recorded = snap.docs[0]?.data()?.reading;
+        const opening = meter?.openingReading;
+        setPrevious(
+          typeof recorded === "number"
+            ? recorded
+            : typeof opening === "number"
+              ? opening
+              : null
+        );
+        setPreviousKnown(true);
+      })
+      .catch(() => {
+        if (live) setPreviousKnown(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [meterName, date, meter?.openingReading]);
+
+  /** What this entry will cost, using the same function the write uses. */
+  const preview = useMemo(() => {
+    const value = Number(reading);
+    if (reading.trim() === "" || !Number.isFinite(value) || !previousKnown) return null;
+    return meterCharge({
+      reading: value,
+      previousReading: previous,
+      conversionFactor: factor,
+      ratePerUnitKobo: rate,
+    });
+  }, [reading, previous, previousKnown, factor, rate]);
 
   async function submit() {
     if (!meterName) {
@@ -478,6 +612,8 @@ function AddReadingForm({
         date: fromDateInputValue(date),
         reading: value,
         ratePerUnitKobo: rate,
+        conversionFactor: factor,
+        openingReading: meter?.openingReading,
       });
       if (res.warning) onWarning(res.warning);
       setReading("");
@@ -503,19 +639,13 @@ function AddReadingForm({
           options={meters.map((m) => ({ value: m.name, label: m.name }))}
           placeholder={meters.length ? undefined : "No meters configured"}
         />
-        <div>
-          <label htmlFor="meter-date" className="mb-1.5 block text-sm text-cream-300">
-            Date
-          </label>
-          <input
-            id="meter-date"
-            type="date"
-            value={date}
-            max={toDateInputValue(new Date())}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-xl border border-night-600 bg-night-800/60 px-4 py-3 text-cream-100 focus:border-brass-500 focus:outline-none"
-          />
-        </div>
+        <DateField
+          id="meter-date"
+          label="Date"
+          value={date}
+          max={toDateInputValue(new Date())}
+          onChange={setDate}
+        />
         <NumberField
           id="meter-reading"
           label="Reading on the dial"
@@ -524,9 +654,49 @@ function AddReadingForm({
           hint={rate ? `at ${formatNairaCompact(rate)} per unit` : undefined}
         />
       </div>
+      {/* The calculation, shown before it is committed.
+          A meter reading is one number typed into a box that turns into a
+          five-figure cost, and the only way to catch a mis-keyed digit is to see
+          what it produces. Uses the same function as the write, so what is shown
+          here is what gets saved. */}
+      {preview && (
+        <dl className="mt-5 flex flex-wrap gap-x-8 gap-y-2 rounded-2xl border border-night-700/60 bg-night-950/40 p-4 text-sm">
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-cream-500">Previous</dt>
+            <dd className="mt-0.5 tabular-nums text-cream-200">
+              {previous ?? "none"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-cream-500">Units</dt>
+            <dd className="mt-0.5 tabular-nums text-cream-200">
+              {preview.consumedUnits}
+            </dd>
+          </div>
+          {factor !== 1 && (
+            <div>
+              <dt className="text-xs uppercase tracking-wider text-cream-500">
+                × {factor}
+              </dt>
+              <dd className="mt-0.5 tabular-nums text-cream-200">
+                {preview.billedUnits}
+              </dd>
+            </div>
+          )}
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-cream-500">Cost</dt>
+            <dd className="mt-0.5 font-display text-lg text-brass-300">
+              {formatNaira(preview.amountKobo)}
+            </dd>
+          </div>
+        </dl>
+      )}
+
       <p className="mt-3 text-xs text-cream-500">
         Enter what the dial shows. Consumption is worked out from the last reading
         for this meter, so a back-dated entry compares against the right one.
+        {factor !== 1 &&
+          ` This meter's units are multiplied by ${factor} before the rate is applied.`}
       </p>
       <div className="mt-5 flex gap-3">
         <Button onClick={submit} busy={busy}>
