@@ -815,6 +815,34 @@ service cloud.firestore {
     }
 
     /*
+     * The counter's own stock.
+     *
+     * A separate shelf from the workshop's, so the till reads and writes here and nowhere else. Goods
+     * arrive by a transfer that moves both sides in one transaction — which is why `sale.create`
+     * needs write access to *both* collections: the transfer decrements company stock and increments
+     * this, and a grant covering only one half would fail the transaction and lose the goods from the
+     * record while they sat physically on the counter.
+     *
+     * Movements are append-only for the same reason as the workshop's: a stock ledger somebody can
+     * edit after the fact cannot be reconciled against a shelf.
+     */
+    match /inventoryPos/{itemId} {
+      allow read: if isAdminOr('sale.view') || isAdminOr('inventory.view');
+      allow create, update: if isAdminOr('sale.create')
+        || isAdminOr('sale.void')
+        || isAdminOr('inventory.edit');
+      allow delete: if isAdminOr('record.delete');
+
+      match /movements/{movementId} {
+        allow read: if isAdminOr('sale.view') || isAdminOr('inventory.view');
+        allow create: if isAdminOr('sale.create')
+          || isAdminOr('sale.void')
+          || isAdminOr('inventory.edit');
+        allow update, delete: if false;
+      }
+    }
+
+    /*
      * The fixed assets register.
      *
      * Read with `inventory.view`, since it sits in the same group and answers a stock-taking

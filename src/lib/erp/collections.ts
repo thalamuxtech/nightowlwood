@@ -54,6 +54,18 @@ export const COL = {
   inventoryService: "inventoryService",
   inventoryCompany: "inventoryCompany",
   inventoryProduct: "inventoryProduct",
+  /**
+   * The counter's own stock.
+   *
+   * Separate from `inventoryCompany` because the two answer different questions: company stock is
+   * what the workshop holds to consume, this is what is on the shop floor to sell. Goods reach it
+   * by an explicit transfer, which decrements one and increments the other in a single
+   * transaction — see `transferToCounter` in sales.ts.
+   *
+   * The cost travels with the transfer, so a sale is costed at what the workshop actually paid
+   * rather than at a figure retyped at the counter.
+   */
+  inventoryPos: "inventoryPos",
   consumableCycles: "consumableCycles",
 
   // Procurement, who we buy from and how well it performs
@@ -166,6 +178,16 @@ export const wageRunLinesPath = (runId: string) => `${COL.wageRuns}/${runId}/${S
 export const loanRepaymentsPath = (loanId: string) => `${COL.loans}/${loanId}/${SUB.loanRepayments}`;
 export const inventoryMovementsPath = (itemId: string) =>
   `${COL.inventoryCompany}/${itemId}/${SUB.inventoryMovements}`;
+
+/**
+ * Movements under a counter-stock item.
+ *
+ * Its own helper rather than a parameter on the one above, because the two collections are genuinely
+ * different shelves and a single helper taking a collection name is one typo away from writing a
+ * counter movement into the workshop's ledger.
+ */
+export const posMovementsPath = (itemId: string) =>
+  `${COL.inventoryPos}/${itemId}/${SUB.inventoryMovements}`;
 export const toolItemsPath = (requestId: string) =>
   `${COL.toolRequests}/${requestId}/${SUB.toolItems}`;
 export const purchaseLinesPath = (purchaseId: string) =>

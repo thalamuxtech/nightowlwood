@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Loader2,
   Package,
+  PackagePlus,
   Plus,
   Receipt,
   ShieldAlert,
@@ -68,6 +69,7 @@ import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { SaleReceipt } from "@/components/admin/print/SaleReceipt";
 import { ThermalReceipt } from "@/components/admin/print/ThermalReceipt";
 import { PrintPreview } from "@/components/admin/ui/PrintPreview";
+import { CounterRestockPanel } from "@/components/admin/money/CounterRestockPanel";
 import {
   DEFAULT_COMPANY_SETTINGS,
   SETTINGS_DOC,
@@ -133,6 +135,8 @@ export function PosScreen() {
   /** When the balance is expected, as a yyyy-mm-dd box. Optional — many customers just say "soon". */
   const [dueDate, setDueDate] = useState("");
   const [seeding, setSeeding] = useState(false);
+  /** Whether the restock panel is open. */
+  const [restocking, setRestocking] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("cash");
@@ -787,8 +791,19 @@ export function PosScreen() {
                     <Plus size={14} /> Item not listed
                   </span>
                 </Button>
-                {/* Stock lives in the inventory module; the counter links there rather than
-                    holding a second, divergent way to create the same record. */}
+                {/* Restocking the counter from the workshop's shelves.
+                    Here rather than in inventory because the person who notices the counter is out
+                    of hinges is the person standing at it. */}
+                <Button
+                  variant="secondary"
+                  onClick={() => setRestocking((r) => !r)}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <PackagePlus size={14} /> {restocking ? "Close restock" : "Restock counter"}
+                  </span>
+                </Button>
+                {/* New products are set up in inventory; the counter links there rather than holding
+                    a second, divergent way to create the same record. */}
                 <Link
                   href="/admin/inventory"
                   className="flex items-center gap-1.5 rounded-xl border border-night-600 px-4 py-2.5 text-sm text-cream-300 transition-colors hover:border-brass-500/60 hover:text-cream-100"
@@ -796,6 +811,19 @@ export function PosScreen() {
                   <Package size={14} /> Add a product
                 </Link>
               </div>
+
+              {restocking && (
+                <CounterRestockPanel
+                  actor={actor}
+                  onDone={(message) => {
+                    setNotice(message);
+                    setTimeout(() => setNotice(""), 9000);
+                    // The counter's on-hand figures just changed.
+                    setStockVersion((v) => v + 1);
+                  }}
+                  onClose={() => setRestocking(false)}
+                />
+              )}
 
               {loading ? (
                 <p className="mt-3 text-sm text-cream-500">Loading stock…</p>

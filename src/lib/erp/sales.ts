@@ -12,7 +12,13 @@ import {
   where,
   type Firestore,
 } from "firebase/firestore";
-import { COL, COUNTER, inventoryMovementsPath, saleLinesPath } from "./collections";
+import {
+  COL,
+  COUNTER,
+  inventoryMovementsPath,
+  posMovementsPath,
+  saleLinesPath,
+} from "./collections";
 import type { PaymentMethod, SaleStatus, TaxMode } from "./enums";
 import { lineAmountKobo, sumKobo } from "./money";
 import { allocateDocNumber } from "./numbering";
@@ -86,14 +92,18 @@ export interface SellableItem {
 }
 
 /**
- * Company stock that can be sold.
+ * The counter's own stock.
  *
- * Read from `inventoryCompany`, since counter stock and workshop consumables are the
- * same shelves — a roll of edge tape is sold to a walk-in or used on a job, and
- * holding it twice would guarantee the two counts disagreed.
+ * Read from `inventoryPos`, not from company stock. The two are separate shelves answering separate
+ * questions: company stock is what the workshop holds to consume, this is what is on the shop floor
+ * to sell. Goods reach the counter by an explicit transfer — see `transferToCounter` — which is what
+ * makes "what can we sell today" a figure somebody can stand at the till and trust.
+ *
+ * The cost travels with the transfer, so a sale is costed at what the workshop actually paid rather
+ * than at a price retyped at the counter.
  */
 export async function loadSellableItems(db: Firestore): Promise<SellableItem[]> {
-  const snap = await getDocs(collection(db, COL.inventoryCompany));
+  const snap = await getDocs(collection(db, COL.inventoryPos));
   return snap.docs
     .filter((d) => d.data().active !== false)
     .map((d) => {
@@ -130,6 +140,188 @@ export async function loadSellableItems(db: Firestore): Promise<SellableItem[]> 
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Moves stock from the workshop's shelves to the counter.
+ *
+ * The two are separate collections, so getting goods to the till is an explicit act. That is the
+ * point: "what can we sell today" becomes a figure somebody can stand at the counter and trust,
+ * rather than the workshop's whole holding minus whatever is spoken for.
+ *
+ * ## Why one transaction
+ *
+ * A half-applied transfer either loses stock or invents it. Decrementing the workshop and failing to
+ * increment the counter destroys goods that are physically on a shelf; the reverse conjures goods
+ * that are not. So both sides move together or neither does, and both movements are written inside
+ * the same transaction as their ledger entries.
+ *
+ * ## Why the cost travels
+ *
+ * The counter item takes the workshop item's weighted average cost, re-blended into whatever the
+ * counter already held. Without that, a sale would be costed at a figure retyped at the till, and
+ * the retail margin the brief asks for would be measuring against a guess. The blend is the same
+ * arithmetic `recordMovement` uses on a delivery, for the same reason.
+ *
+ * The counter item is created on first transfer, keyed by name, so nobody sets the same product up
+ * twice.
+ */
+export async function transferToCounter(
+  db: Firestore,
+  actor: AuditActor,
+  input: {
+    /** The company-stock item being moved. */
+    companyItemId: string;
+    quantity: number;
+    /** What the counter will sell it for. Only needed the first time. */
+    unitPriceKobo?: number;
+    reason?: string;
+  }
+): Promise<{ posItemId: string; counterQuantity: number }> {
+  if (!(input.quantity > 0)) throw new Error("How many are going to the counter?");
+
+  const companyRef = doc(db, COL.inventoryCompany, input.companyItemId);
+
+  /*
+   * The matching counter item is found before the transaction opens.
+   *
+   * A transaction cannot run a query, so the lookup by name happens first and its id is then read
+   * inside. The race — two transfers creating the same counter item at once — is handled by the
+   * transaction reading that id again: the second sees the first's write and blends into it.
+   */
+  const companyPre = await getDoc(companyRef);
+  if (!companyPre.exists()) throw new Error("That stock item no longer exists.");
+  const name = String(companyPre.data().name ?? "").trim();
+
+  const existing = await getDocs(collection(db, COL.inventoryPos));
+  const match = existing.docs.find(
+    (d) => String(d.data().name ?? "").trim().toLowerCase() === name.toLowerCase()
+  );
+  const posRef = match ? doc(db, COL.inventoryPos, match.id) : doc(collection(db, COL.inventoryPos));
+
+  const result = await runTransaction(db, async (tx) => {
+    // Every read first, then every write — the rule this codebase holds throughout.
+    const company = await tx.get(companyRef);
+    if (!company.exists()) throw new Error("That stock item no longer exists.");
+    const pos = await tx.get(posRef);
+
+    const c = company.data();
+    const companyOnHand = (c.quantityOnHand as number) ?? 0;
+    const companyCostKobo = (c.unitCostKobo as number) ?? 0;
+
+    if (companyOnHand < input.quantity) {
+      throw new Error(
+        `Only ${companyOnHand} ${c.unit ?? "unit"}(s) of ${name} in company stock, so ${input.quantity} cannot be moved to the counter.`
+      );
+    }
+
+    const posOnHand = pos.exists() ? ((pos.data()!.quantityOnHand as number) ?? 0) : 0;
+    const posCostKobo = pos.exists() ? ((pos.data()!.unitCostKobo as number) ?? 0) : 0;
+    const nextPosOnHand = posOnHand + input.quantity;
+
+    /*
+     * The cost blended into what the counter already held.
+     *
+     * Same weighted average as a delivery: the counter's existing stock at its cost, plus what is
+     * arriving at the workshop's cost. A transfer is a receipt as far as the counter is concerned.
+     */
+    const nextPosCostKobo =
+      nextPosOnHand > 0
+        ? Math.round(
+            (posOnHand * posCostKobo + input.quantity * companyCostKobo) / nextPosOnHand
+          )
+        : companyCostKobo;
+
+    const nextCompanyOnHand = companyOnHand - input.quantity;
+    const note = input.reason?.trim() || "Transferred to the counter";
+
+    // Company side: out.
+    tx.update(companyRef, {
+      quantityOnHand: nextCompanyOnHand,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+    tx.set(doc(collection(db, inventoryMovementsPath(input.companyItemId))), {
+      type: "out",
+      quantity: input.quantity,
+      reason: note,
+      issuedToName: "Counter (POS)",
+      issuedByName: actor.email,
+      averageCostAfterKobo: companyCostKobo,
+      balanceAfter: nextCompanyOnHand,
+      createdAt: serverTimestamp(),
+      createdBy: actor.uid,
+    });
+
+    // Counter side: in. Created on first transfer, carrying the details from company stock so the
+    // same product is not described two different ways on the two shelves.
+    if (pos.exists()) {
+      tx.update(posRef, {
+        quantityOnHand: nextPosOnHand,
+        unitCostKobo: nextPosCostKobo,
+        ...(input.unitPriceKobo !== undefined && input.unitPriceKobo > 0
+          ? { unitPriceKobo: input.unitPriceKobo }
+          : {}),
+        lastRestockedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedBy: actor.uid,
+      });
+    } else {
+      tx.set(posRef, {
+        name,
+        category: c.category ?? "other",
+        unit: c.unit ?? "unit",
+        sku: c.sku ?? null,
+        quantityOnHand: input.quantity,
+        reorderLevel: c.reorderLevel ?? 0,
+        unitCostKobo: companyCostKobo,
+        /*
+         * A selling price is required on the first transfer, but not enforced here.
+         *
+         * Falling back to cost rather than refusing: a counter item priced at cost makes no margin,
+         * which is visible in the retail figures and correctable. Refusing the transfer would leave
+         * the goods physically at the counter and absent from the record, which is worse.
+         */
+        unitPriceKobo:
+          input.unitPriceKobo !== undefined && input.unitPriceKobo > 0
+            ? input.unitPriceKobo
+            : companyCostKobo,
+        tracksStock: true,
+        active: true,
+        sourceCompanyItemId: input.companyItemId,
+        createdAt: serverTimestamp(),
+        createdBy: actor.uid,
+      });
+    }
+
+    tx.set(doc(collection(db, posMovementsPath(posRef.id))), {
+      type: "in",
+      quantity: input.quantity,
+      reason: note,
+      issuedByName: actor.email,
+      averageCostAfterKobo: nextPosCostKobo,
+      balanceAfter: nextPosOnHand,
+      createdAt: serverTimestamp(),
+      createdBy: actor.uid,
+    });
+
+    return { posItemId: posRef.id, counterQuantity: nextPosOnHand };
+  });
+
+  await writeAudit(db, {
+    actor,
+    action: "inventory_movement",
+    collectionName: COL.inventoryPos,
+    docId: result.posItemId,
+    summary: `Moved ${input.quantity} ${name} from company stock to the counter (counter now holds ${result.counterQuantity})`,
+    after: {
+      companyItemId: input.companyItemId,
+      quantity: input.quantity,
+      counterQuantity: result.counterQuantity,
+    },
+  });
+
+  return result;
 }
 
 /**
@@ -176,7 +368,7 @@ export async function seedPosItems(
   db: Firestore,
   actor: AuditActor
 ): Promise<{ created: number; skipped: number }> {
-  const existing = await getDocs(collection(db, COL.inventoryCompany));
+  const existing = await getDocs(collection(db, COL.inventoryPos));
   const have = new Set(
     existing.docs.map((d) => String(d.data().name ?? "").trim().toLowerCase())
   );
@@ -189,7 +381,7 @@ export async function seedPosItems(
       skipped += 1;
       continue;
     }
-    await addDoc(collection(db, COL.inventoryCompany), {
+    await addDoc(collection(db, COL.inventoryPos), {
       name: item.name,
       category: item.category,
       unit: item.unit,
@@ -211,7 +403,7 @@ export async function seedPosItems(
     await writeAudit(db, {
       actor,
       action: "create",
-      collectionName: COL.inventoryCompany,
+      collectionName: COL.inventoryPos,
       docId: "seed",
       summary: `Added ${created} counter item(s) to stock; ${skipped} already present`,
       after: { created, skipped },
@@ -393,7 +585,7 @@ export async function completeSale(
 
     const itemIds = [...wantedByItem.keys()];
     const snaps = await Promise.all(
-      itemIds.map((id) => tx.get(doc(db, COL.inventoryCompany, id)))
+      itemIds.map((id) => tx.get(doc(db, COL.inventoryPos, id)))
     );
 
     const onHandById = new Map<string, { name: string; onHand: number; unit: string }>();
@@ -464,14 +656,14 @@ export async function completeSale(
     for (const [id, wanted] of wantedByItem) {
       const held = onHandById.get(id)!;
       const balanceAfter = held.onHand - wanted;
-      tx.update(doc(db, COL.inventoryCompany, id), {
+      tx.update(doc(db, COL.inventoryPos, id), {
         quantityOnHand: balanceAfter,
         updatedAt: serverTimestamp(),
         updatedBy: actor.uid,
       });
       // The movement is what makes the stock figure auditable: a balance with no
       // record of how it got there cannot be checked against anything.
-      tx.set(doc(collection(db, inventoryMovementsPath(id))), {
+      tx.set(doc(collection(db, posMovementsPath(id))), {
         type: "out",
         quantity: wanted,
         reason: `Counter sale ${receiptNumber}`,
@@ -675,7 +867,7 @@ export async function voidSale(
 
     const itemIds = [...returnByItem.keys()];
     const snaps = await Promise.all(
-      itemIds.map((id) => tx.get(doc(db, COL.inventoryCompany, id)))
+      itemIds.map((id) => tx.get(doc(db, COL.inventoryPos, id)))
     );
 
     tx.update(saleRef, {
@@ -703,12 +895,12 @@ export async function voidSale(
       if (!itemSnap.exists()) return;
       const back = returnByItem.get(id) ?? 0;
       const balanceAfter = (itemSnap.data().quantityOnHand ?? 0) + back;
-      tx.update(doc(db, COL.inventoryCompany, id), {
+      tx.update(doc(db, COL.inventoryPos, id), {
         quantityOnHand: balanceAfter,
         updatedAt: serverTimestamp(),
         updatedBy: actor.uid,
       });
-      tx.set(doc(collection(db, inventoryMovementsPath(id))), {
+      tx.set(doc(collection(db, posMovementsPath(id))), {
         type: "in",
         quantity: back,
         reason: `Voided sale ${sale.receiptNumber ?? saleId}: ${reason.trim()}`,
