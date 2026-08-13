@@ -590,6 +590,38 @@ export const WAGE_WORK_TYPES = [
 ] as const;
 export type WageWorkType = (typeof WAGE_WORK_TYPES)[number];
 
+/**
+ * Work types that put a board through the saw.
+ *
+ * What a blade's cycle is measured against: every one of these consumed blade life. `board` is
+ * cutting *and* edging, `only_cutting` is cutting without it — both went through the saw.
+ */
+export const CUTTING_WORK_TYPES: readonly WageWorkType[] = [
+  "board",
+  "only_cutting",
+  "special_board",
+  "grooving",
+];
+
+/**
+ * Work types that put a board through the edge bander.
+ *
+ * What a gum cycle is measured against, and the brief is explicit about the distinction: "for gum,
+ * the calculation must use boards **edged**, not boards cut (omit only-cutting from service job)."
+ *
+ * So `only_cutting` is deliberately absent — that board never reached the bander and consumed no
+ * gum. Counting it would flatter every gum cycle by inflating the boards a bag covered, which is
+ * precisely the figure the cycle exists to measure.
+ */
+export const EDGING_WORK_TYPES: readonly WageWorkType[] = [
+  "board",
+  "special_board",
+  "door",
+  "double_door",
+  "frame",
+  "special_frame",
+];
+
 export const WAGE_WORK_TYPE_LABELS: Record<WageWorkType, string> = {
   board: "Board (C&E)",
   door: "Door",

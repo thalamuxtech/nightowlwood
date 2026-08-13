@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   ClipboardList,
+  Disc3,
   Contact,
   IdCard,
   Eye,
@@ -160,6 +161,9 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/inventory/", label: "Inventory", icon: Package, capability: "inventory.view" },
       { href: "/admin/tools/", label: "Tool Log", icon: Wrench, capability: "tool.request" },
+      // Sits with stock because that is where a blade is drawn from, but it answers a different
+      // question: not how many are left, but how many boards the last one cut.
+      { href: "/admin/consumables/", label: "Blades & Gum", icon: Disc3, capability: "inventory.view" },
       { href: "/admin/procurement/", label: "Suppliers", icon: Truck, capability: "supplier.view" },
     ],
   },

@@ -687,9 +687,25 @@ service cloud.firestore {
       allow delete: if isAdminOr('record.delete');
     }
 
+    /*
+     * Blade and gum cycles.
+     *
+     * Readable with `inventory.view` as well as `supplier.view`: the cycle screen sits under stock
+     * because that is where a blade is drawn from, and gating it on the procurement grant alone
+     * meant whoever manages stock could open the screen and read nothing.
+     *
+     * Creating one requires `expense.create` and nothing weaker, because issuing a blade *is*
+     * spending money: the same batch writes an expense, and `expenses` requires that grant. Allowing
+     * `inventory.edit` here would let a manager create the cycle and have the batch fail on the
+     * expense — a denial they could do nothing about, reported as a broken button.
+     *
+     * Updating is wider, because closing a cycle books nothing. Whoever manages stock can record
+     * that a blade came off the machine.
+     */
     match /consumableCycles/{id} {
-      allow read: if isAdminOr('supplier.view');
-      allow create, update: if isOps();
+      allow read: if isAdminOr('inventory.view') || isAdminOr('supplier.view');
+      allow create: if isAdminOr('expense.create');
+      allow update: if isAdminOr('expense.create') || isAdminOr('inventory.edit');
       allow delete: if isAdminOr('record.delete');
     }
 
