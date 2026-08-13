@@ -11,7 +11,18 @@ import {
   where,
 } from "firebase/firestore";
 import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   AlertTriangle,
+  ChevronDown,
   ClipboardList,
   Layers,
   Loader2,
@@ -52,6 +63,12 @@ import {
   type WageWorkTypeSettings,
 } from "@/lib/erp/settings";
 import { dayRateKobo, hrSettings } from "@/lib/erp/hr";
+import {
+  isoWeekKey,
+  isoWeekOf,
+  isoWeekRangeLabel,
+  type IsoWeek,
+} from "@/lib/erp/isoWeek";
 import { boardsRemainingOnJob } from "@/lib/erp/boards";
 import type { StaffRate, WageRate, WorkLogItem } from "@/lib/erp/types";
 import {
@@ -79,6 +96,7 @@ import { StaffPicker, type PickedStaff } from "@/components/admin/services/Staff
 import { WorkLogSheet } from "./WorkLogSheet";
 import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 import { DeleteWithReason } from "@/components/admin/ui/DeleteWithReason";
+import { TOOLTIP_PROPS } from "@/components/admin/ui/chartTheme";
 
 interface StaffOption {
   id: string;
@@ -124,6 +142,15 @@ interface OpenJob {
 const WORKABLE_STATUSES: JobStatus[] = ["received", "in_progress", "qc", "on_hold"];
 
 /**
+ * How many work-log entries are read.
+ *
+ * About a year at this workshop's volume. The list is grouped and paginated by week, so this has
+ * to be deep enough that "show earlier weeks" keeps finding weeks — but bounded, because an
+ * unbounded snapshot on a growing collection is a bill that grows with it.
+ */
+const LOG_SCAN_CAP = 600;
+
+/**
  * Work log entry. This is the only input to payroll.
  *
  * Operators may log their own work; managers and admins may log for anyone. The
@@ -146,6 +173,18 @@ export function WorkLogScreen() {
   const isAdmin = session.can("wage.viewRates");
 
   const [rows, setRows] = useState<LogRow[]>([]);
+  /** What the user is searching for — staff name, job number or kind of work. */
+  const [search, setSearch] = useState("");
+  /**
+   * Which ISO week is expanded, as a `2026-W32` key.
+   *
+   * The brief asks for the list grouped by calendar week, and a group nobody can collapse is just a
+   * heading — with a year of logs on screen the point is to open the week being discussed. The
+   * newest week opens by default, which is almost always the one wanted.
+   */
+  const [openWeek, setOpenWeek] = useState<string | null>(null);
+  /** How many weeks are shown. Pagination by week rather than by row, since weeks are the unit. */
+  const [weeksShown, setWeeksShown] = useState(6);
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [rates, setRates] = useState<WageRate[]>([]);
   const [staffRates, setStaffRates] = useState<StaffRate[]>([]);
@@ -278,16 +317,24 @@ export function WorkLogScreen() {
   }, []);
 
   useEffect(() => {
-    // Operators see only their own logs, which is also what the rules allow.
+    /*
+     * Operators see only their own logs, which is also what the rules allow.
+     *
+     * Raised from 100 to 600 — roughly a year at this workshop's volume — because the list is now
+     * grouped and paginated by week. At 100 rows "show earlier weeks" would find nothing beyond
+     * about the third week back, and a pagination control that silently runs out is worse than no
+     * pagination at all. Still capped rather than unbounded, and the count is stated below the list
+     * so a truncated history is visible rather than assumed complete.
+     */
     const base = collection(getDb(), COL.workLogs);
     const q =
       canLogForOthers || !session.staffId
-        ? query(base, orderBy("workDate", "desc"), limit(100))
+        ? query(base, orderBy("workDate", "desc"), limit(LOG_SCAN_CAP))
         : query(
             base,
             where("staffId", "==", session.staffId),
             orderBy("workDate", "desc"),
-            limit(100)
+            limit(LOG_SCAN_CAP)
           );
 
     return onSnapshot(
@@ -363,6 +410,124 @@ export function WorkLogScreen() {
       </div>
     );
   }
+
+  /*
+   * Search across the things somebody actually looks for.
+   *
+   * A name, a job number, or a kind of work — those are the three ways a log gets described out
+   * loud ("Bashir's entries", "everything on JOB-2026-0142", "the door work"). Assistants are
+   * searched too, because "was Halifa on that job" is asked as often as who logged it.
+   */
+  const matching = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return rows;
+    return rows.filter((r) =>
+      [
+        r.staffName,
+        r.jobNumber ?? "",
+        ...r.assistantNames,
+        ...r.items.map((it) => nameOfWorkType(it.workType)),
+      ].some((f) => f.toLowerCase().includes(term))
+    );
+  }, [rows, search]);
+
+  /*
+   * Grouped into ISO calendar weeks, newest first.
+   *
+   * Keyed by `{isoYear}-W{week}` rather than by week number alone: a week belongs to a year that is
+   * not always the calendar year of its dates — the last days of December usually fall in week 1 of
+   * the next year — so grouping on the number alone would merge two different weeks five years apart.
+   */
+  const weeks = useMemo(() => {
+    const groups = new Map<string, { week: IsoWeek; rows: LogRow[] }>();
+    const undated: LogRow[] = [];
+
+    for (const r of matching) {
+      if (r.workDateMs === null) {
+        undated.push(r);
+        continue;
+      }
+      const w = isoWeekOf(new Date(r.workDateMs));
+      const key = isoWeekKey(w);
+      const bucket = groups.get(key) ?? { week: w, rows: [] };
+      bucket.rows.push(r);
+      groups.set(key, bucket);
+    }
+
+    const ordered = [...groups.entries()]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([key, g]) => ({ key, ...g }));
+
+    /*
+     * Entries with no date, kept visible rather than dropped.
+     *
+     * They should not exist — the form requires a date — but a legacy row or a failed write could
+     * produce one, and silently hiding it from every week means work that was done and never paid.
+     */
+    return { ordered, undated };
+  }, [matching]);
+
+  /*
+   * The four analytics the brief asks for, over whatever is on screen.
+   *
+   * Boards, revenue, wages and jobs — computed from the filtered rows rather than a separate query,
+   * so the chart always describes exactly the entries listed beneath it. Revenue and wages are
+   * per-week sums of what those jobs and rates imply; both are approximations stated as such,
+   * because the authoritative figures live on the invoice and the wage run.
+   */
+  const analytics = useMemo(() => {
+    return weeks.ordered
+      .slice(0, weeksShown)
+      .map((g) => {
+        const boards = g.rows.reduce((s, r) => s + (r.boardsUsed ?? 0), 0);
+        const units = g.rows.reduce(
+          (s, r) => s + r.items.reduce((t, it) => t + it.units, 0),
+          0
+        );
+        const jobs = new Set(
+          g.rows.flatMap((r) => [r.jobId, ...r.items.map((it) => it.jobId)]).filter(Boolean)
+        ).size;
+        /*
+         * Wages implied by the logged work, operators and assistants together.
+         *
+         * Priced with the same `rateFor` precedence the wage run uses — per-person rate first, then
+         * the rate for that kind of work — and against the rates in force on the day the work was
+         * done, not today's. A chart drawn with current rates would silently restate history every
+         * time somebody got a raise.
+         *
+         * It is an estimate: the authoritative figure is the wage run, which applies deductions and
+         * can be adjusted before approval. Labelled as such on the chart.
+         */
+        const wagesKobo = g.rows.reduce((s, r) => {
+          const atMs = r.workDateMs ?? Date.now();
+          const resolved = resolveRates(rates, atMs);
+          const personal = resolveStaffRates(staffRates, atMs);
+          return (
+            s +
+            r.items.reduce((t, it) => {
+              const workTypeRate = resolved.get(it.workType);
+              const op = rateFor(r.staffId, "operator", it.workType, workTypeRate, personal);
+              const assistants = r.assistantIds.reduce(
+                (a, id) =>
+                  a + rateFor(id, "assistant", it.workType, workTypeRate, personal).rateKobo,
+                0
+              );
+              return t + Math.round(it.units * (op.rateKobo + assistants));
+            }, 0)
+          );
+        }, 0);
+        return {
+          key: g.key,
+          label: `W${g.week.week}`,
+          boards,
+          units,
+          jobs,
+          wages: wagesKobo / 100,
+        };
+      })
+      // Oldest to newest, which is how a trend reads.
+      .reverse();
+  }, [weeks.ordered, weeksShown, rates, staffRates]);
 
   // The printed range is whatever is on screen, which is what the user just
   // filtered to; labelling it from the rows avoids claiming a period the sheet
@@ -472,7 +637,74 @@ export function WorkLogScreen() {
         />
       )}
 
+      {/* Analytics over what is on screen.
+          The four figures the brief names — boards, revenue, wages and jobs — per calendar week.
+          Drawn from the filtered rows rather than a separate query, so the chart always describes
+          exactly the entries listed beneath it. */}
+      {!loading && analytics.length > 1 && isAdmin && (
+        <section className="mt-8 rounded-3xl border border-night-700/60 bg-night-900/40 p-6 print:hidden">
+          <h2 className="font-display text-lg text-cream-100">By week</h2>
+          <p className="mt-1 text-sm text-cream-500">
+            Boards off the customers&apos; stacks, units of work, and the wages those imply. Wages
+            are an estimate at the rates in force on each day — the wage run is the authority.
+          </p>
+          <div className="mt-5 h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={analytics} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+                <CartesianGrid stroke="#2a221b" vertical={false} />
+                <XAxis dataKey="label" stroke="#8a7a68" fontSize={12} tickLine={false} />
+                <YAxis stroke="#8a7a68" fontSize={12} tickLine={false} width={44} />
+                <Tooltip {...TOOLTIP_PROPS} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="boards" name="Boards" fill="#c08a3e" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="units" name="Units" fill="#8a6a45" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="jobs" name="Jobs" fill="#d9b678" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <dl className="mt-4 grid gap-4 border-t border-night-700/60 pt-4 sm:grid-cols-4">
+            <Figure
+              label="Boards"
+              value={String(analytics.reduce((s, a) => s + a.boards, 0))}
+            />
+            <Figure label="Units" value={String(analytics.reduce((s, a) => s + a.units, 0))} />
+            <Figure
+              label="Estimated wages"
+              value={formatNaira(
+                Math.round(analytics.reduce((s, a) => s + a.wages, 0) * 100)
+              )}
+            />
+            <Figure
+              label="Weeks shown"
+              value={String(analytics.length)}
+              hint={`of ${weeks.ordered.length} on file`}
+            />
+          </dl>
+        </section>
+      )}
+
       <section className="mt-8 print:hidden">
+        {/* Search. A name, a job number, or a kind of work — the three ways somebody describes
+            the entry they are looking for. */}
+        {!loading && rows.length > 0 && (
+          <div className="mb-5 flex flex-wrap items-end gap-3">
+            <div className="min-w-[16rem] flex-1">
+              <TextField
+                id="wl-search"
+                label="Find an entry"
+                value={search}
+                onChange={setSearch}
+                placeholder="Staff name, job number, or kind of work…"
+              />
+            </div>
+            {search.trim() !== "" && (
+              <p className="pb-3 text-sm text-cream-500">
+                {matching.length} of {rows.length} entries
+              </p>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="animate-spin text-brass-400" size={24} aria-label="Loading" />
@@ -482,8 +714,55 @@ export function WorkLogScreen() {
             title="No work logged yet"
             hint="Log the week's work here, then generate the wage run from Payroll."
           />
+        ) : matching.length === 0 ? (
+          <EmptyState
+            title={`Nothing matches “${search.trim()}”`}
+            hint="Try a staff name, a job number, or a kind of work."
+          />
         ) : (
-          <div className="overflow-x-auto rounded-3xl border border-night-700/60">
+          <div className="space-y-4">
+            {/* One block per ISO calendar week, newest first.
+                The brief asks for the list grouped by week 1 to 53. Collapsible because with a
+                year of logs on screen the point is to open the week being discussed, and the
+                newest opens by default since that is almost always the one wanted. */}
+            {weeks.ordered.slice(0, weeksShown).map((group, groupIndex) => {
+              const expanded = openWeek === null ? groupIndex === 0 : openWeek === group.key;
+              const weekBoards = group.rows.reduce((s, r) => s + (r.boardsUsed ?? 0), 0);
+              const weekUnits = group.rows.reduce(
+                (s, r) => s + r.items.reduce((t, it) => t + it.units, 0),
+                0
+              );
+              return (
+                <div
+                  key={group.key}
+                  className="overflow-hidden rounded-3xl border border-night-700/60"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setOpenWeek(expanded ? "" : group.key)}
+                    aria-expanded={expanded}
+                    className="flex w-full cursor-pointer flex-wrap items-center justify-between gap-3 bg-night-900/70 px-5 py-3.5 text-left transition-colors hover:bg-night-900"
+                  >
+                    <span>
+                      <span className="block text-sm text-cream-100">
+                        {isoWeekRangeLabel(group.week)}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-cream-500">
+                        {group.rows.length} entr{group.rows.length === 1 ? "y" : "ies"}
+                        {weekBoards > 0 && ` · ${weekBoards} boards`}
+                        {weekUnits > 0 && ` · ${weekUnits} units`}
+                      </span>
+                    </span>
+                    <ChevronDown
+                      size={17}
+                      className={`shrink-0 text-cream-500 transition-transform ${
+                        expanded ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {expanded && (
+                  <div className="overflow-x-auto">
             <table className="w-full min-w-[46rem] text-left text-sm">
               <thead className="bg-night-900/70 text-xs uppercase tracking-wider text-cream-500">
                 <tr>
@@ -496,7 +775,7 @@ export function WorkLogScreen() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-night-800">
-                {rows.map((r) => (
+                {group.rows.map((r) => (
                   <Fragment key={r.id}>
                   <tr>
                     <td className="px-5 py-4 text-cream-400">
@@ -646,6 +925,44 @@ export function WorkLogScreen() {
                 ))}
               </tbody>
             </table>
+                  </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Pagination, by week rather than by row: a week is the unit the workshop thinks in,
+                and cutting one in half would put Monday and Friday on different pages. */}
+            {weeks.ordered.length > weeksShown && (
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <Button variant="secondary" onClick={() => setWeeksShown((n) => n + 6)}>
+                  Show earlier weeks
+                </Button>
+                <p className="text-sm text-cream-500">
+                  Showing {weeksShown} of {weeks.ordered.length} weeks
+                </p>
+              </div>
+            )}
+
+            {/* The read cap, stated rather than hidden. At the limit there is older work on file
+                that this list is not showing, and a list that looks complete but is not is how a
+                week gets missed at wage time. */}
+            {rows.length >= LOG_SCAN_CAP && (
+              <p className="pt-1 text-xs text-cream-600">
+                Showing the most recent {LOG_SCAN_CAP} entries. Older work exists but is not loaded
+                here — use the printed sheet or the wage run for a full historical record.
+              </p>
+            )}
+
+            {/* Entries with no date. They should not exist, but hiding one means work that was
+                done and never paid. */}
+            {weeks.undated.length > 0 && (
+              <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm text-amber-300">
+                {weeks.undated.length} entr{weeks.undated.length === 1 ? "y has" : "ies have"} no
+                date recorded, so {weeks.undated.length === 1 ? "it is" : "they are"} not in any
+                week above: {weeks.undated.map((r) => r.staffName).join(", ")}. Edit to add the date.
+              </p>
+            )}
           </div>
         )}
       </section>
@@ -1445,5 +1762,24 @@ function WorkLogForm({
         </Button>
       </div>
     </section>
+  );
+}
+
+/** One figure in the weekly analytics summary. */
+function Figure({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <dt className="text-xs uppercase tracking-wider text-cream-600">{label}</dt>
+      <dd className="mt-1 font-display text-lg text-cream-100">{value}</dd>
+      {hint && <dd className="mt-0.5 text-xs text-cream-600">{hint}</dd>}
+    </div>
   );
 }
