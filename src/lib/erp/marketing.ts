@@ -1175,6 +1175,130 @@ export async function buildMarketingSummary(
 }
 
 /**
+ * Today at a glance, for the module's landing page.
+ *
+ * Four figures, each answering a question someone actually asks in the morning: how many sites
+ * have been walked, how many new leads came out of them, how many follow-ups were made, how many
+ * quotations went out. Plus what is overdue, which is the only one that demands action.
+ *
+ * Deliberately cheap. This runs on a landing page that people open and close all day, so it reads
+ * one day of visits and follow-ups rather than a range, and takes the lead counts from the same
+ * capped scan the pipeline screen uses.
+ */
+export interface MarketingToday {
+  dateKey: string;
+  sitesVisited: number;
+  contactsMade: number;
+  newLeads: number;
+  followUps: number;
+  quotationsSent: number;
+  /**
+   * Open leads whose next action is due today or earlier. The queue for the day.
+   *
+   * Always measured against *now*, not against `dateKey` — `Lead.due` is computed from the real
+   * today by `loadLeads`. So on a back-dated call this figure still describes the present, which is
+   * what a dashboard wants and what a historical report must not use.
+   */
+  dueNow: number;
+  /** Quotation requests the office has not answered. */
+  quotationsPending: number;
+  /** Open leads in total, for a sense of the pipeline's size. */
+  openLeads: number;
+  /** Per-marketer site counts for the day, busiest first. */
+  byStaff: Array<{ staffName: string; sitesVisited: number }>;
+  /** The daily site target, so the tiles can say whether the day is on track. */
+  targets: MarketingTargets;
+}
+
+export async function loadMarketingToday(
+  db: Firestore,
+  dateKey: string = new Date().toLocaleDateString("en-CA")
+): Promise<MarketingToday> {
+  const [visits, followUps, leads, quotes, targets] = await Promise.all([
+    loadSiteVisits(db, { fromKey: dateKey, toKey: dateKey, limit: 500 }),
+    loadFollowUps(db, { fromKey: dateKey, toKey: dateKey, limit: 500 }),
+    loadLeads(db, { limit: 500 }),
+    loadQuoteRequests(db, { limit: 500 }),
+    loadMarketingTargets(db),
+  ]);
+
+  const dayStart = dayTimestamp(dateKey).toMillis();
+  const dayEnd = dayStart + 86_400_000 - 1;
+  const madeToday = (ms: number | null) => ms !== null && ms >= dayStart && ms <= dayEnd;
+
+  const open = leads.filter((l) => !CLOSED_LEAD_STATUSES.includes(l.status));
+
+  const byStaffMap = new Map<string, number>();
+  for (const v of visits) {
+    const key = v.staffName.trim() || "Unattributed";
+    byStaffMap.set(key, (byStaffMap.get(key) ?? 0) + 1);
+  }
+
+  return {
+    dateKey,
+    sitesVisited: visits.length,
+    contactsMade: visits.filter((v) => v.contactMade).length,
+    newLeads: leads.filter((l) => madeToday(l.createdAtMs)).length,
+    followUps: followUps.length,
+    quotationsSent: quotes.filter((q) => q.status === "quoted" && madeToday(q.createdAtMs)).length,
+    dueNow: open.filter((l) => l.due).length,
+    quotationsPending: quotes.filter((q) => q.status === "pending").length,
+    openLeads: open.length,
+    byStaff: [...byStaffMap.entries()]
+      .map(([staffName, sitesVisited]) => ({ staffName, sitesVisited }))
+      .sort((a, b) => b.sitesVisited - a.sitesVisited),
+    targets,
+  };
+}
+
+/**
+ * The management rules from the spec, as data.
+ *
+ * Stated in the brief as the thing that makes the rest work — "if you don't enforce this,
+ * everything fails" — so they are worth putting on screen rather than leaving in a document
+ * nobody reopens. Held here rather than in the component because two screens show them.
+ *
+ * Each carries whether the system enforces it or whether it is on a person to enforce, which is
+ * the honest distinction: the phone-number rule is checked by the form and cannot be got around,
+ * the salary rule is a management decision no code makes.
+ */
+export const MANAGEMENT_RULES: Array<{
+  n: number;
+  rule: string;
+  detail: string;
+  enforcement: "system" | "manager";
+}> = [
+  {
+    n: 1,
+    rule: "No report, no pay for that day",
+    detail:
+      "A day with no site visit report is a day nobody can account for. The weekly summary shows who filed what, so the gap is visible before payday.",
+    enforcement: "manager",
+  },
+  {
+    n: 2,
+    rule: "Minimum sites a day, unless justified",
+    detail:
+      "Set in Settings and shown live on the visits screen, so a marketer knows where they stand before the day ends rather than at the weekly review.",
+    enforcement: "manager",
+  },
+  {
+    n: 3,
+    rule: "Every contact must have a phone number",
+    detail:
+      "Enforced by the form: a visit that records a contact cannot be saved without one. A contact with no number is a story rather than a lead.",
+    enforcement: "system",
+  },
+  {
+    n: 4,
+    rule: "Weekly review, ten to fifteen minutes",
+    detail:
+      "The weekly summary is built to be that meeting — counted from the records, printable, and readable in one screen.",
+    enforcement: "manager",
+  },
+];
+
+/**
  * Deletes a marketing record.
  *
  * Marketing records are notes about conversations, not money or stock, so there is nothing

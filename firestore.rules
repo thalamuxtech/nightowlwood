@@ -799,6 +799,58 @@ service cloud.firestore {
     }
 
     /*
+     * The attendance register.
+     *
+     * Readable by anyone who can see staff, because an empty work log needs to be explainable —
+     * "was he not in, or did nobody write it down?" is the first question about a light week.
+     *
+     * Written with `worklog.create`, which is the supervisor on the floor. That is deliberately a
+     * lower bar than `staff.edit`: whoever is standing in the workshop at 8am is who knows who
+     * turned up, and a register only an admin can fill is one that gets filled from memory on
+     * Friday. Marking someone absent takes no money — raising the deduction is a separate act
+     * needing `deduction.create` — so the worst a wrong tick does is misstate a day until it is
+     * corrected, and every correction is in the audit log.
+     *
+     * Deleting needs `record.delete` like everything else. A day removed from the register is a
+     * day nobody can account for, which is exactly what the register exists to prevent.
+     */
+    match /attendance/{id} {
+      allow read: if isAdminOr('staff.view');
+
+      /*
+       * The id must match the fields inside it.
+       *
+       * `markAttendance` derives the id as `{dateKey}_{staffId}` and that derivation is the only
+       * thing stopping two contradictory rows for one person on one day. A document whose id says
+       * one person and whose body says another is reachable by one code path and not the other —
+       * `loadAttendance` queries the field, `linkAbsenceDeduction` writes to the id — so it must
+       * not be writable at all.
+       *
+       * `deductionId` is the money invariant. Once an absence has been charged, that link is what
+       * stops the same day being charged again, so clearing or changing it needs the permission
+       * that raises deductions in the first place. Everyone else may correct the status and the
+       * note and nothing more.
+       */
+      allow create: if (isAdminOr('staff.edit') || isAdminOr('worklog.viewAll'))
+        && id == request.resource.data.dateKey + '_' + request.resource.data.staffId
+        && request.resource.data.status in ['present', 'absent', 'leave', 'holiday']
+        && request.resource.data.markedBy == request.auth.uid;
+
+      allow update: if (isAdminOr('staff.edit') || isAdminOr('worklog.viewAll'))
+        && id == request.resource.data.dateKey + '_' + request.resource.data.staffId
+        && request.resource.data.status in ['present', 'absent', 'leave', 'holiday']
+        && request.resource.data.markedBy == request.auth.uid
+        // The day and the person a row is about never change; a correction is to the status.
+        && request.resource.data.dateKey == resource.data.dateKey
+        && request.resource.data.staffId == resource.data.staffId
+        && (request.resource.data.get('deductionId', null)
+              == resource.data.get('deductionId', null)
+            || isAdminOr('deduction.create'));
+
+      allow delete: if isAdminOr('record.delete');
+    }
+
+    /*
      * Recurring fixed costs.
      *
      * Read alongside the finance dashboard, since the monthly floor is part of reading a

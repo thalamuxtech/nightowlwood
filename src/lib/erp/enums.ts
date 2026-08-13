@@ -937,3 +937,28 @@ export const QUOTE_REQUEST_STATUS_LABELS: Record<QuoteRequestStatus, string> = {
   quoted: "Quotation sent",
   declined: "Declined",
 };
+
+/**
+ * A day's attendance for one person.
+ *
+ * Four states, deliberately coarse. The brief is explicit that this should not start with
+ * biometrics — a register somebody ticks is a system that gets used, and a clocking machine
+ * nobody trusts is a system that gets worked around.
+ *
+ * `absent` is the only one with money attached: it is what a no-show deduction is raised from.
+ * `holiday` exists so an empty day is explained rather than looking like a day nobody bothered
+ * recording, which is the first question anyone asks about a light week. `leave` is an agreed
+ * absence and costs nothing, which is precisely why it must be distinguishable from a no-show.
+ */
+export const ATTENDANCE_STATUSES = ["present", "absent", "leave", "holiday"] as const;
+export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number];
+
+export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
+  present: "Present",
+  absent: "Absent",
+  leave: "Approved leave",
+  holiday: "Public holiday",
+};
+
+/** Which statuses are a chargeable absence — the ones a no-show deduction may follow. */
+export const CHARGEABLE_ABSENCE: readonly AttendanceStatus[] = ["absent"];

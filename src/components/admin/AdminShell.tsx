@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BarChart3,
+  CalendarCheck,
   CalendarClock,
   ChevronDown,
   ClipboardCheck,
@@ -114,6 +115,14 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "Marketing",
     items: [
+      // The group's landing page: today's counts and what is overdue, before the screens
+      // that produce them.
+      {
+        href: "/admin/marketing/",
+        label: "Overview",
+        icon: LayoutDashboard,
+        capability: "marketing.view",
+      },
       {
         href: "/admin/marketing/visits/",
         label: "Site Visits",
@@ -123,13 +132,19 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: "/admin/marketing/leads/",
         label: "Lead Tracker",
-        icon: Target,
+        icon: Users,
         capability: "marketing.view",
       },
       {
         href: "/admin/marketing/quotations/",
         label: "Quotation Requests",
         icon: FileQuestion,
+        capability: "marketing.view",
+      },
+      {
+        href: "/admin/marketing/targets/",
+        label: "Daily Targets",
+        icon: Target,
         capability: "marketing.view",
       },
       {
@@ -202,6 +217,9 @@ export const NAV_GROUPS: NavGroup[] = [
       // from anyone without staff.edit.
       { href: "/admin/directory/", label: "Directory", icon: Contact, capability: "customer.edit" },
       { href: "/admin/staff/", label: "Staff & HR", icon: IdCard, capability: "staff.view" },
+      // Sits with the staff records it is about: a register is only readable next to the people
+      // on it, and an absence marked here is followed up on a profile one click away.
+      { href: "/admin/attendance/", label: "Attendance", icon: CalendarCheck, capability: "staff.view" },
       // Gated on `request`, not `decide`: whoever asked has to be able to see the
       // outcome, and per-row controls handle who may actually decide.
       { href: "/admin/approvals/", label: "Approvals", icon: ClipboardCheck, capability: "approval.request" },

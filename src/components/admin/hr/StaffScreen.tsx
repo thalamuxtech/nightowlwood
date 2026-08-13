@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDoc, onSnapshot, orderBy, query } from "firebase/firestore";
 import {
@@ -451,6 +452,14 @@ export function StaffScreen() {
                       >
                         {openId === r.id ? "Hide" : "Record"}
                       </button>
+                      {/* The full file, with the quick actions and the tools still signed out.
+                          The inline record above is a summary; this is the page you work from. */}
+                      <Link
+                        href={`/admin/staff/profile/?id=${r.id}`}
+                        className="text-xs text-brass-300 transition-colors hover:text-brass-200"
+                      >
+                        Full profile
+                      </Link>
                       {canHr && (
                         <>
                           <button

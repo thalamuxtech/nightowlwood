@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  setDoc,
   getDoc,
   getDocs,
   orderBy,
@@ -13,6 +14,10 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { COL, staffDocumentsPath } from "./collections";
+import {
+  CHARGEABLE_ABSENCE,
+  type AttendanceStatus,
+} from "./enums";
 import type {
   DeductionType,
   EmploymentType,
@@ -586,4 +591,215 @@ export async function loadStaffStats(
     totalUnitsLogged,
     workLogCount: logSnap.size,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Attendance
+// ---------------------------------------------------------------------------
+
+/**
+ * The attendance register.
+ *
+ * A simple daily tick, and deliberately nothing more. The brief says not to start with
+ * biometrics, and it is right: a register somebody fills is a system that gets used, while a
+ * clocking machine nobody trusts is one that gets worked around. No times in or out — the
+ * workshop pays by the piece and by the month, not by the hour, so an arrival time would be
+ * recorded and never read.
+ *
+ * ## Why the document id is derived
+ *
+ * `{dateKey}_{staffId}`, so marking the same person twice on the same day overwrites rather
+ * than duplicating. Two supervisors ticking the same register is the ordinary case, and two
+ * disagreeing rows for one person on one day is unresolvable — a deterministic id makes the
+ * later tick win, which is the behaviour anyone would expect.
+ *
+ * ## The link to money
+ *
+ * Marking someone absent does **not** deduct anything. It records the fact; raising the
+ * deduction is a separate, deliberate act with its own permission, because an absence may turn
+ * out to have been agreed. `suggestedDeductionKobo` is what the two share.
+ */
+export interface AttendanceMark {
+  id: string;
+  dateKey: string;
+  staffId: string;
+  staffName: string;
+  status: AttendanceStatus;
+  note?: string;
+  /** Set when a no-show deduction has been raised from this absence, so it is not raised twice. */
+  deductionId?: string;
+  markedByName?: string;
+  markedAtMs: number | null;
+}
+
+/** The document id for one person on one day. Derived, so a second tick corrects the first. */
+function attendanceId(dateKey: string, staffId: string): string {
+  return `${dateKey}_${staffId}`;
+}
+
+/**
+ * Records or corrects one person's attendance for a day.
+ *
+ * `setDoc` with a derived id rather than `addDoc`: see the note above on why two rows for one
+ * person on one day would be unresolvable.
+ */
+export async function markAttendance(
+  db: Firestore,
+  actor: AuditActor,
+  input: {
+    dateKey: string;
+    staffId: string;
+    staffName: string;
+    status: AttendanceStatus;
+    note?: string;
+    markedByName?: string;
+  }
+): Promise<{ id: string }> {
+  if (!input.dateKey) throw new Error("Which day is this for?");
+  if (!input.staffId) throw new Error("Which staff member is this for?");
+
+  const id = attendanceId(input.dateKey, input.staffId);
+  const ref = doc(db, COL.attendance, id);
+
+  /*
+   * The existing mark is read first, for two reasons: to keep any deduction already raised from
+   * this absence, and to say in the audit entry what the status changed *from*. A register whose
+   * corrections are invisible is a register that can be quietly rewritten.
+   */
+  const existing = await getDoc(ref);
+  const before = existing.exists() ? existing.data() : null;
+
+  await setDoc(
+    ref,
+    {
+      dateKey: input.dateKey,
+      staffId: input.staffId,
+      staffName: input.staffName,
+      status: input.status,
+      note: input.note?.trim() || null,
+      /*
+       * The deduction link is never cleared here, whatever the new status is.
+       *
+       * It looks tidier to drop it when a day stops being an absence — the deduction no longer
+       * "belongs" to the day. But clearing it is how the same day gets charged twice: mark absent,
+       * raise the deduction, correct the day to present (link cleared), correct it back to absent,
+       * and the day now reads as an uncharged absence while the original deduction is still
+       * pending. Someone raises it again and a day's pay is taken twice.
+       *
+       * So the link survives every correction, and `deductionRaisedFor` below is what the caller
+       * checks before spending money. Reversing an unwanted deduction is a separate, deliberate
+       * act on the deduction itself, which is where the permission for it lives.
+       */
+      ...(before?.deductionId ? {} : { deductionId: null }),
+      markedByName: input.markedByName?.trim() || null,
+      markedAt: serverTimestamp(),
+      markedBy: actor.uid,
+    },
+    { merge: true }
+  );
+
+  await writeAudit(db, {
+    actor,
+    action: before ? "update" : "create",
+    collectionName: COL.attendance,
+    docId: id,
+    summary:
+      `${input.staffName} on ${input.dateKey}: ${input.status}` +
+      (before && before.status !== input.status ? ` (was ${before.status})` : ""),
+    before: before ?? undefined,
+    after: { status: input.status, note: input.note?.trim() ?? null },
+  });
+
+  return { id };
+}
+
+function markFrom(id: string, x: Record<string, unknown>): AttendanceMark {
+  return {
+    id,
+    dateKey: (x.dateKey as string) ?? "",
+    staffId: (x.staffId as string) ?? "",
+    staffName: (x.staffName as string) ?? "",
+    status: (x.status as AttendanceStatus) ?? "present",
+    note: (x.note as string) ?? undefined,
+    deductionId: (x.deductionId as string) ?? undefined,
+    markedByName: (x.markedByName as string) ?? undefined,
+    markedAtMs:
+      (x.markedAt as { toMillis?: () => number } | undefined)?.toMillis?.() ?? null,
+  };
+}
+
+/**
+ * The register for a day, or for one person over a range.
+ *
+ * Two shapes, because they are two different questions: "who was in on Tuesday" is the register,
+ * "how often has Bashir been out" is the profile. Each is a single-field equality plus a range at
+ * most, so neither needs a composite index.
+ */
+export async function loadAttendance(
+  db: Firestore,
+  opts: { dateKey?: string; staffId?: string; fromKey?: string; toKey?: string; limit?: number }
+): Promise<AttendanceMark[]> {
+  const snap = await getDocs(
+    opts.dateKey
+      ? query(collection(db, COL.attendance), where("dateKey", "==", opts.dateKey))
+      : opts.staffId
+        ? query(collection(db, COL.attendance), where("staffId", "==", opts.staffId))
+        : query(
+            collection(db, COL.attendance),
+            ...(opts.fromKey ? [where("dateKey", ">=", opts.fromKey)] : []),
+            ...(opts.toKey ? [where("dateKey", "<=", opts.toKey)] : []),
+            orderBy("dateKey", "desc")
+          )
+  );
+
+  let rows = snap.docs.map((d) => markFrom(d.id, d.data()));
+
+  /*
+   * The date range is applied in memory on the per-person query.
+   *
+   * Adding it to the `staffId` equality would need a composite index, and one person's whole
+   * attendance history is a few hundred rows at most — a year of a six-day week is 312.
+   */
+  if (opts.staffId) {
+    if (opts.fromKey) rows = rows.filter((r) => r.dateKey >= opts.fromKey!);
+    if (opts.toKey) rows = rows.filter((r) => r.dateKey <= opts.toKey!);
+    rows.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+  }
+
+  return opts.limit ? rows.slice(0, opts.limit) : rows;
+}
+
+/**
+ * The deduction already raised for a day, if there is one.
+ *
+ * The guard against charging one absence twice. Callers must consult this *before* creating a
+ * no-show deduction, because nothing downstream can tell two deductions for the same day apart —
+ * they are separate documents with the same staff, type and date, and a wage run applies both.
+ *
+ * Returns null when the day has no mark at all, which is the ordinary case for an absence being
+ * recorded for the first time.
+ */
+export async function deductionRaisedFor(
+  db: Firestore,
+  dateKey: string,
+  staffId: string
+): Promise<string | null> {
+  const snap = await getDoc(doc(db, COL.attendance, attendanceId(dateKey, staffId)));
+  if (!snap.exists()) return null;
+  return (snap.data().deductionId as string) ?? null;
+}
+
+/** Links a raised no-show deduction back to the absence it came from, so it is not raised twice. */
+export async function linkAbsenceDeduction(
+  db: Firestore,
+  actor: AuditActor,
+  dateKey: string,
+  staffId: string,
+  deductionId: string
+): Promise<void> {
+  await updateDoc(doc(db, COL.attendance, attendanceId(dateKey, staffId)), {
+    deductionId,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor.uid,
+  });
 }

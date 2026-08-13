@@ -86,6 +86,15 @@ export const COL = {
   fixedCosts: "fixedCosts",
 
   /**
+   * The daily attendance register.
+   *
+   * One document per person per day, with a derived id so a second tick corrects the first
+   * rather than adding a contradictory row. Records the fact of an absence; the deduction that
+   * may follow is a separate document and a separate decision — see `markAttendance`.
+   */
+  attendance: "attendance",
+
+  /**
    * Cutting lists.
    *
    * The panel-by-panel document a customer brings in. Fillable through a public link, because
