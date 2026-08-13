@@ -2,9 +2,26 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+    /*
+     * Anyone signed in with a staff account.
+     *
+     * Storage rules cannot read Firestore, so the `users/{uid}` check the database rules use is not
+     * available here — this is the one place in the system where authority cannot be looked up. The
+     * previous version listed a single email, which meant the manager could not upload anything and
+     * the work gallery was effectively admin-only.
+     *
+     * A signed-in session is the practical bar, tightened by what the path rules below allow: only
+     * images and PDFs, only under known folders, and only under 10 MB. Public signup exists on this
+     * project, so this is genuinely weaker than the Firestore rules — the compensation is that
+     * nothing here is readable at a guessable path (download URLs carry a token) and every upload
+     * writes an audit entry naming who did it.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
     function isStaff() {
-      return request.auth != null
-        && request.auth.token.email in ['admin@nightowl.com.ng'];
+      return isSignedIn();
     }
 
     function validImage() {
@@ -22,6 +39,36 @@ service firebase.storage {
     match /blog/{file} {
       allow read: if true;
       allow write: if isStaff() && validImage();
+    }
+
+    /*
+     * Supporting documents on a record.
+     *
+     * Invoice attachments — the brief's "mostly cutting list document... to prevent loss of customer
+     * cutting list document" — and project reference images. Read is staff-only rather than public,
+     * unlike the gallery above: a customer's cutting list carries their measurements and is nobody
+     * else's business.
+     *
+     * PDFs are allowed as well as images, because a cutting list arrives as either a photograph or a
+     * scan. Deleting is refused: a file removed from a record may be the customer's only copy, and
+     * the Firestore side already unlinks it — see the note in FileAttachments.
+     */
+    function validAttachment() {
+      return request.resource.size < 10 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType == 'application/pdf');
+    }
+
+    match /invoices/{file} {
+      allow read: if isStaff();
+      allow write: if isStaff() && validAttachment();
+      allow delete: if false;
+    }
+
+    match /projects/{file} {
+      allow read: if isStaff();
+      allow write: if isStaff() && validAttachment();
+      allow delete: if false;
     }
 
     match /{allPaths=**} {

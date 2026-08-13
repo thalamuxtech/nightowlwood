@@ -363,6 +363,19 @@ service cloud.firestore {
       allow create, update: if isOps();
       allow delete: if isAdminOr('record.delete');
 
+      /*
+       * Reference images — photographs a client brought in, a sketch, a room to match.
+       *
+       * The same grant that edits the project, because attaching the picture the client showed you
+       * is part of recording what was asked for rather than a separate act. Deleting only unlinks
+       * the record; the file itself stays in Storage, since it may be the only copy.
+       */
+      match /attachments/{attachmentId} {
+        allow read: if isAdminOr('project.view');
+        allow create, update: if isOps() || isAdminOr('project.edit');
+        allow delete: if isAdminOr('project.edit') || isAdminOr('record.delete');
+      }
+
       match /components/{componentId} {
         allow read: if isAdminOr('project.view');
         allow write: if isOps();

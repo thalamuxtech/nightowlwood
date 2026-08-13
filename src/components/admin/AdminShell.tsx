@@ -8,6 +8,7 @@ import {
   BarChart3,
   Building2,
   CalendarCheck,
+  CalendarOff,
   CalendarClock,
   ChevronDown,
   ClipboardCheck,
@@ -193,6 +194,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/expenses/", label: "Expenses", icon: Receipt, capability: "expense.view" },
       { href: "/admin/meters/", label: "Power Meters", icon: Gauge, capability: "expense.view" },
+      // What a month costs before any work comes through, and the days the workshop is shut.
+      { href: "/admin/fixed-costs/", label: "Fixed Costs", icon: CalendarOff, capability: "expense.view" },
       { href: "/admin/payroll/", label: "Payroll", icon: Wallet, capability: "wage.run" },
       // Sits next to Payroll because the two are the same monthly/weekly decision
       // split by how a person is paid, not two unrelated screens.

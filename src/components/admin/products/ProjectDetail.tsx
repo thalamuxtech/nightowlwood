@@ -60,6 +60,7 @@ import { AddonsPanel } from "@/components/admin/products/AddonsPanel";
 import { ProjectCuttingPanel } from "@/components/admin/products/ProjectCuttingPanel";
 import type { BoardBreakdown } from "@/lib/erp/types";
 import { ProjectPurchasesPanel } from "@/components/admin/products/ProjectPurchasesPanel";
+import { FileAttachments } from "@/components/admin/ui/FileAttachments";
 import { EstimatePdfModal } from "@/components/admin/products/EstimatePdfModal";
 import { SendForReviewModal } from "@/components/admin/products/SendForReviewModal";
 import {
@@ -677,6 +678,22 @@ export function ProjectDetail() {
         actor={actor}
         onError={setError}
       />
+
+      {/* Reference images.
+          The brief lists them as missing: photographs a client brought in, a sketch, the kitchen
+          they want it to look like. Shown as a gallery because with a reference image the picture
+          *is* the information. */}
+      <div className="mt-6">
+        <FileAttachments
+          path={`${COL.projects}/${projectId}/attachments`}
+          storageFolder="projects"
+          actor={actor}
+          canEdit={canEdit}
+          title="Reference images"
+          hint="What the client showed you — photographs, sketches, a room they want it to match."
+          gallery
+        />
+      </div>
 
       {/* Status */}
       {canEdit && (

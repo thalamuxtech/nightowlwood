@@ -7,13 +7,14 @@ import {
   BadgeCheck,
   FileText,
   Loader2,
+  Paperclip,
   PenLine,
   Send,
   ShieldAlert,
   Trash2,
 } from "lucide-react";
 import { getDb, getFirebaseApp } from "@/lib/firebase";
-import { COL } from "@/lib/erp/collections";
+import { COL , invoiceAttachmentsPath } from "@/lib/erp/collections";
 import {
   INVOICE_STATUSES,
   INVOICE_STATUS_LABELS,
@@ -30,6 +31,7 @@ import {
   voidInvoice,
 } from "@/lib/erp/invoices";
 import { InvoiceEditor } from "@/components/admin/money/InvoiceEditor";
+import { FileAttachments } from "@/components/admin/ui/FileAttachments";
 import { INVOICE_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import {
@@ -93,6 +95,13 @@ export function InvoicesScreen() {
   /** The invoice whose server-rendered PDF is open for review, download or email. */
   const [pdfFor, setPdfFor] = useState<InvoiceRow | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
+  /**
+   * Which invoice has its attachments panel open.
+   *
+   * Opened on demand rather than always: the panel reads a subcollection, and a list of thirty
+   * invoices would otherwise fire thirty reads on every render of the screen.
+   */
+  const [attachmentsFor, setAttachmentsFor] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState("");
   /** Open when raising a standalone invoice. */
   const [composing, setComposing] = useState(false);
@@ -485,6 +494,20 @@ export function InvoicesScreen() {
                         <FileText size={14} /> View &amp; download
                       </span>
                     </Button>
+                    {/* Supporting documents. Opened on demand, because the panel reads a
+                        subcollection and a list of thirty invoices would otherwise fire thirty
+                        reads for panels nobody looked at. */}
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        setAttachmentsFor(attachmentsFor === r.id ? null : r.id)
+                      }
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Paperclip size={14} />
+                        {attachmentsFor === r.id ? "Hide documents" : "Documents"}
+                      </span>
+                    </Button>
 
                     {r.status === "draft" && canEdit && (
                       <Button
@@ -663,6 +686,25 @@ export function InvoicesScreen() {
                         setTimeout(() => setNotice(""), 6000);
                       }}
                     />
+                  )}
+
+                  {/* Supporting documents, on the invoice they belong to.
+                      The brief's reason, verbatim: "for customers when creating an invoice we can be
+                      able to attach supporting documents (mostly cutting list document) with option
+                      of printing... this is to prevent loss of customer cutting list document."
+                      Only on the expanded row, so a list of thirty invoices does not fire thirty
+                      subcollection reads. */}
+                  {attachmentsFor === r.id && (
+                    <div className="mt-4">
+                      <FileAttachments
+                        path={invoiceAttachmentsPath(r.id)}
+                        storageFolder="invoices"
+                        actor={actor}
+                        canEdit={canCreate}
+                        title="Supporting documents"
+                        hint="The customer's cutting list, drawings, a signed sheet. Kept here so the paper copy cannot go missing."
+                      />
+                    </div>
                   )}
                 </div>
               );
