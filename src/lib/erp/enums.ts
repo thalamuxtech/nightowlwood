@@ -122,22 +122,41 @@ export const BOARD_TYPE_LABELS: Record<BoardType, string> = {
  *
  * These are the figures confirmed by the workshop, in naira per board.
  */
+/*
+ * Cutting & edging, per board, as quoted by the workshop.
+ *
+ * These are the client's stated figures and not guesses — three of them were previously wrong:
+ * HDF had no rate at all, MFC 9×4 had none, and Kwali was carrying 3,000 when the rate is 1,500.
+ * A missing rate silently prices that board's cutting at nothing; a wrong one overcharges every
+ * mixed job it appears on.
+ */
 export const DEFAULT_BOARD_CE_RATES: Partial<Record<BoardType, number>> = {
   high_glossy: 3000,
   mdf: 3000,
+  hdf: 3200,
   egger: 3200,
-  // MFC 9×7, which the workshop calls Bangaji.
+  // MFC 9×7 Starwood, which the workshop calls Bangaji.
   mfc_9x7: 6400,
-  kwali: 3000,
+  // MFC 9×4 Gizir.
+  mfc_9x4: 4000,
+  kwali: 1500,
   marine: 3200,
 };
 
-/** Board types the C&E rate card prices, in the order they are quoted. */
+/**
+ * Board types the C&E rate card prices, in the order they are quoted.
+ *
+ * Must stay in step with `DEFAULT_BOARD_CE_RATES` above: this list is what the rate-card editor
+ * renders and what the customer's cutting-list form offers, so a board priced but absent here is a
+ * board nobody can select — which is how HDF and MFC 9×4 came to be missing from both.
+ */
 export const CE_RATED_BOARD_TYPES = [
   "high_glossy",
   "mdf",
+  "hdf",
   "egger",
   "mfc_9x7",
+  "mfc_9x4",
   "kwali",
   "marine",
 ] as const;

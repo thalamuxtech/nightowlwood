@@ -313,3 +313,12 @@ export {
 
 // One digest a morning, and nothing at all when there is nothing to report.
 export { dailyOperationsDigest } from "./stockAlerts";
+
+// ---------------------------------------------------------------------------
+// Approval notifications
+// ---------------------------------------------------------------------------
+
+// "An email notification is sent to the administrator for every approved change" — stated twice in
+// the brief. A Firestore trigger rather than a client call, so the notification follows from the
+// record existing rather than from a browser completing a second step. See approvalAlerts.ts.
+export { notifyApprovalDecision } from "./approvalAlerts";
