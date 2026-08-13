@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BarChart3,
+  Building2,
   CalendarCheck,
   CalendarClock,
   ChevronDown,
@@ -164,6 +165,9 @@ export const NAV_GROUPS: NavGroup[] = [
       // Sits with stock because that is where a blade is drawn from, but it answers a different
       // question: not how many are left, but how many boards the last one cut.
       { href: "/admin/consumables/", label: "Blades & Gum", icon: Disc3, capability: "inventory.view" },
+      // The register of what the workshop owns rather than consumes: one of each, never issued,
+      // and its value falls on a schedule rather than off a shelf.
+      { href: "/admin/assets/", label: "Fixed Assets", icon: Building2, capability: "inventory.view" },
       { href: "/admin/procurement/", label: "Suppliers", icon: Truck, capability: "supplier.view" },
     ],
   },

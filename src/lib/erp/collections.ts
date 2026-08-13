@@ -86,6 +86,15 @@ export const COL = {
   fixedCosts: "fixedCosts",
 
   /**
+   * The fixed assets register.
+   *
+   * Machines, vehicles, generators, computers. Its own collection rather than a category of stock
+   * because the questions differ: stock asks how many are left and changes daily, an asset asks what
+   * it is worth now and falls in value on a schedule. See `assets.ts`.
+   */
+  fixedAssets: "fixedAssets",
+
+  /**
    * The daily attendance register.
    *
    * One document per person per day, with a derived id so a second tick corrects the first

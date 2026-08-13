@@ -815,6 +815,23 @@ service cloud.firestore {
     }
 
     /*
+     * The fixed assets register.
+     *
+     * Read with `inventory.view`, since it sits in the same group and answers a stock-taking
+     * question — what do we own and where is it.
+     *
+     * Deleting is refused to everyone, including `record.delete`. An asset that was owned and has
+     * gone is history the register has to keep: the accounts show depreciation charged against it in
+     * previous years, and removing the asset makes those charges unexplainable. `disposeAsset` is the
+     * way out, and it records when and why.
+     */
+    match /fixedAssets/{id} {
+      allow read: if isAdminOr('inventory.view');
+      allow create, update: if isAdminOr('inventory.edit');
+      allow delete: if false;
+    }
+
+    /*
      * The attendance register.
      *
      * Readable by anyone who can see staff, because an empty work log needs to be explainable —
