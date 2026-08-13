@@ -11,8 +11,12 @@ import { COL } from "./collections";
 import {
   COST_GROUPS,
   EXPENSE_COST_GROUP,
+  EXPENSE_PROFIT_STREAM,
+  PROFIT_STREAMS,
   type CostGroup,
   type ExpenseCategory,
+  type ProfitStream,
+  type TradingStream,
 } from "./enums";
 import { sumKobo } from "./money";
 
@@ -44,6 +48,25 @@ import { sumKobo } from "./money";
  * documented above.
  */
 
+/**
+ * Which trade an expense is charged to.
+ *
+ * The expense's own `stream` wins when it has a valid one, so a transport cost somebody knew was a
+ * project delivery lands on projects rather than in overheads. Otherwise the category default
+ * applies. Kept as a function rather than inlined because both the report and any future
+ * per-stream screen must agree on the answer — two places deciding this differently is exactly how
+ * a cost gets counted twice.
+ */
+export function streamOfExpense(
+  stored: unknown,
+  category: ExpenseCategory
+): ProfitStream {
+  if (typeof stored === "string" && (PROFIT_STREAMS as readonly string[]).includes(stored)) {
+    return stored as ProfitStream;
+  }
+  return EXPENSE_PROFIT_STREAM[category] ?? "overhead";
+}
+
 export interface RevenueBreakdown {
   /** Service jobs, by their recorded total. */
   serviceKobo: number;
@@ -69,11 +92,59 @@ export interface CostBreakdown {
   totalKobo: number;
 }
 
+/**
+ * One trade's profitability, on its own cost base.
+ *
+ * The brief calls for "three completely separate profitability calculations", and the reason is
+ * double counting: charging a manufacturing project for the gum used on somebody else's cutting
+ * job makes both figures wrong at once. So each stream carries only what it consumed.
+ */
+export interface StreamProfit {
+  stream: TradingStream;
+  revenueKobo: number;
+  /** Direct costs charged to this trade, by expense category. */
+  byCategory: Partial<Record<ExpenseCategory, number>>;
+  /** Metered power, which sits outside the expense ledger. Service only. */
+  meteredPowerKobo: number;
+  /** What the goods sold cost to buy. Retail only. */
+  costOfGoodsKobo: number;
+  directCostKobo: number;
+  /** Revenue less direct costs. Before company overheads, which no trade carries alone. */
+  grossKobo: number;
+  /** Gross as a percentage of revenue; null when the stream earned nothing. */
+  marginPercent: number | null;
+}
+
+export interface StreamedProfit {
+  service: StreamProfit;
+  project: StreamProfit;
+  retail: StreamProfit;
+  /**
+   * Rent, salaries, admin and tax — owed by the company rather than by a trade.
+   *
+   * Reported as its own block and never apportioned. Splitting it across the three would need a
+   * basis nobody has agreed, and an invented apportionment makes all three figures arguable
+   * instead of one figure honest.
+   */
+  overheadKobo: number;
+  overheadByCategory: Partial<Record<ExpenseCategory, number>>;
+  /** The three gross figures added, less overheads. Reconciles with `netKobo`. */
+  combinedNetKobo: number;
+}
+
 export interface ProfitReport {
   fromMs: number;
   toMs: number;
   revenue: RevenueBreakdown;
   costs: CostBreakdown;
+  /**
+   * The same period, split three ways.
+   *
+   * Carried alongside the consolidated figures rather than replacing them: the combined P&L
+   * answers "did the business make money", which is a real question, and the three streams
+   * answer "which trade made it", which is the one the brief is about.
+   */
+  streams: StreamedProfit;
   /** Revenue less costs. */
   netKobo: number;
   /** Net as a percentage of revenue; null when there was no revenue. */
@@ -241,6 +312,80 @@ export async function buildProfitReport(
   const totalRevenueKobo = serviceKobo + productKobo + salesKobo - salesCostKobo;
   const netKobo = totalRevenueKobo - costTotalKobo;
 
+  // --- The same period, split three ways ----------------------------------
+
+  /*
+   * Expenses sorted by which trade consumed them.
+   *
+   * An expense's own `stream` field wins where it has one, so a transport cost somebody knew was
+   * for a project delivery lands on projects. Everything else falls back to the category default
+   * in `EXPENSE_PROFIT_STREAM` — which is where the brief's exclusions are encoded: wages, power,
+   * fuel, consumables and maintenance are service, boards and materials are project, and nothing
+   * charges a project for a service machine.
+   */
+  const streamCategories: Record<ProfitStream, Partial<Record<ExpenseCategory, number>>> = {
+    service: {},
+    project: {},
+    retail: {},
+    overhead: {},
+  };
+  for (const d of expenseSnap.docs) {
+    const x = d.data();
+    const category = (x.category as ExpenseCategory) ?? "other";
+    const stream = streamOfExpense(x.stream, category);
+    const bucket = streamCategories[stream];
+    bucket[category] = (bucket[category] ?? 0) + (x.amountKobo ?? 0);
+  }
+
+  const sumOf = (bucket: Partial<Record<ExpenseCategory, number>>) =>
+    sumKobo(Object.values(bucket).map((v) => v ?? 0));
+
+  const buildStream = (
+    stream: TradingStream,
+    revenueKobo: number,
+    extras: { meteredPowerKobo?: number; costOfGoodsKobo?: number } = {}
+  ): StreamProfit => {
+    const byCat = streamCategories[stream];
+    const metered = extras.meteredPowerKobo ?? 0;
+    const cogs = extras.costOfGoodsKobo ?? 0;
+    const directCostKobo = sumOf(byCat) + metered + cogs;
+    const grossKobo = revenueKobo - directCostKobo;
+    return {
+      stream,
+      revenueKobo,
+      byCategory: byCat,
+      meteredPowerKobo: metered,
+      costOfGoodsKobo: cogs,
+      directCostKobo,
+      grossKobo,
+      marginPercent:
+        revenueKobo > 0 ? Math.round((grossKobo / revenueKobo) * 1000) / 10 : null,
+    };
+  };
+
+  /*
+   * Service carries metered power; retail carries its cost of goods; projects carry neither.
+   *
+   * Metered power is the workshop's machines, so it belongs to cutting and edging — and the brief
+   * excludes it from projects by name. Retail's only direct cost is the stock it sold, which comes
+   * from each sale's own `costOfGoodsKobo` rather than from the expense ledger, because the
+   * purchase of that stock was already booked as an expense when it was bought. Adding both would
+   * charge the business twice for the same boards.
+   */
+  const streams: StreamedProfit = {
+    service: buildStream("service", serviceKobo, { meteredPowerKobo }),
+    project: buildStream("project", productKobo),
+    retail: buildStream("retail", salesKobo, { costOfGoodsKobo: salesCostKobo }),
+    overheadKobo: sumOf(streamCategories.overhead) + commissionKobo,
+    overheadByCategory: streamCategories.overhead,
+    combinedNetKobo: 0,
+  };
+  streams.combinedNetKobo =
+    streams.service.grossKobo +
+    streams.project.grossKobo +
+    streams.retail.grossKobo -
+    streams.overheadKobo;
+
   return {
     fromMs: from.getTime(),
     toMs: to.getTime(),
@@ -259,6 +404,7 @@ export async function buildProfitReport(
       commissionKobo,
       totalKobo: costTotalKobo,
     },
+    streams,
     netKobo,
     marginPercent:
       totalRevenueKobo > 0

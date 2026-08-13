@@ -16,7 +16,11 @@ import { COL } from "@/lib/erp/collections";
 import {
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABELS,
+  EXPENSE_PROFIT_STREAM,
+  PROFIT_STREAMS,
+  PROFIT_STREAM_LABELS,
   type ExpenseCategory,
+  type ProfitStream,
 } from "@/lib/erp/enums";
 import { formatNaira, formatNairaCompact, parseNairaInput, toNaira } from "@/lib/erp/money";
 import { deleteExpense, recordExpense, updateExpense } from "@/lib/erp/ledgers";
@@ -44,6 +48,8 @@ interface ExpenseRow {
   purpose: string;
   category: ExpenseCategory;
   amountKobo: number;
+  /** A trade override, when the category default was not right for this one. */
+  stream?: ProfitStream;
 }
 
 type RangeKey = "30d" | "90d" | "all";
@@ -92,6 +98,7 @@ export function ExpensesScreen() {
               purpose: x.purpose ?? "",
               category: (x.category as ExpenseCategory) ?? "other",
               amountKobo: x.amountKobo ?? 0,
+              stream: (x.stream as ProfitStream) ?? undefined,
             };
           })
         );
@@ -474,6 +481,15 @@ function ExpenseForm({
   const [category, setCategory] = useState<ExpenseCategory>(
     editing?.category ?? "consumables"
   );
+  /**
+   * A trade override, empty when the category default is right.
+   *
+   * Empty string rather than undefined so the select has a value to render; converted back to
+   * undefined on save, which is what leaves the expense following its category.
+   */
+  const [stream, setStream] = useState<ProfitStream | "">(
+    (editing?.stream as ProfitStream) ?? ""
+  );
   const [amount, setAmount] = useState(
     editing ? String(toNaira(editing.amountKobo)) : ""
   );
@@ -503,6 +519,7 @@ function ExpenseForm({
         purpose,
         category,
         amountKobo: kobo,
+        stream: stream || undefined,
       };
       if (editing) {
         await updateExpense(getDb(), actor, editing.id, input);
@@ -577,6 +594,23 @@ function ExpenseForm({
           label="Amount (₦)"
           value={amount}
           onChange={setAmount}
+        />
+        {/* Which trade carries this cost.
+            Defaults to whatever the category implies — wages to cutting and edging, boards to
+            projects, rent to overheads — which is right for almost everything. The override is for
+            the genuinely ambiguous ones: a transport cost that was a project delivery rather than a
+            general run. Getting those wrong is what makes a stream figure arguable. */}
+        <SelectField
+          id={`exp-stream-${key}`}
+          label="Charge to"
+          value={stream}
+          onChange={(v) => setStream(v as ProfitStream | "")}
+          options={PROFIT_STREAMS.map((s) => ({
+            value: s,
+            label: PROFIT_STREAM_LABELS[s],
+          }))}
+          placeholder={`By category (${PROFIT_STREAM_LABELS[EXPENSE_PROFIT_STREAM[category]]})`}
+          hint="only if the category is wrong for this one"
         />
       </div>
       <div className="mt-5 flex gap-3">

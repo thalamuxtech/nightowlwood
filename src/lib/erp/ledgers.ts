@@ -15,7 +15,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { COL } from "./collections";
-import type { ExpenseCategory } from "./enums";
+import type { ExpenseCategory, ProfitStream } from "./enums";
 import { toKobo } from "./money";
 import {
   DEFAULT_METER_CONVERSION_FACTOR,
@@ -47,6 +47,15 @@ export interface NewExpense {
   category: ExpenseCategory;
   amountKobo: number;
   receiptUrl?: string;
+  /**
+   * Which trade this cost belongs to, when it is not the one the category implies.
+   *
+   * Left unset for almost everything: the category default in `EXPENSE_PROFIT_STREAM` is right for
+   * wages, boards, rent and the rest. It exists for the genuinely ambiguous ones — a transport cost
+   * that was a project delivery rather than a general run — because guessing those wrongly is what
+   * makes a stream figure arguable.
+   */
+  stream?: ProfitStream;
 }
 
 export async function recordExpense(
@@ -65,6 +74,8 @@ export async function recordExpense(
     category: input.category,
     amountKobo: input.amountKobo,
     receiptUrl: input.receiptUrl ?? null,
+    // Null rather than absent, so the field exists and can be filtered on later.
+    stream: input.stream ?? null,
     createdAt: serverTimestamp(),
     createdBy: actor.uid,
   });
@@ -113,6 +124,7 @@ export async function updateExpense(
     category: input.category,
     amountKobo: input.amountKobo,
     receiptUrl: input.receiptUrl ?? null,
+    stream: input.stream ?? null,
     updatedAt: serverTimestamp(),
     updatedBy: actor.uid,
   });

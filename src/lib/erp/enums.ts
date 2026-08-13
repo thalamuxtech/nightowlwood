@@ -456,6 +456,88 @@ export const EXPENSE_COST_BEHAVIOUR: Record<ExpenseCategory, CostBehaviour> = {
 };
 
 // ---------------------------------------------------------------------------
+// Profit streams
+// ---------------------------------------------------------------------------
+
+/**
+ * The three trades the workshop runs, each with its own profitability.
+ *
+ * The brief is emphatic that these are "three completely separate profitability
+ * calculations", and the reason is double counting. Cutting and edging consumes operator
+ * wages, power, gum and blades; a manufacturing project consumes boards, hardware and
+ * outsourced work. Charging a project for the gum used on somebody else's cutting job
+ * makes both figures wrong — the project looks unprofitable and the service looks better
+ * than it is.
+ *
+ * So the question every cost has to answer is not "what kind of cost is this" — that is
+ * `CostGroup` — but "which trade consumed it". They are orthogonal: operator wages are
+ * `labour` by kind and `service` by stream.
+ *
+ * `overhead` is the fourth value and it is not a trade. Rent, salaries, admin and tax are
+ * owed whether or not a single board is cut, and attributing them to a stream would mean
+ * inventing an apportionment nobody agreed. They are reported as their own block and
+ * subtracted once at the bottom, which is the only way the three trade figures stay
+ * comparable with each other.
+ */
+export const PROFIT_STREAMS = ["service", "project", "retail", "overhead"] as const;
+export type ProfitStream = (typeof PROFIT_STREAMS)[number];
+
+export const PROFIT_STREAM_LABELS: Record<ProfitStream, string> = {
+  service: "Cutting & edging",
+  project: "Projects",
+  retail: "Counter sales",
+  overhead: "Company overheads",
+};
+
+/** The three that are actual trades, in reporting order. Excludes `overhead`. */
+export const TRADING_STREAMS = ["service", "project", "retail"] as const;
+export type TradingStream = (typeof TRADING_STREAMS)[number];
+
+/**
+ * Which trade each expense category is charged to by default.
+ *
+ * A *default*, not a rule: an expense carries its own `stream` when whoever entered it knew
+ * better, and this is the fallback for the ones that do not. See `streamOfExpense` in
+ * profit.ts.
+ *
+ * The assignments that matter, and why:
+ *
+ * - **`wages` → service.** Piece-rate wages are paid for cutting and edging. Project labour
+ *   is not on piece rates here, and the brief explicitly excludes service wages from project
+ *   profitability.
+ * - **`power`, `fuel`, `consumables`, `maintenance` → service.** These are the machines: the
+ *   saw, the edge bander, the generator, the gum and the blades. The brief names every one of
+ *   them as a service cost and excludes them from projects by name.
+ * - **`purchases`, `materials` → project.** Boards, hardware, appliances and outsourced work
+ *   bought against a job.
+ * - **`salary`, `rent`, `admin`, `tax` → overhead.** Owed by the company, not by a trade.
+ * - **`food`, `transport`, `tools` → overhead.** Genuinely shared. Transport is the one worth
+ *   arguing about — a delivery is arguably a project cost — so it is left as an overhead until
+ *   somebody tags it, rather than quietly loaded onto projects.
+ *
+ * Retail has no default category: a counter sale's only cost is the stock it sold, which comes
+ * from the sale's own cost of goods rather than from the expense ledger. An expense typed
+ * against retail by hand still lands there.
+ */
+export const EXPENSE_PROFIT_STREAM: Record<ExpenseCategory, ProfitStream> = {
+  wages: "service",
+  power: "service",
+  fuel: "service",
+  consumables: "service",
+  maintenance: "service",
+  purchases: "project",
+  materials: "project",
+  salary: "overhead",
+  rent: "overhead",
+  admin: "overhead",
+  tax: "overhead",
+  food: "overhead",
+  transport: "overhead",
+  tools: "overhead",
+  other: "overhead",
+};
+
+// ---------------------------------------------------------------------------
 // Counter sales (POS)
 // ---------------------------------------------------------------------------
 

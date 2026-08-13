@@ -16,6 +16,8 @@ import { getDb } from "@/lib/firebase";
 import {
   COST_GROUP_LABELS,
   EXPENSE_CATEGORY_LABELS,
+  PROFIT_STREAM_LABELS,
+  TRADING_STREAMS,
   type CostGroup,
   type ExpenseCategory,
 } from "@/lib/erp/enums";
@@ -245,6 +247,133 @@ export function ProfitScreen() {
               Nothing was recorded in this period. Try a wider range.
             </p>
           )}
+
+          {/* The three trades, each on its own cost base.
+              Placed above the consolidated detail because it is the more useful question: a single
+              net figure says whether the business made money, and this says which part of it did. */}
+          <section className="mt-8">
+            <h2 className="font-display text-lg text-cream-100">The three trades</h2>
+            <p className="mt-1.5 max-w-2xl text-sm text-cream-400">
+              Each carries only what it consumed. Cutting and edging takes the operator wages,
+              power, gum and blades; projects take the boards and hardware; the counter takes the
+              cost of what it sold. Nothing is charged to two of them.
+            </p>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+              {TRADING_STREAMS.map((key) => {
+                const s = report.streams[key];
+                return (
+                  <article
+                    key={key}
+                    className={`rounded-3xl border p-5 ${
+                      s.grossKobo < 0
+                        ? "border-red-500/40 bg-red-500/5"
+                        : "border-night-700/60 bg-night-900/40"
+                    }`}
+                  >
+                    <p className="text-xs uppercase tracking-wider text-cream-500">
+                      {PROFIT_STREAM_LABELS[key]}
+                    </p>
+                    <p
+                      className={`mt-2 font-display text-2xl ${
+                        s.grossKobo < 0 ? "text-red-300" : "text-emerald-300"
+                      }`}
+                    >
+                      {s.grossKobo < 0 ? "−" : ""}
+                      {formatNaira(Math.abs(s.grossKobo))}
+                    </p>
+                    <p className="mt-1 text-xs text-cream-500">
+                      {s.marginPercent === null
+                        ? "no revenue in this period"
+                        : `${s.marginPercent}% of ${formatNaira(s.revenueKobo)}`}
+                    </p>
+
+                    <dl className="mt-4 space-y-1.5 border-t border-night-700/60 pt-3 text-xs">
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-cream-500">Revenue</dt>
+                        <dd className="text-cream-200">{formatNaira(s.revenueKobo)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-cream-500">Direct costs</dt>
+                        <dd className="text-cream-200">−{formatNaira(s.directCostKobo)}</dd>
+                      </div>
+                      {/* The two costs that live outside the expense ledger, named where they land
+                          so the figure can be checked against its parts. */}
+                      {s.meteredPowerKobo > 0 && (
+                        <div className="flex justify-between gap-3 pl-3">
+                          <dt className="text-cream-600">of which metered power</dt>
+                          <dd className="text-cream-400">
+                            {formatNaira(s.meteredPowerKobo)}
+                          </dd>
+                        </div>
+                      )}
+                      {s.costOfGoodsKobo > 0 && (
+                        <div className="flex justify-between gap-3 pl-3">
+                          <dt className="text-cream-600">of which cost of goods</dt>
+                          <dd className="text-cream-400">
+                            {formatNaira(s.costOfGoodsKobo)}
+                          </dd>
+                        </div>
+                      )}
+                      {(
+                        Object.entries(s.byCategory) as Array<[ExpenseCategory, number]>
+                      )
+                        .filter(([, v]) => v > 0)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([cat, v]) => (
+                          <div key={cat} className="flex justify-between gap-3 pl-3">
+                            <dt className="text-cream-600">
+                              of which {EXPENSE_CATEGORY_LABELS[cat].toLowerCase()}
+                            </dt>
+                            <dd className="text-cream-400">{formatNaira(v)}</dd>
+                          </div>
+                        ))}
+                    </dl>
+                  </article>
+                );
+              })}
+            </div>
+
+            {/* Overheads, and the reconciliation to the figure at the top of the page. */}
+            <div className="mt-4 rounded-3xl border border-night-700/60 bg-night-900/30 p-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <div>
+                  <p className="text-cream-200">{PROFIT_STREAM_LABELS.overhead}</p>
+                  <p className="mt-1 max-w-xl text-xs leading-relaxed text-cream-500">
+                    Rent, salaries, administration, tax and commission — owed whether or not a
+                    board is cut. Never split across the three above: an apportionment nobody
+                    agreed would make all three figures arguable instead of one honest.
+                  </p>
+                </div>
+                <p className="font-display text-xl text-amber-300">
+                  −{formatNaira(report.streams.overheadKobo)}
+                </p>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-baseline justify-between gap-3 border-t border-night-700/60 pt-3">
+                <p className="text-sm text-cream-300">
+                  Three trades less overheads
+                </p>
+                <p
+                  className={`font-display text-xl ${
+                    report.streams.combinedNetKobo >= 0 ? "text-emerald-300" : "text-red-300"
+                  }`}
+                >
+                  {report.streams.combinedNetKobo < 0 ? "−" : ""}
+                  {formatNaira(Math.abs(report.streams.combinedNetKobo))}
+                </p>
+              </div>
+              {/* A visible tripwire. The split is a re-arrangement of the same money, so if it ever
+                  stops matching the consolidated net, one of them is wrong and the reader should
+                  not have to notice by comparing two numbers on different parts of the page. */}
+              {report.streams.combinedNetKobo !== report.netKobo && (
+                <p className="mt-3 rounded-xl border border-red-500/40 bg-red-500/5 px-4 py-3 text-xs text-red-300">
+                  This does not match the {report.netKobo >= 0 ? "profit" : "loss"} figure above,
+                  which means a cost is being counted twice or missed. Please report this.
+                </p>
+              )}
+            </div>
+          </section>
 
           {/* Revenue detail */}
           <section className="mt-8 rounded-3xl border border-night-700/60 bg-night-900/40 p-6">
