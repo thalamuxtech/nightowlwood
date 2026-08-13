@@ -300,6 +300,8 @@ function ItemPanel({
   const [reason, setReason] = useState("");
   /** Who the stock is going to. Required when issuing. */
   const [issuedTo, setIssuedTo] = useState("");
+  /** What a delivery cost per unit, which re-blends the weighted average. */
+  const [unitCost, setUnitCost] = useState("");
   /** Staff names, offered as suggestions so the common case is one keystroke. */
   const [staff, setStaff] = useState<Array<{ id: string; name: string }>>([]);
 
@@ -367,6 +369,17 @@ function ItemPanel({
         type: mode,
         quantity: n,
         reason: reason.trim() || defaultReason(mode),
+        /*
+         * What was paid on this delivery, which re-blends the weighted average.
+         *
+         * Without it the average never moves for stock received here rather than through a purchase
+         * order — so every later sale of that item is costed at a price the workshop stopped paying.
+         * Optional: left empty the average is kept as it stands, which is the honest outcome when
+         * nobody knows what the delivery cost.
+         */
+        ...(mode === "in" && unitCost.trim()
+          ? { unitCostKobo: parseNairaInput(unitCost) }
+          : {}),
         ...(mode === "out"
           ? {
               issuedToName: issuedTo.trim(),
@@ -383,6 +396,7 @@ function ItemPanel({
       setQty("");
       setReason("");
       setIssuedTo("");
+      setUnitCost("");
     } catch (e) {
       onError(e instanceof Error ? e.message : "Could not record the movement.");
     } finally {
@@ -560,6 +574,24 @@ function ItemPanel({
                       onChange={setReason}
                       placeholder={defaultReason(mode)}
                     />
+                    {/* What the delivery cost, per unit.
+                        This is what re-blends the weighted average the stock is valued at and that
+                        a counter sale is costed from. Only on an `in`: issuing stock is costed *at*
+                        the average, and a stock-take says nothing about price. Optional, because
+                        somebody recording a delivery may genuinely not have the invoice yet — left
+                        empty the average stands unchanged, which is better than blending against a
+                        guess. */}
+                    {mode === "in" && (
+                      <div className="sm:col-span-2">
+                        <NumberField
+                          id={`cost-${item.id}`}
+                          label="Cost per unit on this delivery (₦)"
+                          value={unitCost}
+                          onChange={setUnitCost}
+                          hint={`currently averaging ${formatNaira(item.unitCostKobo)}`}
+                        />
+                      </div>
+                    )}
                     {/* Who is taking it. Only for stock going out: an `in` movement has a
                         supplier, and an `adjust` is a stock-take where nobody took
                         anything. A datalist rather than a locked dropdown, because the

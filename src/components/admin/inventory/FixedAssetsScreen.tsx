@@ -38,6 +38,7 @@ import {
   TextAreaField,
   TextField,
   todayIso,
+  validDateKey,
 } from "@/components/admin/ui/Fields";
 import { StatusPill, type PillTone } from "@/components/admin/ui/StatusPill";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
@@ -113,10 +114,16 @@ export function FixedAssetsScreen() {
     const note = window.prompt("What happened to it? Sold, scrapped, stolen.");
     if (note === null) return;
 
+    const dateKey = validDateKey(when.trim() || todayIso());
+    if (!dateKey) {
+      setError("That is not a date. Use yyyy-mm-dd, for example 2026-08-13.");
+      return;
+    }
+
     setError("");
     setBusy(true);
     try {
-      await disposeAsset(getDb(), actor, asset.id, when.trim() || todayIso(), note);
+      await disposeAsset(getDb(), actor, asset.id, dateKey, note);
       setNotice(`${asset.assetTag} recorded as disposed of. It stays on the register as history.`);
       setTimeout(() => setNotice(""), 8000);
       setVersion((v) => v + 1);

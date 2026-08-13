@@ -132,11 +132,26 @@ export interface AssetDepreciation {
   remainingYears: number;
 }
 
-/** `yyyy-mm-dd` → local-noon Date, immune to daylight-saving edges. */
+/**
+ * `yyyy-mm-dd` → local-noon Date, immune to daylight-saving edges.
+ *
+ * The calendar ranges are checked, not just the shape. `new Date(2026, 12, 45)` does not fail — it
+ * rolls over to February 2027, and a rolled-over acquisition date lands in the future, where the
+ * age computes as zero and the asset silently reports as never depreciated. A register that
+ * understates depreciation without saying so is worse than one that refuses the date.
+ */
 function dateFromKey(dateKey: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey.trim());
   if (!m) return null;
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12);
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12) return null;
+  // Days in that month, leap years included.
+  if (day < 1 || day > new Date(year, month, 0).getDate()) return null;
+
+  return new Date(year, month - 1, day, 12);
 }
 
 /**
@@ -156,7 +171,15 @@ export function depreciationOf(
   const life = Math.max(0, asset.usefulLifeYears);
   const depreciable = Math.max(0, asset.costKobo - (asset.residualKobo ?? 0));
 
-  if (!start || life <= 0 || depreciable <= 0) {
+  /*
+   * Tested with `!(x > 0)` rather than `x <= 0`, so a NaN falls into the early return.
+   *
+   * Every comparison against NaN is false, so `life <= 0` would be false for a NaN life and the
+   * arithmetic below would run, producing NaN for the charge, the accumulated figure and the book
+   * value — which then poisons `registerTotals` and turns every figure on the screen into "NaN".
+   * `createAsset` rejects these at entry, but a seeded or hand-edited document reaches here.
+   */
+  if (!start || !(life > 0) || !(depreciable > 0) || !Number.isFinite(asset.costKobo)) {
     // Nothing to write off: no date, no life, or it cost no more than its residual.
     return {
       ageYears: 0,

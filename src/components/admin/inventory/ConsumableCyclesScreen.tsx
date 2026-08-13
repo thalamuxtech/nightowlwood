@@ -33,6 +33,7 @@ import {
   NumberField,
   TextField,
   todayIso,
+  validDateKey,
 } from "@/components/admin/ui/Fields";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
@@ -149,10 +150,16 @@ export function ConsumableCyclesScreen() {
     if (when === null) return;
     const reason = window.prompt("Why was it taken off without a replacement? (optional)") ?? "";
 
+    const dateKey = validDateKey(when.trim() || todayIso());
+    if (!dateKey) {
+      setError("That is not a date. Use yyyy-mm-dd, for example 2026-08-13.");
+      return;
+    }
+
     setError("");
     setBusy(true);
     try {
-      await closeOpenCycle(getDb(), actor, tab, when.trim() || todayIso(), reason);
+      await closeOpenCycle(getDb(), actor, tab, dateKey, reason);
       setNotice("Cycle closed.");
       setTimeout(() => setNotice(""), 6000);
       setVersion((v) => v + 1);

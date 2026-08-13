@@ -423,16 +423,27 @@ export async function recordMovement(
      * division by zero on a receipt into a negative balance, which `out` already prevents but an
      * `adjust` to zero could otherwise reach.
      */
+    /*
+     * The quantity the blend divides by.
+     *
+     * `Math.max(0, current)` because a negative balance is not stock that has a cost — it is a
+     * record that has already gone wrong, and treating −5 as a real holding would weight the old
+     * average against a negative quantity. Held in one place so the guard below and the divisor
+     * cannot disagree: an earlier version tested `next > 0` while dividing by
+     * `max(0, current) + quantity`, so receiving 10 into a balance of −5 valued 5 sheets at the full
+     * price of 10 and silently lost half the money.
+     */
+    const blendBase = Math.max(0, current) + input.quantity;
+
     const blendCost =
       input.type === "in" &&
       input.unitCostKobo !== undefined &&
       input.unitCostKobo > 0 &&
-      next > 0;
+      blendBase > 0;
 
     const nextCostKobo = blendCost
       ? Math.round(
-          (Math.max(0, current) * currentCostKobo + input.quantity * input.unitCostKobo!) /
-            (Math.max(0, current) + input.quantity)
+          (Math.max(0, current) * currentCostKobo + input.quantity * input.unitCostKobo!) / blendBase
         )
       : null;
 
@@ -444,13 +455,17 @@ export async function recordMovement(
       projectId: input.projectId ?? null,
       unitCostKobo: input.unitCostKobo ?? null,
       /*
-       * The average after this movement, stamped on the movement itself.
+       * The average after this movement — or null when this movement did not change it.
        *
-       * Without it the blend is invisible: the item shows a cost that is the result of every
-       * receipt ever made, and there is no way to see which delivery moved it or to check the
-       * arithmetic. This is the audit trail for a figure that values stock.
+       * Without it the blend is invisible: the item shows a cost that is the result of every receipt
+       * ever made, and there is no way to see which delivery moved it or to check the arithmetic.
+       *
+       * Null rather than the old figure when no blend happened. Writing the previous average under a
+       * field named "average after this movement" asserts that a blend occurred and produced the
+       * same number, which is a different claim from "this movement did not touch the cost" — and
+       * anyone reconciling the ledger could not tell the two apart.
        */
-      averageCostAfterKobo: nextCostKobo ?? currentCostKobo,
+      averageCostAfterKobo: nextCostKobo,
       issuedToStaffId: input.issuedToStaffId ?? null,
       issuedToName: input.issuedToName?.trim() || null,
       issuedByName: input.issuedByName?.trim() || actor.email,

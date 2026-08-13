@@ -322,3 +322,12 @@ export { dailyOperationsDigest } from "./stockAlerts";
 // the brief. A Firestore trigger rather than a client call, so the notification follows from the
 // record existing rather than from a browser completing a second step. See approvalAlerts.ts.
 export { notifyApprovalDecision } from "./approvalAlerts";
+
+// ---------------------------------------------------------------------------
+// Staff claim, for Storage rules
+// ---------------------------------------------------------------------------
+
+// Storage rules cannot read Firestore, so staff status is mirrored onto the auth token as a custom
+// claim. Without it the only available bar was "any signed-in user", which on a project with public
+// signup meant a stranger could overwrite the live website's images. See staffClaims.ts.
+export { syncStaffClaim } from "./staffClaims";

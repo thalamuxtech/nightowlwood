@@ -185,6 +185,18 @@ export function WorkLogScreen() {
   const [openWeek, setOpenWeek] = useState<string | null>(null);
   /** How many weeks are shown. Pagination by week rather than by row, since weeks are the unit. */
   const [weeksShown, setWeeksShown] = useState(6);
+
+  /*
+   * Searching reopens the newest matching week.
+   *
+   * `openWeek` holds a specific week key once somebody has clicked a header. Search for a term that
+   * has no entries in that week and every group renders collapsed — including the newest — leaving a
+   * list of headers with no rows and nothing explaining why. Resetting to null restores the
+   * "newest open" default against whatever now matches.
+   */
+  useEffect(() => {
+    setOpenWeek(null);
+  }, [search]);
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [rates, setRates] = useState<WageRate[]>([]);
   const [staffRates, setStaffRates] = useState<StaffRate[]>([]);

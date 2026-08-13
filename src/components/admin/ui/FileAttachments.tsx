@@ -148,11 +148,21 @@ export function FileAttachments({
     setError("");
     setUploading(true);
 
+    /*
+     * Problems are collected rather than reported one at a time.
+     *
+     * `setError` in a loop keeps only the last message, so selecting three oversized files told the
+     * user about one of them. And the refresh has to happen even when something failed part way —
+     * otherwise a file that *did* upload stays invisible, the user retries, and it uploads twice.
+     */
+    const problems: string[] = [];
+    let uploaded = 0;
+
     try {
       for (const file of Array.from(files)) {
         if (file.size > MAX_BYTES) {
-          setError(
-            `${file.name} is ${readableSize(file.size)}, over the ${readableSize(MAX_BYTES)} limit. Photograph it at a lower resolution.`
+          problems.push(
+            `${file.name} is ${readableSize(file.size)}, over the ${readableSize(MAX_BYTES)} limit`
           );
           continue;
         }
@@ -169,7 +179,7 @@ export function FileAttachments({
         await uploadBytes(storageRef, file);
         const url = await getDownloadURL(storageRef);
 
-        await addDoc(collection(getDb(), path), {
+        const created = await addDoc(collection(getDb(), path), {
           name: file.name,
           url,
           storagePath,
@@ -179,23 +189,44 @@ export function FileAttachments({
           uploadedAt: serverTimestamp(),
           uploadedBy: actor.uid,
         });
+        uploaded += 1;
 
         await writeAudit(getDb(), {
           actor,
           action: "create",
           collectionName: path,
-          docId: storagePath,
-          summary: `Attached ${file.name} (${readableSize(file.size)})`,
+          /*
+           * The Firestore document id, not the storage path.
+           *
+           * `remove` audits under the document id, so recording the path here meant the create and
+           * delete entries for the same attachment carried different identifiers and could not be
+           * joined — which defeats using the log to find files orphaned in Storage. The path is in
+           * the summary, where it is still searchable.
+           */
+          docId: created.id,
+          summary: `Attached ${file.name} (${readableSize(file.size)}) at ${storagePath}`,
         });
       }
-      setVersion((v) => v + 1);
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? `Upload failed: ${e.message}`
-          : "Upload failed. Check the connection and try again."
+      problems.push(
+        e instanceof Error ? e.message : "the connection dropped part way through"
       );
     } finally {
+      /*
+       * Refreshed and reported whatever happened.
+       *
+       * In `finally` so a failure half way through still shows the files that did upload. The
+       * previous version refreshed only on complete success, so a partial failure left the new
+       * attachment invisible and invited the user to upload it a second time.
+       */
+      if (uploaded > 0) setVersion((v) => v + 1);
+      if (problems.length > 0) {
+        setError(
+          uploaded > 0
+            ? `${uploaded} attached. ${problems.length} could not be: ${problems.join("; ")}.`
+            : `Nothing was attached: ${problems.join("; ")}.`
+        );
+      }
       setUploading(false);
       // Cleared so the same file can be chosen again after a failure.
       if (fileInput.current) fileInput.current.value = "";

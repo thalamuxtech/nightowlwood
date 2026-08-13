@@ -182,22 +182,27 @@ export async function transferToCounter(
 
   const companyRef = doc(db, COL.inventoryCompany, input.companyItemId);
 
-  /*
-   * The matching counter item is found before the transaction opens.
-   *
-   * A transaction cannot run a query, so the lookup by name happens first and its id is then read
-   * inside. The race — two transfers creating the same counter item at once — is handled by the
-   * transaction reading that id again: the second sees the first's write and blends into it.
-   */
   const companyPre = await getDoc(companyRef);
   if (!companyPre.exists()) throw new Error("That stock item no longer exists.");
   const name = String(companyPre.data().name ?? "").trim();
 
-  const existing = await getDocs(collection(db, COL.inventoryPos));
-  const match = existing.docs.find(
-    (d) => String(d.data().name ?? "").trim().toLowerCase() === name.toLowerCase()
-  );
-  const posRef = match ? doc(db, COL.inventoryPos, match.id) : doc(collection(db, COL.inventoryPos));
+  /*
+   * The counter item's id is *derived* from the company item — not looked up, not generated.
+   *
+   * This is what makes the transaction safe, and the previous version was not. It searched for a
+   * matching item by name beforehand (a query cannot run inside a transaction) and minted a fresh
+   * random id when it found none. Two staff restocking the same product for the first time in the
+   * same second each minted a *different* id, so neither transaction touched the other's document:
+   * both committed, and the counter held the same product twice with the stock split across two
+   * records and two separate cost bases. Nothing healed it afterwards, because the next transfer's
+   * name search found only the first of them.
+   *
+   * A derived id means both transfers address the same document, so Firestore serialises them — the
+   * second sees the first's write and blends into it, which is the entire point of the transaction.
+   * It also ties each counter item to the workshop item it came from, which is the relationship that
+   * actually matters; matching on a hand-typed name never was.
+   */
+  const posRef = doc(db, COL.inventoryPos, `from_${input.companyItemId}`);
 
   const result = await runTransaction(db, async (tx) => {
     // Every read first, then every write — the rule this codebase holds throughout.

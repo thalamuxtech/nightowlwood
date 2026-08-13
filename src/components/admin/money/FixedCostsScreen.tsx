@@ -40,6 +40,7 @@ import {
   SelectField,
   TextField,
   todayIso,
+  validDateKey,
 } from "@/components/admin/ui/Fields";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { describeIso } from "@/components/admin/ui/DateField";
@@ -155,10 +156,23 @@ export function FixedCostsScreen() {
     );
     if (when === null) return;
 
+    /*
+     * Validated before it reaches a money write.
+     *
+     * A prompt returns whatever was typed. `"garbage".split("-").map(Number)` is `[NaN]`, which
+     * becomes an Invalid Date and then a corrupt timestamp on an expense nobody notices until a
+     * month is short.
+     */
+    const dateKey = validDateKey(when.trim() || todayIso());
+    if (!dateKey) {
+      setError("That is not a date. Use yyyy-mm-dd, for example 2026-08-13.");
+      return;
+    }
+
     setError("");
     setBusy(true);
     try {
-      const [y, m, d] = (when.trim() || todayIso()).split("-").map(Number);
+      const [y, m, d] = dateKey.split("-").map(Number);
       await payFixedCost(getDb(), actor, cost, { date: new Date(y, m - 1, d) });
       setNotice(`${cost.name} recorded as paid. It is now in the expense ledger.`);
       setTimeout(() => setNotice(""), 8000);

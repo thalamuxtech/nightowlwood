@@ -3,25 +3,29 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     /*
-     * Anyone signed in with a staff account.
+     * Staff, read from a custom claim on the token.
      *
-     * Storage rules cannot read Firestore, so the `users/{uid}` check the database rules use is not
-     * available here — this is the one place in the system where authority cannot be looked up. The
-     * previous version listed a single email, which meant the manager could not upload anything and
-     * the work gallery was effectively admin-only.
+     * Storage rules cannot read Firestore, so the `users/{uid}` lookup every other rule in this
+     * system uses is unavailable here. A claim is the one thing these rules *can* see, and
+     * `syncStaffClaim` in functions/src/staffClaims.ts keeps it mirrored to the user document —
+     * set when the account is active with a role, revoked when it is deactivated or deleted.
      *
-     * A signed-in session is the practical bar, tightened by what the path rules below allow: only
-     * images and PDFs, only under known folders, and only under 10 MB. Public signup exists on this
-     * project, so this is genuinely weaker than the Firestore rules — the compensation is that
-     * nothing here is readable at a guessable path (download URLs carry a token) and every upload
-     * writes an audit entry naming who did it.
+     * A signed-in session is emphatically **not** the bar. Public signup is enabled on this project,
+     * so `request.auth != null` would let any stranger who registers an email address overwrite the
+     * images on the live public website and read customers' cutting lists. It is not enough that
+     * download URLs carry a token: a principal who satisfies the rule can fetch by path through the
+     * SDK, and the paths here are `folder/timestamp-filename` with predictable filenames.
+     *
+     * `bootstrapEmails` covers the very first sign-in, before any trigger has run.
      */
-    function isSignedIn() {
-      return request.auth != null;
+    function bootstrapEmails() {
+      return ['admin@nightowl.com.ng', 'info@nightowl.com.ng'];
     }
 
     function isStaff() {
-      return isSignedIn();
+      return request.auth != null
+        && (request.auth.token.staff == true
+            || request.auth.token.email in bootstrapEmails());
     }
 
     function validImage() {

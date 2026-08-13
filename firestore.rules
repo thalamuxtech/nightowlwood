@@ -712,13 +712,28 @@ service cloud.firestore {
      * `inventory.edit` here would let a manager create the cycle and have the batch fail on the
      * expense — a denial they could do nothing about, reported as a broken button.
      *
-     * Updating is wider, because closing a cycle books nothing. Whoever manages stock can record
-     * that a blade came off the machine.
+     * Updating is wider, because closing a cycle books nothing — but only just wider, and fenced.
+     * Whoever manages stock may record that a blade came off the machine and nothing else: the
+     * `inventory.edit` path can touch only the closing fields.
+     *
+     * The fence matters because `costKobo`, `startKey` and `endKey` are the inputs to cost per board
+     * and to the window the boards are counted over, while the expense booked at issue is a separate
+     * document that does not move. Left unfenced, a stock-only grant could rewrite the cost the
+     * cycle reports without touching the money actually recognised — and clearing `endKey` would
+     * reopen a closed cycle so that two cycles both claimed the same boards, which is the exact
+     * double-count the atomic issue was written to prevent.
      */
     match /consumableCycles/{id} {
       allow read: if isAdminOr('inventory.view') || isAdminOr('supplier.view');
       allow create: if isAdminOr('expense.create');
-      allow update: if isAdminOr('expense.create') || isAdminOr('inventory.edit');
+      allow update: if isAdminOr('expense.create')
+        || (isAdminOr('inventory.edit')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                 'endKey', 'endAt', 'closeReason', 'closedByCycleId', 'updatedAt', 'updatedBy'
+               ])
+            // A cycle already closed stays closed: reopening it would let two cycles claim the
+            // same boards.
+            && resource.data.endKey == null);
       allow delete: if isAdminOr('record.delete');
     }
 

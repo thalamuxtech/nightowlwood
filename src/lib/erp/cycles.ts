@@ -320,6 +320,8 @@ export async function openCycle(
   const snap = await getDocs(
     query(collection(db, COL.consumableCycles), where("consumable", "==", consumable))
   );
+  // Filtered to the open ones and sorted newest-first, so a stray second open cycle — which should
+  // not exist — resolves to the most recently fitted rather than an arbitrary one.
   const open = snap.docs
     .map((d) => cycleFrom(d.id, d.data()))
     .filter((c) => c.endKey === null)
@@ -506,7 +508,8 @@ export async function loadCycles(
 
   const cycles = snap.docs
     .map((d) => cycleFrom(d.id, d.data()))
-    // Newest first, open cycle at the top: `endKey === null` sorts above any date.
+    // Newest first by start date, which puts the open cycle at the top: it is the most recently
+    // fitted one by construction, since fitting a new one closes the last.
     .sort((a, b) => b.startKey.localeCompare(a.startKey))
     .slice(0, max);
 

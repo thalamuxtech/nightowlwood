@@ -99,6 +99,22 @@ export function todayIso(): string {
   return toIso(now.getFullYear(), now.getMonth() + 1, now.getDate());
 }
 
+/**
+ * A real `yyyy-mm-dd`, or null.
+ *
+ * For the handful of places a date arrives from a `window.prompt` rather than from this field —
+ * recording a disposal, closing a cycle, paying a fixed cost. All three write money or an accounting
+ * record, and `"garbage".split("-").map(Number)` yields `[NaN]`, which becomes an Invalid Date and
+ * then a corrupt timestamp nobody notices until a report is wrong.
+ *
+ * Checks the calendar, not just the shape: `2026-02-31` is refused rather than rolled into March.
+ */
+export function validDateKey(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  return parseIso(trimmed) ? trimmed : null;
+}
+
 /** One scrolling column. */
 function Wheel({
   label,

@@ -354,4 +354,4 @@ export function EmptyState({
  * here — a roller picker with three scroll wheels — and mixing it in would bury the
  * primitives. Callers should not have to know that.
  */
-export { DateField, describeIso, todayIso } from "@/components/admin/ui/DateField";
+export { DateField, describeIso, todayIso, validDateKey } from "@/components/admin/ui/DateField";
