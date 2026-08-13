@@ -443,7 +443,7 @@ function ItemPanel({
         <div className="border-t border-night-700/60 p-5">
           <dl className="grid gap-4 text-sm sm:grid-cols-3">
             <Detail label="Reorder level" value={`${item.reorderLevel} ${item.unit}`} />
-            <Detail label="Unit cost" value={formatNaira(item.unitCostKobo)} />
+            <Detail label="Average cost" value={formatNaira(item.unitCostKobo)} />
             <Detail
               label="Last restocked"
               value={
@@ -789,11 +789,18 @@ function ItemForm({
           onChange={setReorder}
           hint="alert at or below"
         />
+        {/* Named for what it is now.
+            This figure is maintained automatically: every priced receipt re-blends it into the
+            weighted average, which is what values stock and what cost of goods is taken from on a
+            counter sale. Typing over it is still allowed — an opening figure has to come from
+            somewhere, and a wrong average needs correcting — but the label has to say that the next
+            delivery will move it, or somebody will keep setting it back and wonder why it drifts. */}
         <NumberField
           id={`inv-cost-${key}`}
-          label="Unit cost (₦)"
+          label="Average cost (₦)"
           value={cost}
           onChange={setCost}
+          hint={editing ? "re-blended by each priced delivery" : "what you paid per unit"}
         />
         <TextField id={`inv-sku-${key}`} label="SKU" value={sku} onChange={setSku} />
       </div>

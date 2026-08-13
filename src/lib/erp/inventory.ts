@@ -384,6 +384,7 @@ export async function recordMovement(
     if (!snap.exists()) throw new Error("Inventory item not found.");
     const current = (snap.data().quantityOnHand as number) ?? 0;
     const name = snap.data().name ?? "item";
+    const currentCostKobo = (snap.data().unitCostKobo as number) ?? 0;
 
     let next: number;
     if (input.type === "in") next = current + input.quantity;
@@ -400,6 +401,41 @@ export async function recordMovement(
       next = input.quantity;
     }
 
+    /*
+     * The weighted average cost, re-blended on every receipt.
+     *
+     * The brief requires cost of goods sold to use "the inventory weighted average purchase cost of
+     * each item sold", and a hand-typed unit cost cannot be that: a delivery at a new price left
+     * the old figure in place, so every subsequent sale was valued at a price the workshop had
+     * stopped paying. Boards move on price constantly here, so that error compounds.
+     *
+     *   new average = (old qty x old cost + received qty x paid cost) / (old qty + received qty)
+     *
+     * Only an `in` movement that states what was paid re-blends it. A receipt with no price given
+     * leaves the average alone — better a stale figure than one blended against zero, which would
+     * silently write the stock down to nothing.
+     *
+     * `out` never changes it: issuing stock at the average is what the average is for. An `adjust`
+     * does not either — a stock-take corrects the count, and finding two extra bags on a shelf says
+     * nothing about what they cost.
+     *
+     * Negative or zero resulting quantities are guarded: dividing by the new total would be a
+     * division by zero on a receipt into a negative balance, which `out` already prevents but an
+     * `adjust` to zero could otherwise reach.
+     */
+    const blendCost =
+      input.type === "in" &&
+      input.unitCostKobo !== undefined &&
+      input.unitCostKobo > 0 &&
+      next > 0;
+
+    const nextCostKobo = blendCost
+      ? Math.round(
+          (Math.max(0, current) * currentCostKobo + input.quantity * input.unitCostKobo!) /
+            (Math.max(0, current) + input.quantity)
+        )
+      : null;
+
     tx.set(moveRef, {
       type: input.type,
       quantity: input.quantity,
@@ -407,6 +443,14 @@ export async function recordMovement(
       jobId: input.jobId ?? null,
       projectId: input.projectId ?? null,
       unitCostKobo: input.unitCostKobo ?? null,
+      /*
+       * The average after this movement, stamped on the movement itself.
+       *
+       * Without it the blend is invisible: the item shows a cost that is the result of every
+       * receipt ever made, and there is no way to see which delivery moved it or to check the
+       * arithmetic. This is the audit trail for a figure that values stock.
+       */
+      averageCostAfterKobo: nextCostKobo ?? currentCostKobo,
       issuedToStaffId: input.issuedToStaffId ?? null,
       issuedToName: input.issuedToName?.trim() || null,
       issuedByName: input.issuedByName?.trim() || actor.email,
@@ -414,8 +458,10 @@ export async function recordMovement(
       createdAt: serverTimestamp(),
       createdBy: actor.uid,
     });
+
     tx.update(itemRef, {
       quantityOnHand: next,
+      ...(nextCostKobo !== null ? { unitCostKobo: nextCostKobo } : {}),
       ...(input.type === "in" ? { lastRestockedAt: serverTimestamp() } : {}),
       updatedAt: serverTimestamp(),
       updatedBy: actor.uid,

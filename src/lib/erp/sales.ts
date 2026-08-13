@@ -98,6 +98,14 @@ export async function loadSellableItems(db: Firestore): Promise<SellableItem[]> 
     .filter((d) => d.data().active !== false)
     .map((d) => {
       const x = d.data();
+      /*
+       * The item's weighted average purchase cost.
+       *
+       * `unitCostKobo` on the item is re-blended by `recordMovement` on every priced receipt, so it
+       * is the average the brief requires cost of goods to use — not the price last typed. The sale
+       * snapshots it, which is what keeps a completed sale's margin fixed at what was true when the
+       * goods left rather than drifting with later deliveries.
+       */
       const unitCostKobo = x.unitCostKobo ?? 0;
       return {
         id: d.id,
