@@ -122,6 +122,14 @@ interface LogRow {
   jobNumber?: string;
   boardsUsed?: number | null;
   edgeTapeUsed?: number | null;
+  /**
+   * Set while a deletion of this row is awaiting a decision.
+   *
+   * `requestApproval` writes it on the target so the record is locked, but nothing read it,
+   * so a row with a request pending looked identical to any other and still offered a live
+   * delete button — which then threw the raw transaction error on click.
+   */
+  pendingApprovalId?: string | null;
 }
 
 /** A service job that can still have work logged against it. */
@@ -374,6 +382,7 @@ export function WorkLogScreen() {
               jobNumber: x.jobNumber ?? undefined,
               boardsUsed: x.boardsUsed ?? null,
               edgeTapeUsed: x.edgeTapeUsed ?? null,
+              pendingApprovalId: x.pendingApprovalId ?? null,
             };
           })
         );
@@ -882,6 +891,7 @@ export function WorkLogScreen() {
                           targetId={r.id}
                           targetLabel={`${r.staffName} · ${describeItems(r.items)}`}
                           description="This is what the wage run reads, so removing it changes what is paid for that period."
+                          locked={Boolean(r.pendingApprovalId)}
                           before={{
                             staffName: r.staffName,
                             items: describeItems(r.items),

@@ -3,16 +3,34 @@
 import { useState } from "react";
 import { AlertTriangle, ShieldAlert, Trash2 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
-import { deleteOrRequest } from "@/lib/erp/approvals";
+import { clearStaleLock, deleteOrRequest } from "@/lib/erp/approvals";
 import { Button, TextAreaField } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useErpSession, type ErpSession } from "@/components/admin/ErpAuthProvider";
+
+/** The audit actor for the person actually signed in. */
+function actorOf(session: ErpSession) {
+  return {
+    uid: session.user?.uid ?? "",
+    email: session.user?.email ?? "",
+    role: session.role ?? "manager",
+  };
+}
 
 /**
- * The one delete control every screen should use.
+ * The delete control for records whose removal changes what somebody is owed.
  *
  * It always asks why, and it decides on its own whether that becomes a deletion or a
- * request — so no screen has to branch on role, and none can quietly skip the queue. A
- * `window.confirm` cannot capture a reason, which is why this replaces them.
+ * request — so the caller does not branch on role. A `window.confirm` cannot capture a
+ * reason, which is why this replaces them.
+ *
+ * **It is not on every delete, by design.** Approval only means something when the approver
+ * is a different person who will actually read the request; route every supplier and stock
+ * item through it in a one-admin workshop and you get an inbox rubber-stamped weekly, which
+ * is worse than no gate because the trail then claims scrutiny that did not happen. So this
+ * guards the deletes that move money — work logs, wage and salary runs, recorded payments —
+ * and everything else keeps its direct delete plus its audit entry, which already records
+ * who did it and why. Which operations require approval is configurable in Settings, so the
+ * line can move without a code change.
  *
  * `hardDelete` is supplied by the caller because teardown is module-specific: a project
  * purchase has to take its expense with it, a wage run its lines. Those rules live with
@@ -71,11 +89,40 @@ export function DeleteWithReason({
 
   if (locked) {
     return (
-      <span
-        title="A change on this record is already waiting for a decision."
-        className="flex items-center gap-1 text-xs text-amber-300"
-      >
-        <AlertTriangle size={13} /> pending
+      <span className="flex items-center gap-1.5 text-xs text-amber-300">
+        <span
+          title="A change on this record is already waiting for a decision."
+          className="flex items-center gap-1"
+        >
+          <AlertTriangle size={13} /> pending
+        </span>
+        {/*
+         * The escape hatch, for whoever can decide requests.
+         *
+         * A lock outlives its request if the request document is deleted, and the record was
+         * then uneditable forever with nothing in the queue to explain why — the only fix was
+         * the Firebase console. `clearStaleLock` refuses to touch a lock whose request is
+         * genuinely still open, so this cannot be used to skip a decision.
+         */}
+        {session.can("approval.decide") && (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await clearStaleLock(getDb(), actorOf(session), targetCollection, targetId);
+                onDone("Cleared the stale lock on that record.");
+              } catch (e) {
+                onError(
+                  e instanceof Error ? e.message : "Could not clear the lock on that record."
+                );
+              }
+            }}
+            title="Clear the lock if its request is gone or already decided"
+            className="cursor-pointer text-cream-500 underline decoration-dotted transition-all duration-300 hover:text-cream-300"
+          >
+            clear
+          </button>
+        )}
       </span>
     );
   }
@@ -88,11 +135,7 @@ export function DeleteWithReason({
     }
     setBusy(true);
     try {
-      const res = await deleteOrRequest(getDb(), {
-        uid: session.user?.uid ?? "",
-        email: session.user?.email ?? "",
-        role: session.role ?? "manager",
-      }, {
+      const res = await deleteOrRequest(getDb(), actorOf(session), {
         targetCollection,
         targetId,
         targetLabel,
