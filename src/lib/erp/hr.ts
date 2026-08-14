@@ -486,6 +486,20 @@ export interface StaffStats {
   advanceKobo: number;
   /** Deductions raised but not yet taken by a run. */
   pendingDeductionKobo: number;
+  /**
+   * Those same deductions, individually, so one raised in error can be withdrawn.
+   *
+   * Only the unapplied ones: once a run has claimed a deduction the money has been taken and
+   * removing the record would leave the run's figures unexplainable. `deleteDeduction` refuses
+   * those, and the run has to be reopened first, which releases them.
+   */
+  pendingDeductions: Array<{
+    id: string;
+    type: DeductionType;
+    amountKobo: number;
+    reason: string;
+    dateKey: string | null;
+  }>;
   /** Everything ever paid to this person, net of deductions. */
   totalEarnedKobo: number;
   /** Wage-run and salary-run counts behind that figure. */
@@ -530,7 +544,19 @@ export async function loadStaffStats(
       .map((l) => l.outstandingKobo ?? 0)
   );
 
-  const deductions = dedSnap.docs.map((d) => d.data());
+  // Ids carried through: the profile lists the unapplied ones so a deduction raised in
+  // error can be removed before a run claims it.
+  const deductions = dedSnap.docs.map(
+    (d) =>
+      ({ id: d.id, ...d.data() }) as {
+        id: string;
+        type?: DeductionType;
+        amountKobo?: number;
+        reason?: string;
+        dateKey?: string;
+        appliedToRunId?: string | null;
+      }
+  );
   const byType = (t: DeductionType) => deductions.filter((d) => d.type === t);
 
   const penalties = byType("penalty");
@@ -585,6 +611,16 @@ export async function loadStaffStats(
     pendingDeductionKobo: sumKobo(
       deductions.filter((d) => !d.appliedToRunId).map((d) => d.amountKobo ?? 0)
     ),
+    pendingDeductions: deductions
+      .filter((d) => !d.appliedToRunId)
+      .map((d) => ({
+        id: d.id,
+        type: d.type ?? "penalty",
+        amountKobo: d.amountKobo ?? 0,
+        reason: d.reason ?? "",
+        dateKey: d.dateKey ?? null,
+      }))
+      .sort((a, b) => (b.dateKey ?? "").localeCompare(a.dateKey ?? "")),
     totalEarnedKobo,
     wageRunCount,
     salaryRunCount,

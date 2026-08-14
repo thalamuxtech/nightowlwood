@@ -46,7 +46,7 @@ import {
   type AttendanceMark,
   type StaffStats,
 } from "@/lib/erp/hr";
-import { createDeduction } from "@/lib/erp/workLogs";
+import { createDeduction, deleteDeduction } from "@/lib/erp/workLogs";
 import { DEFAULT_HR_SETTINGS, type HrSettings } from "@/lib/erp/settings";
 import type { Staff } from "@/lib/erp/types";
 import {
@@ -110,6 +110,8 @@ export function StaffProfileScreen({ staff }: { staff: Staff }) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [version, setVersion] = useState(0);
+  /** Which deduction is being withdrawn, so only that row's button shows as busy. */
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   /** Which quick action is open. One at a time — three open forms on a profile is noise. */
   const [action, setAction] = useState<"advance" | "penalty" | "absence" | null>(null);
@@ -345,6 +347,36 @@ export function StaffProfileScreen({ staff }: { staff: Staff }) {
     }
   }
 
+  /*
+   * Withdraws a deduction that has not yet been taken by a run.
+   *
+   * Confirmed rather than immediate: it is somebody's pay, and the figure is the only thing on
+   * the row that distinguishes one penalty from another. `deleteDeduction` refuses anything a
+   * run has already claimed, so the worst this can do is remove money that was never taken.
+   */
+  async function removeDeduction(deductionId: string, amountKobo: number) {
+    if (
+      !window.confirm(
+        `Remove this ${formatNaira(amountKobo)} deduction? ` +
+          `It has not been taken by a run yet, so ${staff.name} keeps the money.`
+      )
+    ) {
+      return;
+    }
+    setError("");
+    setRemovingId(deductionId);
+    try {
+      await deleteDeduction(getDb(), actor, deductionId);
+      setNotice(`${formatNaira(amountKobo)} deduction removed.`);
+      setTimeout(() => setNotice(""), 6000);
+      setVersion((v) => v + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove that deduction.");
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
   async function markToday(status: "present" | "absent" | "leave") {
     setError("");
     setBusy(true);
@@ -477,12 +509,42 @@ export function StaffProfileScreen({ staff }: { staff: Staff }) {
             />
           </div>
 
-          {/* Anything still to be taken. */}
+          {/* Anything still to be taken, itemised so a mistake can be withdrawn.
+              Listing the total alone left no way to undo a deduction raised in error — it
+              would simply be taken by the next run, and after that the only route back is
+              reopening the run. The window to fix it cheaply is now, so the rows are here. */}
           {stats.pendingDeductionKobo > 0 && (
-            <p className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm text-amber-300">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              {formatNaira(stats.pendingDeductionKobo)} raised and not yet taken by a run.
-            </p>
+            <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3">
+              <p className="flex items-start gap-2 text-sm text-amber-300">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                {formatNaira(stats.pendingDeductionKobo)} raised and not yet taken by a run.
+              </p>
+              <ul className="mt-3 space-y-1.5">
+                {stats.pendingDeductions.map((d) => (
+                  <li
+                    key={d.id}
+                    className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-500/20 pt-1.5 text-sm text-cream-300 first:border-0 first:pt-0"
+                  >
+                    <span className="min-w-0">
+                      <span className="text-cream-100">{formatNaira(d.amountKobo)}</span>{" "}
+                      {DEDUCTION_TYPE_LABELS[d.type] ?? d.type}
+                      {d.dateKey ? ` · ${d.dateKey}` : ""}
+                      {d.reason ? <span className="text-cream-500"> — {d.reason}</span> : null}
+                    </span>
+                    {canDeduct && (
+                      <button
+                        type="button"
+                        onClick={() => removeDeduction(d.id, d.amountKobo)}
+                        disabled={removingId === d.id}
+                        className="shrink-0 cursor-pointer rounded-full border border-night-600 px-3 py-1 text-xs text-cream-300 transition-colors hover:border-red-500/60 hover:text-red-300 disabled:opacity-50"
+                      >
+                        {removingId === d.id ? "Removing…" : "Remove"}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {/* Quick actions. */}

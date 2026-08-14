@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   FileText,
+  Pencil,
   Phone,
   Plus,
   ShieldAlert,
@@ -28,6 +29,7 @@ import {
 } from "@/lib/erp/enums";
 import {
   createLead,
+  updateLead,
   deleteMarketingRecord,
   loadFollowUps,
   loadLeads,
@@ -99,8 +101,9 @@ export function LeadTrackerScreen() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
 
-  // New-lead form.
+  // New-lead form, reused for editing: `editingId` is set when it holds an existing lead.
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [clientName, setClientName] = useState("");
   const [phone, setPhone] = useState("");
   const [area, setArea] = useState("");
@@ -218,10 +221,66 @@ export function LeadTrackerScreen() {
     setFuNextAction("");
   }
 
+  /*
+   * Loads a lead into the form the "add" flow already uses.
+   *
+   * One form for both, because they collect exactly the same fields — a second copy would be
+   * one more place for the two to drift apart. `editingId` is what distinguishes them, and it
+   * is cleared everywhere the form closes.
+   */
+  function editLead(lead: Lead) {
+    setEditingId(lead.id);
+    setClientName(lead.clientName);
+    setPhone(lead.phone);
+    setArea(lead.area ?? "");
+    setServiceNeeded(lead.serviceNeeded ?? "");
+    setBudgetLevel(lead.budgetLevel ?? "unknown");
+    setNextAction(lead.nextAction ?? "");
+    setNextActionOn(lead.nextActionOn ?? "");
+    setNotes(lead.notes ?? "");
+    setAdding(true);
+    setError("");
+  }
+
+  function closeForm() {
+    setAdding(false);
+    setEditingId(null);
+    setClientName("");
+    setPhone("");
+    setArea("");
+    setServiceNeeded("");
+    setBudgetLevel("unknown");
+    setNextAction("");
+    setNextActionOn("");
+    setNotes("");
+  }
+
   async function addLead() {
     setError("");
     setBusy(true);
     try {
+      if (editingId) {
+        /*
+         * Status is not in this form on purpose: won and lost run through `setLeadStatus`,
+         * which also clears the follow-up schedule. Editing it here would leave a won lead
+         * still sitting in the due-now queue.
+         */
+        await updateLead(getDb(), actor, editingId, {
+          clientName,
+          phone,
+          area,
+          serviceNeeded,
+          budgetLevel,
+          nextAction,
+          nextActionOn,
+          notes,
+        });
+        setNotice(`${clientName.trim()} updated.`);
+        setTimeout(() => setNotice(""), 6000);
+        closeForm();
+        setVersion((v) => v + 1);
+        return;
+      }
       await createLead(getDb(), actor, {
         clientName,
         phone,
@@ -340,7 +399,12 @@ export function LeadTrackerScreen() {
           </p>
         </div>
         {canRecord && (
-          <Button onClick={() => setAdding((a) => !a)} variant={adding ? "ghost" : "primary"}>
+          <Button
+            // Cancel clears the form as well as closing it, so a half-typed edit is never
+            // left behind to reappear under "Add a lead" against the wrong client.
+            onClick={() => (adding ? closeForm() : setAdding(true))}
+            variant={adding ? "ghost" : "primary"}
+          >
             <span className="flex items-center gap-1.5">
               <Plus size={15} /> {adding ? "Cancel" : "Add a lead"}
             </span>
@@ -379,7 +443,9 @@ export function LeadTrackerScreen() {
 
       {adding && canRecord && (
         <section className="mt-6 rounded-3xl border border-brass-500/30 bg-night-900/40 p-6">
-          <h2 className="font-display text-lg text-cream-100">New lead</h2>
+          <h2 className="font-display text-lg text-cream-100">
+            {editingId ? "Edit lead" : "New lead"}
+          </h2>
           <div className="mt-5 grid gap-5 sm:grid-cols-2">
             <TextField
               id="ld-name"
@@ -432,7 +498,7 @@ export function LeadTrackerScreen() {
           </div>
           <div className="mt-6">
             <Button onClick={addLead} busy={busy} disabled={!clientName.trim() || !phone.trim()}>
-              Add to tracker
+              {editingId ? "Save changes" : "Add to tracker"}
             </Button>
           </div>
         </section>
@@ -524,6 +590,16 @@ export function LeadTrackerScreen() {
                     >
                       <Phone size={12} /> {lead.phone}
                     </a>
+                    {canRecord && (
+                      <button
+                        type="button"
+                        onClick={() => editLead(lead)}
+                        className="cursor-pointer rounded-lg p-2 text-cream-600 transition-colors hover:text-brass-300"
+                        aria-label={`Edit ${lead.clientName}`}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                    )}
                     {canDelete && (
                       <button
                         type="button"
