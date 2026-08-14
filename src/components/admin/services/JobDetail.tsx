@@ -112,6 +112,8 @@ export function JobDetail() {
   const [error, setError] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [printing, setPrinting] = useState(false);
+  /** Where the job is being moved to, chosen before it is confirmed. */
+  const [nextStatus, setNextStatus] = useState("");
 
   const canEdit = session.can("job.edit");
   const canPay = session.can("job.recordPayment");
@@ -208,6 +210,9 @@ export function JobDetail() {
     setError("");
     try {
       await advanceJobStatus(getDb(), actor, jobId, job.jobNumber, job.status, to);
+      // Cleared on success: the status just moved, so the destination that was chosen is no
+      // longer one of the options and leaving it selected would offer a move that cannot happen.
+      setNextStatus("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not change status.");
     } finally {
@@ -327,18 +332,35 @@ export function JobDetail() {
         {canEdit && nextStates.length > 0 && (
           <section className="mt-8 rounded-3xl border border-night-700/60 bg-night-900/30 p-6">
             <h2 className="font-display text-lg text-cream-100">Move this job</h2>
-            <div className="mt-4 flex flex-wrap gap-3">
-              {nextStates.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => move(s)}
-                  className="cursor-pointer rounded-xl border border-night-600 bg-night-800/60 px-5 py-2.5 text-sm text-cream-200 transition-all duration-300 hover:border-brass-500/60 hover:text-brass-300 disabled:opacity-60"
-                >
-                  {JOB_STATUS_LABELS[s]}
-                </button>
-              ))}
+            <p className="mt-1.5 text-sm text-cream-400">
+              Currently {JOB_STATUS_LABELS[job.status].toLowerCase()}. Choose where it goes next.
+            </p>
+
+            {/* A choice then a confirm, rather than a row of buttons that each act on the first
+                click. Advancing a job is not reversible from here — a mis-tap on "Collected" ends
+                the pipeline — so the destination is selected first and stays visible while the
+                move is confirmed. */}
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <div className="min-w-[14rem] flex-1">
+                <SelectField
+                  id="job-next-status"
+                  label="Move to"
+                  value={nextStatus}
+                  onChange={(v) => setNextStatus(v as JobStatus)}
+                  options={nextStates.map((s) => ({
+                    value: s,
+                    label: JOB_STATUS_LABELS[s],
+                  }))}
+                  placeholder="Choose a status…"
+                />
+              </div>
+              <Button
+                onClick={() => nextStatus && move(nextStatus as JobStatus)}
+                busy={busy}
+                disabled={!nextStatus}
+              >
+                Move it
+              </Button>
             </div>
           </section>
         )}

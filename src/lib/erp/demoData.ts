@@ -202,6 +202,15 @@ const WORK_PATTERN: Array<{ workType: WageWorkType; units: number; assistants: n
   { workType: "board", units: 33, assistants: 2 },
 ];
 
+/**
+ * Materials rotated through the work logs.
+ *
+ * So the blade and gum cycles have a board-type breakdown to show rather than one bar, and so the
+ * two rates that differ most — MFC 9×7 at ₦6,400 against Kwali at ₦1,500 — both appear in the
+ * cutting charges.
+ */
+const BOARD_ROTATION: BoardType[] = ["egger", "mdf", "mfc_9x7", "hdf", "kwali", "high_glossy"];
+
 const PROJECTS = [
   {
     title: "Yakubu 4-bedroom, Gwarinpa",
@@ -443,13 +452,42 @@ export async function seedDemoData(
       const operator = operators[(week + j) % operators.length];
       const chosen = assistants.slice(0, w.assistants);
       const when = daysAgo(week * 7 + (j % 5) + 1);
+      const units = Math.max(1, Math.round(w.units * (0.8 + ((week * 7 + j) % 5) * 0.1)));
+
+      /*
+       * Sheets drawn off the customer's stack.
+       *
+       * Not derived from `units`, because they are genuinely different numbers: cutting 40
+       * pieces out of 12 boards is normal. Without this field the board reconciliation shows
+       * nothing used, and the blade and gum cycles compute zero boards — so three screens
+       * that look finished would demo as empty.
+       *
+       * Only for work that actually moves sheets. A door or a frame is made from boards
+       * already drawn, and `grooving` is measured in millimetres, so charging sheets to
+       * those would overstate what left the stack.
+       */
+      const movesSheets =
+        w.workType === "board" || w.workType === "only_cutting" || w.workType === "special_board";
+      const boardsUsed = movesSheets ? Math.max(1, Math.round(units / 3)) : 0;
+
       batch.set(doc(collection(db, COL.workLogs)), {
         ...base,
         staffId: operator.id,
         staffName: operator.name,
         workType: w.workType,
-        // Vary units week to week so charts are not flat.
-        units: Math.max(1, Math.round(w.units * (0.8 + ((week * 7 + j) % 5) * 0.1))),
+        units,
+        /*
+         * The modern multi-work-type shape as well as the legacy fields.
+         *
+         * Readers prefer `items` and fall back to `workType`/`units`, so seeding both
+         * exercises the path the app actually takes rather than only the fallback — which is
+         * the one place a demo can quietly test the wrong code.
+         */
+        items: [{ workType: w.workType, units }],
+        boardsUsed,
+        // A roll of tape lasts several jobs, so only the edged work consumes one.
+        edgeTapeUsed: w.workType === "board" ? 1 : 0,
+        boardType: BOARD_ROTATION[(week + j) % BOARD_ROTATION.length],
         workDate: Timestamp.fromDate(when),
         assistantIds: chosen.map((a) => a.id),
         assistantNames: chosen.map((a) => a.name),

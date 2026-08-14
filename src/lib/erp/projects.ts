@@ -23,8 +23,8 @@ import type {
 } from "./enums";
 import { applyPercentKobo, lineAmountKobo, sumKobo } from "./money";
 import { allocateDocNumber } from "./numbering";
-import { ESTIMATE_TEMPLATES } from "./estimateTemplates";
 import { DEFAULT_INVOICE_SETTINGS } from "./settings";
+import { loadTemplates } from "./templateStore";
 import { writeAudit, type AuditActor } from "./audit";
 
 /** Fallbacks when a project carries no rates of its own. */
@@ -271,17 +271,51 @@ export async function addComponent(
     createdBy: actor.uid,
   });
 
+  /*
+   * The template, read from Firestore rather than from the code constant.
+   *
+   * That is what makes an admin's edit reach the next project: the templates screen writes the
+   * document, and this reads it. `loadTemplates` falls back to the shipped defaults per category, so
+   * a workshop that has never opened the editor still gets the six standard lists.
+   */
+  let templateLineCount = 0;
   if (input.useTemplate) {
-    const template = ESTIMATE_TEMPLATES[input.category];
+    const templates = await loadTemplates(db);
+    const template =
+      templates.find((t) => t.category === input.category) ??
+      // Belt and braces: `loadTemplates` already falls back, so this only fires if a category is
+      // added to the enum and not to the defaults.
+      { category: input.category, label: input.category, items: [], updatedAtMs: null };
+
+    templateLineCount = template.items.length;
     template.items.forEach((t, i) => {
       batch.set(doc(collection(db, featuresPath(projectId, compRef.id))), {
         item: t.item,
         kind: t.kind,
         actualQuantity: null,
         quantity: 0,
-        unitPriceKobo: 0,
+        /*
+         * The template's default price, pre-filled.
+         *
+         * The old templates carried names only, so the same eight board prices were retyped from
+         * memory on every project. A default is not a fixed price — it is typed over when a
+         * supplier moves — but it means a fresh estimate starts from what the workshop actually
+         * pays rather than from zero.
+         */
+        unitPriceKobo: t.defaultPriceKobo ?? 0,
+        // Still zero: a price without a quantity is not a cost yet, and pre-filling quantities
+        // would put items on the estimate nobody chose.
         amountKobo: 0,
         included: false,
+        /*
+         * Carried through so the cutting charge can be derived.
+         *
+         * `isBoard` is what the cutting-and-edging quantity totals, and `boardType` is what prices
+         * it per material. Dropping them here would leave the derived line with nothing to count,
+         * which is the whole reason the boards are itemised.
+         */
+        isBoard: t.isBoard ?? false,
+        boardType: t.boardType ?? null,
         order: i,
         createdAt: serverTimestamp(),
         createdBy: actor.uid,
@@ -298,9 +332,7 @@ export async function addComponent(
     docId: projectId,
     summary:
       `Added component "${input.name}" (${input.category})` +
-      (input.useTemplate
-        ? ` with ${ESTIMATE_TEMPLATES[input.category].items.length} template lines`
-        : ""),
+      (input.useTemplate ? ` with  template lines` : ""),
   });
 
   return compRef.id;

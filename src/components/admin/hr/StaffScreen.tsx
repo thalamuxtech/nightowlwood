@@ -10,6 +10,7 @@ import {
   PenLine,
   Plus,
   ShieldAlert,
+  UserMinus,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import {
 import { formatNaira, parseNairaInput, toNaira } from "@/lib/erp/money";
 import {
   createStaff,
+  endEmployment,
   hrSettings,
   loadStaffStats,
   recordStaffDocument,
@@ -166,6 +168,48 @@ export function StaffScreen() {
   function flash(m: string) {
     setNotice(m);
     setTimeout(() => setNotice(""), 6000);
+  }
+
+  /**
+   * Takes somebody off the payroll.
+   *
+   * Deliberately not a deletion. Past wage runs, deductions and work logs all name this person, and
+   * removing the record would leave those referring to nothing — a payslip from March that can no
+   * longer say who it paid. The record stays, marked resigned or terminated with the date and the
+   * reason, and drops out of the active list and the salary bill.
+   */
+  async function endEmploymentFor(staff: Row) {
+    const how = window.confirm(
+      `End employment for ${staff.name}?\n\nOK = resigned (they left)\nCancel = go back\n\nUse the staff record to mark a termination instead.`
+    );
+    if (!how) return;
+
+    const when = window.prompt(`Last day worked? Use yyyy-mm-dd.`, toDateInputValue(new Date()));
+    if (when === null) return;
+    const reason = window.prompt("Why did the employment end? This is kept on the record.");
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setError("A reason is needed — it is what explains the gap in next month's payroll.");
+      return;
+    }
+
+    setError("");
+    try {
+      await endEmployment(
+        getDb(),
+        actor,
+        staff.id,
+        staff.name,
+        "resigned",
+        fromDateInputValue(when.trim() || toDateInputValue(new Date())),
+        reason
+      );
+      flash(
+        `${staff.name} marked as resigned. They are off the salary bill and out of the pickers; the record stays.`
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not end the employment.");
+    }
   }
 
   /**
@@ -490,6 +534,22 @@ export function StaffScreen() {
                           className="cursor-pointer text-cream-500 transition-colors hover:text-brass-300"
                         >
                           <PenLine size={15} />
+                        </button>
+                      )}
+                      {/* Ending employment, which is how somebody comes off the payroll.
+                          `endEmployment` existed in the data layer and nothing called it, so a
+                          person who left stayed on the salary bill for ever. Not a delete: the
+                          record has to survive, because past wage runs and deductions refer to it
+                          and a departed employee is still part of last year's accounts. */}
+                      {canHr && r.active !== false && (
+                        <button
+                          type="button"
+                          title="End employment"
+                          aria-label={`End employment for ${r.name}`}
+                          onClick={() => endEmploymentFor(r)}
+                          className="cursor-pointer text-cream-500 transition-colors hover:text-red-300"
+                        >
+                          <UserMinus size={15} />
                         </button>
                       )}
                     </div>

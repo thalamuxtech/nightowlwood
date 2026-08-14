@@ -80,6 +80,43 @@ export function isAddonIncluded(addon: {
   return (addon.amountKobo ?? 0) > 0;
 }
 
+/**
+ * The kitchen appliances and fittings the workshop quotes, with the prices from its own estimate
+ * sheet.
+ *
+ * These sat in a second column of the paper template headed "Addons", separate from the materials —
+ * and that separation is right, which is why they are here rather than as template lines. An oven is
+ * bought in, passed through at cost plus a handling margin, and it must not disappear into a
+ * materials subtotal that the error margin and Nightowl charge are then calculated on.
+ *
+ * A starting list, not a fixed one: prices move, and each is editable on the addon itself. Offered
+ * as one-tap picks so a kitchen quote does not mean typing fourteen appliance names.
+ */
+export const SUGGESTED_ADDONS: Array<{
+  name: string;
+  category: ComponentAddon["category"];
+  unitCostKobo: number;
+}> = [
+  { name: "Builtin Microwave", category: "appliance", unitCostKobo: 250_000_00 },
+  { name: "Builtin Oven (electric + gas)", category: "appliance", unitCostKobo: 429_000_00 },
+  {
+    name: "5-burner inbuilt hob, 8mm tempered glass",
+    category: "appliance",
+    unitCostKobo: 200_000_00,
+  },
+  { name: "Smoke extractor (chimney)", category: "appliance", unitCostKobo: 230_000_00 },
+  { name: "Pull pantry (glass)", category: "kitchenware", unitCostKobo: 280_000_00 },
+  { name: "Pulldown rack", category: "kitchenware", unitCostKobo: 220_000_00 },
+  { name: "Smart sink", category: "kitchenware", unitCostKobo: 200_000_00 },
+  { name: "Wastebin drawer", category: "kitchenware", unitCostKobo: 130_000_00 },
+  { name: "Magic corner", category: "kitchenware", unitCostKobo: 205_000_00 },
+  { name: "Plate rack", category: "kitchenware", unitCostKobo: 25_000_00 },
+  { name: "Plate / mugs drawer", category: "kitchenware", unitCostKobo: 180_000_00 },
+  { name: "Cutlery divider", category: "kitchenware", unitCostKobo: 20_000_00 },
+  { name: "Vertical stack drawer", category: "kitchenware", unitCostKobo: 30_000_00 },
+  { name: "Stool chairs", category: "other", unitCostKobo: 150_000_00 },
+];
+
 export interface NewAddon {
   name: string;
   category: ComponentAddon["category"];

@@ -10,6 +10,7 @@ import {
   addonAmountKobo,
   createAddon,
   deleteAddon,
+  SUGGESTED_ADDONS,
   updateAddon,
 } from "@/lib/erp/addons";
 import type { ComponentAddon } from "@/lib/erp/types";
@@ -283,6 +284,37 @@ function AddonForm({
 
   return (
     <div className="mt-4 rounded-2xl border border-brass-500/30 bg-night-950/40 p-4">
+      {/* The appliances the workshop quotes, at the prices from its own estimate sheet.
+          One tap fills the name, the category and the price rather than typing "Builtin Oven
+          (electric + gas)" and its figure from memory on every kitchen. Only offered on a new
+          addon: on an edit these would overwrite what is being corrected. */}
+      {!editing && (
+        <div className="mb-4">
+          <p className="mb-2 text-xs uppercase tracking-wider text-cream-600">
+            Common items
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {SUGGESTED_ADDONS.map((s) => (
+              <button
+                key={s.name}
+                type="button"
+                onClick={() => {
+                  setName(s.name);
+                  setCategory(s.category);
+                  setCost(String(toNaira(s.unitCostKobo)));
+                }}
+                className="cursor-pointer rounded-lg border border-night-600 bg-night-800/50 px-2.5 py-1.5 text-xs text-cream-300 transition-colors hover:border-brass-500/60 hover:text-brass-300"
+              >
+                {s.name}
+                <span className="ml-1.5 text-cream-600">
+                  {formatNaira(s.unitCostKobo)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <TextField
           id={`ad-name-${editing?.id ?? "new"}`}

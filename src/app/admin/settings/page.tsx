@@ -6,6 +6,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import { EmailTester } from "@/components/admin/EmailTester";
 import { ReportRangesEditor } from "@/components/admin/ReportRangesEditor";
+import { EstimateTemplatesEditor } from "@/components/admin/settings/EstimateTemplatesEditor";
 import { CompanySettingsEditor } from "@/components/admin/settings/CompanySettingsEditor";
 import { HrSettingsEditor } from "@/components/admin/settings/HrSettingsEditor";
 import { BoardCatalogueEditor } from "@/components/admin/settings/BoardCatalogueEditor";
@@ -129,6 +130,12 @@ function SettingsPageInner() {
 
       <div className="mt-8">
         <ServiceRatesEditor />
+      </div>
+
+      {/* The estimate checklists a project starts from. Next to the service prices because both
+          answer "what does a new job cost by default". */}
+      <div className="mt-8">
+        <EstimateTemplatesEditor />
       </div>
 
       <div className="mt-8">
