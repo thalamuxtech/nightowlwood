@@ -616,6 +616,24 @@ export async function seedDemoData(
   onProgress("Service jobs, lines and payments");
   batch = writeBatch(db);
 
+  /*
+   * Kept so later sections can point at a real job.
+   *
+   * Without this the work logs and the held-board custody records were written with no `jobId`,
+   * and both consumers resolve a job or skip the row: the board reconciliation dropped every
+   * seeded log, so a customer's remaining boards always equalled the boards received, and the
+   * per-job custody panel had nothing to show.
+   */
+  const jobRecords: Array<{
+    id: string;
+    number: string;
+    customerId: string;
+    customerName: string;
+    /** Sheets the customer brought in, so work can be charged against them without overdrawing. */
+    boardsIn: number;
+    boardsCut: number;
+  }> = [];
+
   for (let i = 0; i < JOB_TEMPLATES.length; i += 1) {
     const t = JOB_TEMPLATES[i];
     const customer = customerIds[i % customerIds.length];
@@ -674,6 +692,18 @@ export async function seedDemoData(
       ops += 1;
     }
     written += 1 + lines.length + (paidKobo > 0 ? 1 : 0);
+    jobRecords.push({
+      id: jobRef.id,
+      number: `JOB-${year}-${pad(900 + i)}`,
+      customerId: customer.id,
+      customerName: customer.name,
+      // Tape is counted in rolls, not sheets, so it is not board capacity.
+      boardsIn: Object.entries(t.boards).reduce(
+        (sum, [k, v]) => (k === "tape" ? sum : sum + (v ?? 0)),
+        0
+      ),
+      boardsCut: 0,
+    });
     await commitIfFull();
   }
   await commitSection();
@@ -707,6 +737,20 @@ export async function seedDemoData(
         w.workType === "board" || w.workType === "only_cutting" || w.workType === "special_board";
       const boardsUsed = movesSheets ? Math.max(1, Math.round(units / 3)) : 0;
 
+      /*
+       * The job the sheets came off.
+       *
+       * Board reconciliation resolves `jobId` (or the first `items[]` entry carrying one) and
+       * skips the log outright when there is none — so seeding `boardsUsed` without a job meant
+       * every customer's remaining boards equalled the boards they brought in, however much work
+       * was logged against them. Only sheet-moving work is attributed: a door made from boards
+       * already drawn would double-count them off the stack.
+       */
+      const againstJob = movesSheets
+        ? jobRecords.find((r) => r.boardsIn - r.boardsCut >= boardsUsed)
+        : undefined;
+      if (againstJob) againstJob.boardsCut += boardsUsed;
+
       const logRef = doc(collection(db, COL.workLogs));
       // Kept so the pending approval below can target a log that genuinely exists.
       if (!approvalTarget) {
@@ -725,7 +769,10 @@ export async function seedDemoData(
          * exercises the path the app actually takes rather than only the fallback — which is
          * the one place a demo can quietly test the wrong code.
          */
-        items: [{ workType: w.workType, units }],
+        jobId: againstJob?.id ?? null,
+        jobNumber: againstJob?.number ?? null,
+        customerName: againstJob?.customerName ?? null,
+        items: [{ workType: w.workType, units, jobId: againstJob?.id ?? null }],
         boardsUsed,
         // A roll of tape lasts several jobs, so only the edged work consumes one.
         edgeTapeUsed: w.workType === "board" ? 1 : 0,
@@ -1168,10 +1215,20 @@ export async function seedDemoData(
   // Service inventory: customer boards still held against open jobs.
   for (let i = 0; i < 4; i += 1) {
     const c = customerIds[i];
+    /*
+     * Tied to one of that customer's own jobs.
+     *
+     * The custody panel on a job reads these by `jobId`, so records written without one were
+     * invisible everywhere except the dashboard count — which could only ever climb, because
+     * nothing could close a record it could not list.
+     */
+    const theirJob = jobRecords.find((j) => j.customerId === c.id) ?? jobRecords[i];
     batch.set(doc(collection(db, COL.inventoryService)), {
       ...base,
       customerId: c.id,
       customerName: c.name,
+      jobId: theirJob?.id ?? null,
+      jobNumber: theirJob?.number ?? null,
       boardType: (["mdf", "egger", "quarter", "kwali"] as const)[i],
       quantity: [6, 4, 2, 3][i],
       // First two are aged past 21 days so the held-boards observation fires;

@@ -358,9 +358,28 @@ service cloud.firestore {
     // Products pipeline
     // =====================================================================
 
+    /**
+     * True when this write touches the estimate's approval, which is what turns a quote into
+     * an agreed price.
+     *
+     * `contractValueKobo` is the figure the client is invoiced against — `createInvoiceFromProject`
+     * prefers it over the sum of the components — so being able to set it is being able to decide
+     * what the workshop charges. Approving is denied to a manager in the capability matrix, but
+     * the matrix only ever gated the button: the rules let any ops user write every project
+     * field, so the contract value could be set by a direct write. Checked by field rather than
+     * by whole document so ordinary project edits stay open to a manager.
+     */
+    function touchesEstimateApproval() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['contractValueKobo', 'estimateStatus', 'estimateApprovedAt', 'estimateApprovedBy']);
+    }
+
     match /projects/{projectId} {
       allow read: if isAdminOr('project.view');
-      allow create, update: if isOps();
+      allow create: if isOps();
+      // Ordinary edits need ops; setting the agreed price needs the approval grant.
+      allow update: if isOps()
+        && (!touchesEstimateApproval() || isAdminOr('estimate.approve'));
       allow delete: if isAdminOr('record.delete');
 
       /*

@@ -49,6 +49,7 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { HeldBoardsPanel } from "./HeldBoardsPanel";
 import { JobSheet } from "./JobSheet";
 import { JobDetailsEditor } from "./JobDetailsEditor";
 import { PrintPreview } from "@/components/admin/ui/PrintPreview";
@@ -327,6 +328,10 @@ export function JobDetail() {
             tone={job.balanceKobo > 0 ? "warn" : "good"}
           />
         </div>
+
+        {/* The customer's own boards, above the status controls on purpose: whether their
+            property has been handed back is part of deciding the job is finished. */}
+        <HeldBoardsPanel jobId={jobId} customerName={job.customerName} />
 
         {/* Status pipeline */}
         {canEdit && nextStates.length > 0 && (
