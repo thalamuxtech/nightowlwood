@@ -14,7 +14,14 @@ import {
   writeBatch,
   type Firestore,
 } from "firebase/firestore";
-import { COL, COUNTER, componentsPath, featuresPath } from "./collections";
+import {
+  COL,
+  COUNTER,
+  addonsPath,
+  componentsPath,
+  featuresPath,
+  projectPurchasesPath,
+} from "./collections";
 import type {
   BoardType,
   EstimateStatus,
@@ -850,13 +857,44 @@ export async function deleteProject(
   projectId: string,
   projectNumber: string
 ): Promise<void> {
+  /*
+   * Purchases first, with the expense each one booked.
+   *
+   * Firestore does not cascade, so a subcollection left behind is unreachable once the parent
+   * is gone. That matters most for purchases: each was written in a batch with a paired row in
+   * the company expense ledger (`recordProjectPurchase`), and once the pairing is unreachable
+   * the expense can never be removed through any screen. It would sit in the books forever,
+   * counted in the profit report, attributed to a project that no longer exists.
+   *
+   * The expense goes in the same batch as its purchase, matching how the pair was written and
+   * how `deleteProjectPurchase` removes it.
+   */
+  const purchases = await getDocs(collection(db, projectPurchasesPath(projectId)));
+  for (let i = 0; i < purchases.docs.length; i += 200) {
+    const b = writeBatch(db);
+    for (const p of purchases.docs.slice(i, i + 200)) {
+      const expenseId = p.data().expenseId as string | undefined;
+      if (expenseId) b.delete(doc(db, COL.expenses, expenseId));
+      b.delete(p.ref);
+    }
+    await b.commit();
+  }
+
   const comps = await getDocs(collection(db, componentsPath(projectId)));
+  let addonCount = 0;
   for (const c of comps.docs) {
-    const feats = await getDocs(collection(db, featuresPath(projectId, c.id)));
-    for (let i = 0; i < feats.docs.length; i += 400) {
-      const b = writeBatch(db);
-      feats.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref));
-      await b.commit();
+    // Features and addons both hang off the component, so both go with it.
+    for (const sub of [
+      { path: featuresPath(projectId, c.id), isAddon: false },
+      { path: addonsPath(projectId, c.id), isAddon: true },
+    ]) {
+      const kids = await getDocs(collection(db, sub.path));
+      if (sub.isAddon) addonCount += kids.docs.length;
+      for (let i = 0; i < kids.docs.length; i += 400) {
+        const b = writeBatch(db);
+        kids.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref));
+        await b.commit();
+      }
     }
     await deleteDoc(c.ref);
   }
@@ -867,6 +905,8 @@ export async function deleteProject(
     action: "delete",
     collectionName: COL.projects,
     docId: projectId,
-    summary: `Deleted project ${projectNumber} and its components`,
+    summary:
+      `Deleted project ${projectNumber}, its components, ${addonCount} addon(s) ` +
+      `and ${purchases.docs.length} purchase(s) with their expense entries`,
   });
 }

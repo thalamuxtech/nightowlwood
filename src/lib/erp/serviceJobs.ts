@@ -316,6 +316,25 @@ export async function recordJobPayment(
     const snap = await tx.get(jobRef);
     if (!snap.exists()) throw new Error("Job not found.");
     const data = snap.data();
+
+    /*
+     * Once invoiced, the invoice is the receivable and payments belong on it.
+     *
+     * The invoice carried this job's deposit forward when it was raised, so money added here
+     * afterwards is counted on both documents: the job reads as paid while the invoice still
+     * shows the balance outstanding, and the customer is chased for money they have already
+     * handed over. Only one document can be the place payment is recorded, and after invoicing
+     * it is the one the customer is holding.
+     *
+     * Cleared by `voidInvoice`, so voiding returns the job to taking payment directly.
+     */
+    if (data.invoiceId) {
+      throw new Error(
+        `This job was invoiced as ${data.invoiceNumber ?? "an invoice"}. Record the payment ` +
+          "against that invoice instead, so the two do not disagree."
+      );
+    }
+
     const nextPaid = (data.paidKobo ?? 0) + payment.amountKobo;
 
     tx.set(payRef, {

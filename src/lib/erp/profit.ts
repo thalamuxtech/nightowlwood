@@ -78,6 +78,14 @@ export interface RevenueBreakdown {
   salesTaxKobo: number;
   /** What the goods sold at the counter had cost to buy. */
   salesCostKobo: number;
+  /**
+   * How much of the period could be charged twice for the same goods: stock purchases typed
+   * into the expense ledger while the same period's sales also carry a cost of goods.
+   *
+   * Zero when stock is received through the inventory screen, which is the intended route.
+   * A warning rather than an adjustment — the figures are not corrected for it.
+   */
+  retailCogsRiskKobo: number;
   totalKobo: number;
 }
 
@@ -303,14 +311,35 @@ export async function buildProfitReport(
   const costTotalKobo = expenseTotalKobo + meteredPowerKobo + commissionKobo;
 
   /*
-   * Revenue.
+   * Revenue, with the cost of what was sold netted off.
    *
-   * Cost of goods is subtracted from sales here rather than added to costs, because
-   * the stock was bought earlier and that purchase is already in the expense ledger.
-   * Adding COGS to the cost side would charge the business twice for the same boards.
+   * Receiving stock does not write an expense — `recordMovement` books the quantity and the
+   * unit cost against the item and nothing else — so the boards on the shelf have not been
+   * charged to profit anywhere yet. Recognising them here, when they sell, is the single
+   * charge for them, and it puts the cost in the period that earned the matching revenue
+   * rather than the period the pallet arrived.
+   *
+   * The exposure is a purchase ALSO hand-entered in the expense ledger, which charges the
+   * same boards twice — once as `purchases`/`materials` and again as cost of goods. That is
+   * why stock bought for the counter should be received through the inventory screen and not
+   * typed in as an expense; `retailCogsRiskKobo` below surfaces it when both are present.
    */
   const totalRevenueKobo = serviceKobo + productKobo + salesKobo - salesCostKobo;
   const netKobo = totalRevenueKobo - costTotalKobo;
+
+  /*
+   * How much of this period's profit could be charged twice for the same goods.
+   *
+   * Zero for a workshop that receives stock through the inventory screen. It goes positive
+   * only when there are both counter sales and hand-entered stock purchases in the period,
+   * and it is capped at the cost of goods sold because that is the most that can overlap —
+   * a purchase larger than what sold is partly stock still on the shelf, which is not a
+   * double charge but simply unsold. Reported rather than corrected: only the person who
+   * typed the expense knows whether it was the same boards.
+   */
+  const stockExpenseKobo = (byCategory.purchases ?? 0) + (byCategory.materials ?? 0);
+  const retailCogsRiskKobo =
+    salesCostKobo > 0 ? Math.min(salesCostKobo, stockExpenseKobo) : 0;
 
   // --- The same period, split three ways ----------------------------------
 
@@ -395,6 +424,7 @@ export async function buildProfitReport(
       salesKobo,
       salesTaxKobo,
       salesCostKobo,
+      retailCogsRiskKobo,
       totalKobo: totalRevenueKobo,
     },
     costs: {

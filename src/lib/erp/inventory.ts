@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   query,
   runTransaction,
   serverTimestamp,
@@ -567,9 +568,17 @@ export async function addProductPurchase(
     createdBy: actor.uid,
   });
 
-  // Charged to the project so estimated against actual stays meaningful.
+  /*
+   * Charged to the project so estimated against actual stays meaningful.
+   *
+   * `increment` rather than read-add-write: two buyers recording materials for the same
+   * project seconds apart would both read the same starting figure and the second write would
+   * erase the first, understating what the project cost with nothing anywhere to detect it —
+   * `actualCostKobo` has no re-sum repair path. The server applies the delta atomically, which
+   * is what every other rollup in this codebase does by transaction.
+   */
   await updateDoc(doc(db, COL.projects, input.projectId), {
-    actualCostKobo: await nextActualCost(db, input.projectId, totalCostKobo),
+    actualCostKobo: increment(totalCostKobo),
     updatedAt: serverTimestamp(),
     updatedBy: actor.uid,
   }).catch(() => {
@@ -586,15 +595,6 @@ export async function addProductPurchase(
   });
 
   return ref.id;
-}
-
-async function nextActualCost(
-  db: Firestore,
-  projectId: string,
-  addKobo: number
-): Promise<number> {
-  const snap = await getDoc(doc(db, COL.projects, projectId));
-  return ((snap.data()?.actualCostKobo as number) ?? 0) + addKobo;
 }
 
 // ---------------------------------------------------------------------------
@@ -798,6 +798,28 @@ export async function receivePurchase(
   const snap = await getDoc(purchaseRef);
   if (!snap.exists()) throw new Error("Purchase not found.");
   const purchase = snap.data() as Purchase;
+
+  /*
+   * Receiving twice would put the delivery on the books twice.
+   *
+   * The stock movements below run after the batch and are not part of it, so a second call
+   * adds every received quantity to stock again — and worse, re-blends the weighted average
+   * against a delivery that never arrived, which quietly corrupts the cost of goods on every
+   * later sale of that item. A double-click or a retry after a timeout is enough.
+   *
+   * Refused rather than made idempotent: a genuine second delivery against the same order is
+   * a separate receipt, and a correction to a wrong quantity belongs in a stock adjustment
+   * where it carries a reason and an audit note.
+   */
+  if (purchase.status === "received") {
+    throw new Error(
+      "This purchase has already been received. Adjust the stock count instead if the " +
+        "quantities were wrong, so the correction is recorded with a reason."
+    );
+  }
+  if (purchase.status === "cancelled") {
+    throw new Error("This purchase was cancelled, so it cannot be received.");
+  }
 
   const lineSnap = await getDocs(collection(db, purchaseLinesPath(purchaseId)));
   const byId = new Map(lineSnap.docs.map((d) => [d.id, d]));

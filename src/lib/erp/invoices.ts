@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  runTransaction,
   serverTimestamp,
   Timestamp,
   updateDoc,
@@ -502,6 +503,25 @@ async function persist(
     createdAt: serverTimestamp(),
     createdBy: actor.uid,
   });
+
+  /*
+   * Point the job back at its invoice, in the same batch that created it.
+   *
+   * From here the invoice is the receivable: it carries the job's deposit forward as
+   * `amountPaidKobo`, so a payment recorded against the job as well would be counted twice
+   * across the two documents and the customer would be chased for money already paid.
+   * `recordJobPayment` refuses once this is set, which is only safe because the link cannot
+   * lag behind the invoice — hence the same batch rather than a follow-up write.
+   */
+  if (input.jobId) {
+    batch.update(doc(db, COL.serviceJobs, input.jobId), {
+      invoiceId: ref.id,
+      invoiceNumber,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+  }
+
   await batch.commit();
 
   await writeAudit(db, {
@@ -719,25 +739,54 @@ export async function recordInvoicePayment(
   invoiceNumber: string,
   amountKobo: number
 ): Promise<void> {
-  const snap = await getDoc(doc(db, COL.invoices, invoiceId));
-  if (!snap.exists()) throw new Error("Invoice not found.");
-  const inv = snap.data();
+  /*
+   * In a transaction: the balance is read, added to and written back, so two clerks taking
+   * money at the same time would otherwise both read the same figure and the second write
+   * would erase the first — money received and no record of it.
+   */
+  const ref = doc(db, COL.invoices, invoiceId);
+  const booked = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("Invoice not found.");
+    const inv = snap.data();
 
-  const nextPaid = (inv.amountPaidKobo ?? 0) + amountKobo;
-  const total = inv.totalKobo ?? 0;
-  if (nextPaid > total) {
-    throw new Error(
-      `That would take payments past the invoice total. Outstanding is ${total - (inv.amountPaidKobo ?? 0)} kobo.`
-    );
-  }
+    /*
+     * Status checked here and not only in the screen.
+     *
+     * A void invoice is not owed and a draft has not been sent, so neither is a thing a
+     * customer can pay against. Money recorded on one lands on a document the receivables
+     * list and the customer profile both filter out, so it can never be reconciled — the
+     * takings are short and nothing shows why. The screens already hide the button; this is
+     * the layer that has to hold when a stale tab or another caller gets past them.
+     */
+    if (inv.status === "void") {
+      throw new Error("That invoice was voided, so it cannot take a payment.");
+    }
+    if (inv.status === "draft") {
+      throw new Error(
+        "That invoice is still a draft. Issue it first, so the customer has the document " +
+          "the payment is against."
+      );
+    }
 
-  await updateDoc(doc(db, COL.invoices, invoiceId), {
-    amountPaidKobo: nextPaid,
-    balanceKobo: total - nextPaid,
-    // Partial only. Full settlement is the admin-only Cloud Function.
-    status: nextPaid > 0 && nextPaid < total ? "partial" : inv.status,
-    updatedAt: serverTimestamp(),
-    updatedBy: actor.uid,
+    const nextPaid = (inv.amountPaidKobo ?? 0) + amountKobo;
+    const total = inv.totalKobo ?? 0;
+    if (nextPaid > total) {
+      throw new Error(
+        `That would take payments past the invoice total. Outstanding is ${total - (inv.amountPaidKobo ?? 0)} kobo.`
+      );
+    }
+
+    tx.update(ref, {
+      amountPaidKobo: nextPaid,
+      balanceKobo: total - nextPaid,
+      // Partial only. Full settlement is the admin-only Cloud Function.
+      status: nextPaid > 0 && nextPaid < total ? "partial" : inv.status,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+
+    return { before: inv.amountPaidKobo ?? 0, after: nextPaid };
   });
 
   await writeAudit(db, {
@@ -746,8 +795,8 @@ export async function recordInvoicePayment(
     collectionName: COL.invoices,
     docId: invoiceId,
     summary: `${invoiceNumber}: payment of ${amountKobo} kobo recorded`,
-    before: { amountPaidKobo: inv.amountPaidKobo ?? 0 },
-    after: { amountPaidKobo: nextPaid },
+    before: { amountPaidKobo: booked.before },
+    after: { amountPaidKobo: booked.after },
   });
 }
 
@@ -759,12 +808,41 @@ export async function voidInvoice(
   invoiceNumber: string,
   reason: string
 ): Promise<void> {
-  await updateDoc(doc(db, COL.invoices, invoiceId), {
+  const ref = doc(db, COL.invoices, invoiceId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Invoice not found.");
+  const inv = snap.data();
+  if (inv.status === "void") throw new Error("That invoice is already void.");
+
+  const batch = writeBatch(db);
+
+  /*
+   * Balance zeroed, matching `voidSale`.
+   *
+   * A void invoice is not owed, so leaving the balance standing keeps a debt on a document
+   * every report has stopped counting — visible on the invoice itself, invisible to the
+   * receivables list, and impossible to clear. What was actually paid stays on the record:
+   * money received is a fact, and if it is being refunded that is its own entry.
+   */
+  batch.update(ref, {
     status: "void" satisfies InvoiceStatus,
+    balanceKobo: 0,
     notes: reason,
     updatedAt: serverTimestamp(),
     updatedBy: actor.uid,
   });
+
+  // Hand the job back its receivable, so payments can be recorded against it again.
+  if (inv.jobId) {
+    batch.update(doc(db, COL.serviceJobs, inv.jobId as string), {
+      invoiceId: null,
+      invoiceNumber: null,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+  }
+
+  await batch.commit();
 
   await writeAudit(db, {
     actor,
@@ -772,6 +850,11 @@ export async function voidInvoice(
     collectionName: COL.invoices,
     docId: invoiceId,
     summary: `Voided ${invoiceNumber}: ${reason}`,
-    after: { status: "void", reason },
+    before: {
+      status: inv.status,
+      balanceKobo: inv.balanceKobo ?? 0,
+      amountPaidKobo: inv.amountPaidKobo ?? 0,
+    },
+    after: { status: "void", balanceKobo: 0, reason },
   });
 }

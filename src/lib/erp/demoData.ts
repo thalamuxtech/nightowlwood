@@ -305,13 +305,22 @@ const INVENTORY = [
   { name: "Screws 1 1/4", category: "fittings", unit: "pack", onHand: 2, reorder: 8, naira: 2500 },
 ];
 
-/** The counter's own shelf — deliberately not the same rows as company stock. */
+/**
+ * The counter's own shelf — deliberately not the same rows as company stock.
+ *
+ * `onHand` is what is left *after* the seeded sales, not before them. The sales are written
+ * as finished documents rather than replayed through `completeSale`, so nothing decrements
+ * these counts; they have to be the closing figure or the shelf and the receipts disagree.
+ * Every count therefore has to exceed what the sales below take, or the demo contains a sale
+ * the till itself would have refused.
+ */
 const POS_STOCK = [
   { name: "18mm White MDF 8x4", category: "boards", unit: "sheet", onHand: 24, reorder: 10, cost: 28000, price: 32000 },
   { name: "18mm HDF 8x4", category: "boards", unit: "sheet", onHand: 6, reorder: 10, cost: 24000, price: 28000 },
   { name: "Quarter Plywood", category: "boards", unit: "sheet", onHand: 31, reorder: 15, cost: 9000, price: 11500 },
   { name: "Edge Tape 22mm", category: "consumables", unit: "roll", onHand: 14, reorder: 8, cost: 4500, price: 6000 },
-  { name: "Wood Glue", category: "consumables", unit: "tin", onHand: 4, reorder: 6, cost: 3500, price: 4800 },
+  // 8 rather than 4: the seeded sales take 5 tins, and stock cannot go negative at the till.
+  { name: "Wood Glue", category: "consumables", unit: "tin", onHand: 8, reorder: 6, cost: 3500, price: 4800 },
   { name: "Cabinet Handles", category: "fittings", unit: "piece", onHand: 60, reorder: 24, cost: 1200, price: 1800 },
   { name: "Soft Close Hinges", category: "fittings", unit: "pair", onHand: 48, reorder: 20, cost: 2500, price: 3500 },
   { name: "Angle Irons", category: "fittings", unit: "piece", onHand: 90, reorder: 30, cost: 600, price: 1000 },
@@ -433,10 +442,10 @@ const LEAD_SEED: Array<{
   lastContactDaysAgo: number;
   dueInDays: number;
 }> = [
-  { name: "Musa Danladi", phone: "0803 456 7890", area: "Sharada Phase II", service: "Kitchen cabinets, 3 wardrobes", budget: "high", status: "quoted", followUps: 3, lastContactDaysAgo: 3, dueInDays: 2 },
+  { name: "Musa Danladi", phone: "0803 456 7890", area: "Sharada Phase II", service: "Kitchen cabinets, 3 wardrobes", budget: "high", status: "quoted", followUps: 3, lastContactDaysAgo: 3, dueInDays: -2 },
   { name: "Alhaji Bello", phone: "0806 221 4433", area: "Nassarawa GRA", service: "Kitchen cabinets", budget: "medium", status: "contacted", followUps: 2, lastContactDaysAgo: 8, dueInDays: 4 },
   { name: "Ibrahim Sani", phone: "0810 555 2211", area: "Zoo Road", service: "Office doors and interior", budget: "high", status: "won", followUps: 4, lastContactDaysAgo: 5, dueInDays: 0 },
-  { name: "Hajiya Amina", phone: "0805 909 1122", area: "Kabuga", service: "Cutting and edging, glass work", budget: "medium", status: "new", followUps: 0, lastContactDaysAgo: 1, dueInDays: 1 },
+  { name: "Hajiya Amina", phone: "0805 909 1122", area: "Kabuga", service: "Cutting and edging, glass work", budget: "medium", status: "new", followUps: 0, lastContactDaysAgo: 1, dueInDays: 0 },
   { name: "Sadiq Yusuf", phone: "0812 334 5566", area: "Gwale", service: "Wardrobes", budget: "low", status: "lost", followUps: 2, lastContactDaysAgo: 14, dueInDays: 0 },
 ];
 
@@ -648,6 +657,7 @@ export async function seedDemoData(
   // --- Work logs -----------------------------------------------------------
   onProgress("Work logs");
   batch = writeBatch(db);
+  let approvalTarget: { id: string; staffName: string; workType: string } | null = null;
   const usable = WORK_PATTERN.filter((w) => w.units > 0);
   for (let week = 0; week < 6; week += 1) {
     for (let j = 0; j < usable.length; j += 1) {
@@ -673,7 +683,12 @@ export async function seedDemoData(
         w.workType === "board" || w.workType === "only_cutting" || w.workType === "special_board";
       const boardsUsed = movesSheets ? Math.max(1, Math.round(units / 3)) : 0;
 
-      batch.set(doc(collection(db, COL.workLogs)), {
+      const logRef = doc(collection(db, COL.workLogs));
+      // Kept so the pending approval below can target a log that genuinely exists.
+      if (!approvalTarget) {
+        approvalTarget = { id: logRef.id, staffName: operator.name, workType: w.workType };
+      }
+      batch.set(logRef, {
         ...base,
         staffId: operator.id,
         staffName: operator.name,
@@ -1165,14 +1180,32 @@ export async function seedDemoData(
       netPayableKobo: gross - deductions,
       unattributedAssistantKobo: 0,
       logCount: 8 + week,
+      /*
+       * The rows have to add up to the headline.
+       *
+       * Both figures are on the same screen — the run header prints the gross and the payslip
+       * list prints each person — so assistant pay left out of every row, or a kobo lost to
+       * rounding, shows up as a visible discrepancy on the one screen a payroll clerk checks.
+       * The last person absorbs the remainder, the same way `spreadAcrossItems` does for
+       * project features.
+       */
       perStaff: operators.map((o, k) => {
-        const total = Math.round(operatorTotal / operators.length);
+        const last = k === operators.length - 1;
+        const opShare = Math.floor(operatorTotal / operators.length);
+        const asstShare = Math.floor(assistantTotal / operators.length);
+        const operatorKobo = last
+          ? operatorTotal - opShare * (operators.length - 1)
+          : opShare;
+        const assistantKobo = last
+          ? assistantTotal - asstShare * (operators.length - 1)
+          : asstShare;
+        const total = operatorKobo + assistantKobo;
         const ded = k === 0 ? deductions : 0;
         return {
           staffId: o.id,
           staffName: o.name,
-          operatorKobo: total,
-          assistantKobo: 0,
+          operatorKobo,
+          assistantKobo,
           totalKobo: total,
           deductionKobo: ded,
           netKobo: total - ded,
@@ -1647,9 +1680,16 @@ export async function seedDemoData(
       status: l.status,
       sourceVisitId: null,
       ownerName: marketer?.name ?? "Demo marketer",
-      // One is deliberately overdue, so the "due now" queue is not empty.
+      /*
+       * `dueInDays` counts forward, so it is negated: `daysAgo` subtracts.
+       *
+       * Passing it straight through put every open lead in the past, and `leadFrom` marks
+       * anything on or before today as due — so the whole list read as overdue and the one
+       * deliberately-late lead the queue is meant to highlight was indistinguishable from
+       * the rest. Musa is the overdue one, at `dueInDays: -2`.
+       */
       nextAction: closed ? null : "Call back with a price",
-      nextActionOn: closed ? null : key(daysAgo(l.dueInDays)),
+      nextActionOn: closed ? null : key(daysAgo(-l.dueInDays)),
       notes: null,
       followUpCount: l.followUps,
       lastContactAt: Timestamp.fromDate(daysAgo(l.lastContactDaysAgo)),
@@ -1707,27 +1747,58 @@ export async function seedDemoData(
   onProgress("Cutting lists and approvals");
   batch = writeBatch(db);
 
+  /*
+   * Written in exactly the shape the public create rule allows, which is stricter than
+   * anything else the seeder writes.
+   *
+   * That rule is open to anonymous callers, so it pins the key set with `hasOnly`, forces
+   * `status` to `submitted`, requires `createdBy` and `customerId` to be null, and matches
+   * `listNumber` against `^CL-[0-9]{6}-[A-Z2-9]{4}$` — an alphabet with no `0`, `1`, `I` or
+   * `O` in it, so a customer reading a reference number down the phone cannot be misheard.
+   *
+   * So no `...base` here: its `isDemo` and `createdBy` keys alone would fail `hasOnly`, and
+   * the whole batch — the approval below included — would be rejected. The demo flag goes on
+   * afterwards, in an update, which is staff-gated and unconstrained.
+   */
+  const cuttingRefs: Array<ReturnType<typeof doc>> = [];
+  const stamp = `${new Date().getFullYear().toString().slice(2)}${pad(
+    new Date().getMonth() + 1,
+    2
+  )}${pad(new Date().getDate(), 2)}`;
   for (let i = 0; i < CUTTING_LISTS.length; i += 1) {
     const c = CUTTING_LISTS[i];
-    batch.set(doc(collection(db, COL.cuttingLists)), {
-      ...base,
-      listNumber: `CL-${new Date().getFullYear().toString().slice(2)}${pad(
-        new Date().getMonth() + 1,
-        2
-      )}${pad(new Date().getDate(), 2)}-DEM${i + 1}`,
+    const ref = doc(collection(db, COL.cuttingLists));
+    cuttingRefs.push(ref);
+    batch.set(ref, {
+      listNumber: `CL-${stamp}-DEM${"ABCDEFGHJKLMNPQRSTUVWXYZ"[i] ?? "Z"}`,
       customerName: c.customer,
       customerPhone: c.phone,
+      customerId: null,
+      jobId: null,
       title: c.title,
       parts: c.parts,
       wastePercent: 10,
       offsetMm: 3,
       notes: null,
-      status: c.status,
+      // The rule allows only `submitted` on create; anything further is a staff move.
+      status: "submitted",
       submittedByCustomer: true,
       submittedAt: Timestamp.fromDate(daysAgo(i + 1)),
       totals: c.totals,
+      createdAt: serverTimestamp(),
+      createdBy: null,
     });
     written += 1;
+  }
+  await batch.commit();
+
+  // Now the demo flag and any status past `submitted`, as a staff update.
+  batch = writeBatch(db);
+  for (let i = 0; i < cuttingRefs.length; i += 1) {
+    batch.update(cuttingRefs[i], {
+      [DEMO_FLAG]: true,
+      status: CUTTING_LISTS[i].status,
+    });
   }
 
   /*
@@ -1736,22 +1807,41 @@ export async function seedDemoData(
    * So the approvals screen has a row, and so the notification function has something to fire on
    * when somebody presses approve — which is the only way to see that path work.
    */
-  batch.set(doc(collection(db, COL.approvals)), {
-    ...base,
-    status: "pending",
-    action: "delete",
-    collectionName: COL.workLogs,
-    docId: "demo-work-log",
-    summary: "Work log for Bashir Usman on a job that was cancelled",
-    reason: "Logged against the wrong job — the customer cancelled before any cutting started.",
-    requestedByUid: createdBy,
-    requestedByEmail: "manager@nightowl.com.ng",
-    requestedAt: Timestamp.fromDate(daysAgo(1)),
-    decidedByUid: null,
-    decidedByEmail: null,
-    decidedAt: null,
-  });
-  written += 1;
+  /*
+   * Pointed at a work log that was really seeded, using the field names the module reads.
+   *
+   * `applyApproval` resolves the target as `doc(db, targetCollection, targetId)`, so a made-up
+   * id or the wrong key names means pressing Approve throws on a Firestore path rather than
+   * doing anything — breaking the one screen this row exists to demonstrate.
+   */
+  if (approvalTarget) {
+    const approvalRef = doc(collection(db, COL.approvals));
+    batch.set(approvalRef, {
+      ...base,
+      status: "pending",
+      kind: "delete",
+      targetCollection: COL.workLogs,
+      targetId: approvalTarget.id,
+      targetLabel: `${approvalTarget.workType} log for ${approvalTarget.staffName}`,
+      payload: null,
+      summary: `Work log for ${approvalTarget.staffName} on a job that was cancelled`,
+      reason:
+        "Logged against the wrong job — the customer cancelled before any cutting started.",
+      requestedByUid: createdBy,
+      requestedByEmail: "manager@nightowl.com.ng",
+      requestedAt: Timestamp.fromDate(daysAgo(1)),
+      decidedByUid: null,
+      decidedByEmail: null,
+      decidedAt: null,
+    });
+
+    // The lock a real request stamps on its target, so the pair matches what the app writes.
+    batch.update(doc(db, COL.workLogs, approvalTarget.id), {
+      pendingApprovalId: approvalRef.id,
+      pendingApprovalKind: "delete",
+    });
+    written += 1;
+  }
   await batch.commit();
 
   onProgress("Done");

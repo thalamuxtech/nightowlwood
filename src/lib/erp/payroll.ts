@@ -550,7 +550,15 @@ export async function adjustWageRunStaff(
       };
     });
 
-    const grandTotal = sumKobo(updated.map((s) => s.totalKobo));
+    /*
+     * Assistant pay from logs that named no assistant is in the run's total but in nobody's
+     * row, so rebuilding the total from the rows alone would quietly drop it — and with it
+     * the same amount from `netPayableKobo` and from the expense booked at payment. Carried
+     * across untouched: adjusting one operator's pay says nothing about the unattributed
+     * work, so it stays exactly as computed from the logs.
+     */
+    const unattributed = (run.unattributedAssistantKobo as number | undefined) ?? 0;
+    const grandTotal = sumKobo(updated.map((s) => s.totalKobo)) + unattributed;
     const deductions = sumKobo(updated.map((s) => s.deductionKobo ?? 0));
 
     tx.update(ref, {
