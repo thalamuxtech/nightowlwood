@@ -28,6 +28,7 @@ import type {
   ProductCategory,
   ProjectStatus,
 } from "./enums";
+import { PROJECT_STATUS_FLOW, PROJECT_STATUS_LABELS } from "./enums";
 import { applyPercentKobo, lineAmountKobo, sumKobo } from "./money";
 import { allocateDocNumber } from "./numbering";
 import { DEFAULT_INVOICE_SETTINGS } from "./settings";
@@ -229,14 +230,45 @@ export async function setProjectStatus(
   from: ProjectStatus,
   to: ProjectStatus
 ): Promise<void> {
-  const patch: Record<string, unknown> = {
-    status: to,
-    updatedAt: serverTimestamp(),
-    updatedBy: actor.uid,
-  };
-  if (to === "completed") patch.completedAt = serverTimestamp();
+  /*
+   * The guard lives here rather than in the screen for the same reason the job one does: the
+   * buttons a screen offers are a convenience, not a control, and this is also called from the
+   * board view where the caller's `from` is whatever the list held when it was last read.
+   *
+   * So the transition is checked against the status actually stored, inside a transaction. A
+   * stale tab moving a project that somebody else already advanced is refused rather than
+   * silently dragging it backwards.
+   */
+  await runTransaction(db, async (tx) => {
+    const ref = doc(db, COL.projects, projectId);
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("Project not found.");
+    const current = (snap.data().status ?? "enquiry") as ProjectStatus;
 
-  await updateDoc(doc(db, COL.projects, projectId), patch);
+    if (current !== to && !PROJECT_STATUS_FLOW[current].includes(to)) {
+      const allowed = PROJECT_STATUS_FLOW[current];
+      throw new Error(
+        allowed.length === 0
+          ? `${projectNumber} is ${PROJECT_STATUS_LABELS[current].toLowerCase()}, which is final. ` +
+            "Raise a new project for further work on it."
+          : `${projectNumber} cannot go from ${PROJECT_STATUS_LABELS[current].toLowerCase()} ` +
+            `to ${PROJECT_STATUS_LABELS[to].toLowerCase()}. It can move to: ` +
+            `${allowed.map((s) => PROJECT_STATUS_LABELS[s].toLowerCase()).join(", ")}.`
+      );
+    }
+
+    const patch: Record<string, unknown> = {
+      status: to,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    };
+    // Cleared on the way out, so a project that came back from completed does not keep a
+    // completion date that would report it as finished in the period it was reverted.
+    patch.completedAt = to === "completed" ? serverTimestamp() : null;
+
+    tx.update(ref, patch);
+  });
+
   await writeAudit(db, {
     actor,
     action: "status_change",
@@ -805,14 +837,49 @@ export async function approveProjectEstimate(
   projectNumber: string,
   totalKobo: number
 ): Promise<void> {
-  await updateDoc(doc(db, COL.projects, projectId), {
-    estimateStatus: "approved" satisfies EstimateStatus,
-    estimateApprovedBy: actor.uid,
-    estimateApprovedAt: serverTimestamp(),
-    status: "approved" satisfies ProjectStatus,
-    contractValueKobo: totalKobo,
-    updatedAt: serverTimestamp(),
-    updatedBy: actor.uid,
+  await runTransaction(db, async (tx) => {
+    const ref = doc(db, COL.projects, projectId);
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("Project not found.");
+    const current = (snap.data().status ?? "enquiry") as ProjectStatus;
+
+    /*
+     * Approving the estimate moves the project to `approved` only from the stages that come
+     * before it. Re-approving a revised estimate on a project already in the workshop leaves
+     * it where it is: the new contract value is what changed, not the stage of the work, and
+     * dragging it back to `approved` would restart production reporting on a fitted kitchen.
+     *
+     * A finished or cancelled project is refused outright — its estimate is history, and
+     * rewriting the contract value would restate a period already reported.
+     */
+    if (current === "completed" || current === "cancelled") {
+      throw new Error(
+        `${projectNumber} is ${PROJECT_STATUS_LABELS[current].toLowerCase()}, so its estimate ` +
+          "can no longer be approved. Raise a new project for further work on it."
+      );
+    }
+    /*
+     * "Is the project still before agreement", not "can it reach approved" — `in_production`
+     * and `installing` both list `approved` as a legitimate step back, so asking the flow table
+     * would move a kitchen already being built back to the approval stage.
+     */
+    const PRE_APPROVAL: ProjectStatus[] = [
+      "enquiry",
+      "estimating",
+      "awaiting_approval",
+      "approved",
+    ];
+    const advances = PRE_APPROVAL.includes(current);
+
+    tx.update(ref, {
+      estimateStatus: "approved" satisfies EstimateStatus,
+      estimateApprovedBy: actor.uid,
+      estimateApprovedAt: serverTimestamp(),
+      ...(advances ? { status: "approved" satisfies ProjectStatus } : {}),
+      contractValueKobo: totalKobo,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
   });
 
   await writeAudit(db, {

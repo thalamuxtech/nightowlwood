@@ -269,6 +269,30 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   cancelled: "Cancelled",
 };
 
+/**
+ * Which project status may follow which, in the same shape as `JOB_STATUS_FLOW`.
+ *
+ * A project moves forward through pricing, agreement, the workshop and the customer's
+ * house, and each stage can fall back one step because quotes get requoted and fitting
+ * finds problems. It cannot skip agreement: nothing reaches `in_production` without
+ * passing `approved`, because the contract value is what production is costed against.
+ *
+ * `completed` and `cancelled` are terminal. A finished project that turns out to need
+ * more work is a new project against the same customer rather than a reopened one —
+ * reviving it would restate a period whose profit has already been reported, and its
+ * `contractValueKobo` would re-enter revenue with nothing but an audit line to say why.
+ */
+export const PROJECT_STATUS_FLOW: Record<ProjectStatus, ProjectStatus[]> = {
+  enquiry: ["estimating", "cancelled"],
+  estimating: ["awaiting_approval", "enquiry", "cancelled"],
+  awaiting_approval: ["approved", "estimating", "cancelled"],
+  approved: ["in_production", "awaiting_approval", "cancelled"],
+  in_production: ["installing", "approved", "cancelled"],
+  installing: ["completed", "in_production", "cancelled"],
+  completed: [],
+  cancelled: [],
+};
+
 /*
  * "superseded" was dropped when the estimate stopped being a separate document.
  * It meant "a newer estimate exists for this project", which cannot happen now that

@@ -28,7 +28,7 @@ import {
   ESTIMATE_STATUS_LABELS,
   PRODUCT_CATEGORIES,
   PRODUCT_CATEGORY_LABELS,
-  PROJECT_STATUSES,
+  PROJECT_STATUS_FLOW,
   PROJECT_STATUS_LABELS,
   type BoardType,
   type EstimateStatus,
@@ -700,7 +700,10 @@ export function ProjectDetail() {
         <section className="mt-8 rounded-3xl border border-night-700/60 bg-night-900/30 p-6">
           <h2 className="font-display text-lg text-cream-100">Project status</h2>
           <div className="mt-4 flex flex-wrap gap-2">
-            {PROJECT_STATUSES.filter((s) => s !== project.status).map((s) => (
+            {/* Only the transitions the flow actually permits: offering all eight and letting
+                most of them fail on click tells the user what they cannot do only after they
+                have tried it. */}
+            {(PROJECT_STATUS_FLOW[project.status] ?? []).map((s) => (
               <button
                 key={s}
                 type="button"
@@ -727,6 +730,12 @@ export function ProjectDetail() {
                 {PROJECT_STATUS_LABELS[s]}
               </button>
             ))}
+            {(PROJECT_STATUS_FLOW[project.status] ?? []).length === 0 && (
+              <p className="text-sm text-cream-500">
+                {PROJECT_STATUS_LABELS[project.status]} is final. Raise a new project for any
+                further work on it.
+              </p>
+            )}
           </div>
         </section>
       )}

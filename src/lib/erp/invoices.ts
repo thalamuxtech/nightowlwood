@@ -14,6 +14,7 @@ import {
 import { COL, COUNTER, jobLinesPath } from "./collections";
 import {
   SERVICE_TYPE_LABELS,
+  type EstimateStatus,
   type InvoiceStatus,
   type ServiceType,
   type TaxMode,
@@ -338,17 +339,52 @@ export async function createInvoiceFromProject(
   }
 
   const settings = await invoiceSettings(db);
-  // Where a contract value was agreed on approval, that is the price. The sum of
-  // components is an estimate; the contract is what the client signed up to.
+
+  /*
+   * Where a contract value was agreed on approval, that is the price. The sum of components is
+   * an estimate; the contract is what the client signed up to.
+   *
+   * But only while the estimate still stands. Reopening it for a requote leaves the old
+   * contract value on the project deliberately, so the agreed figure survives the edit — which
+   * means invoicing mid-requote would bill the client the superseded price and bury the
+   * difference in an "adjustment" line. Refused instead: re-approve, and the contract value
+   * becomes the figure actually agreed.
+   */
   const lineSum = subtotalOfLines(lines);
   const agreed = project.contractValueKobo ?? 0;
+  const estimateStatus = project.estimateStatus as EstimateStatus | undefined;
+
+  if (agreed > 0 && estimateStatus !== "approved") {
+    throw new Error(
+      "This project's estimate is open for revision, so the agreed contract value may no longer " +
+        "be the price. Approve the estimate again before invoicing."
+    );
+  }
+
   if (agreed > 0 && agreed !== lineSum) {
+    const differenceKobo = agreed - lineSum;
+
+    /*
+     * A contract worth less than the work now listed would put a negative line on a document
+     * the client receives — a credit nobody approved, and one the invoice total would absorb
+     * silently. That is a repricing decision, not an invoicing one.
+     */
+    if (differenceKobo < 0) {
+      throw new Error(
+        `The work priced on this project (${lineSum} kobo) now exceeds the agreed contract ` +
+          `value (${agreed} kobo). Approve the revised estimate so the contract matches what ` +
+          "is being billed, or take the extra work off the project."
+      );
+    }
+
     lines.push({
       id: `l${lines.length + 1}`,
-      description: "Adjustment to agreed contract value",
+      // Named for what it actually is: the margins the contract carries over the bare
+      // components, which "adjustment" left the client guessing about.
+      description: "Balance of agreed contract value",
       quantity: 1,
-      unitPriceKobo: agreed - lineSum,
-      amountKobo: agreed - lineSum,
+      unitPriceKobo: differenceKobo,
+      amountKobo: differenceKobo,
     });
   }
 
