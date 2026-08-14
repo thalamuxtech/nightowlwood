@@ -43,6 +43,7 @@ import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider
 import { StaffPicker, type PickedStaff } from "@/components/admin/services/StaffPicker";
 import { ToolRequestSheet } from "@/components/admin/print/ToolRequestSheet";
 import type { AuditActor } from "@/lib/erp/audit";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 interface ItemRow {
   id: string;
@@ -308,6 +309,7 @@ function RequestPanel({
   onError: (m: string) => void;
   onPrint: (items: ItemRow[]) => void;
 }) {
+  const { confirm, dialog } = useConfirmBoolean();
   const [items, setItems] = useState<ItemRow[]>([]);
   const [issuing, setIssuing] = useState(false);
   const [returning, setReturning] = useState(false);
@@ -569,13 +571,14 @@ function RequestPanel({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => {
-                    if (
-                      !window.confirm(
-                        `Delete tool request ${request.requestNumber} and its ${items.length} item(s)?`
-                      )
-                    )
-                      return;
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: `Delete tool request ${request.requestNumber}?`,
+                      body: `The request and its ${items.length} item${items.length === 1 ? "" : "s"} are removed. This cannot be undone.`,
+                      confirmLabel: "Delete request",
+                      tone: "danger",
+                    });
+                    if (!ok) return;
                     deleteToolRequest(
                       getDb(),
                       actor,
@@ -660,6 +663,7 @@ function RequestPanel({
           )}
         </div>
       )}
+      {dialog}
     </div>
   );
 }

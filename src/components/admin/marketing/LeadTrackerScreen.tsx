@@ -50,6 +50,7 @@ import {
 import { StatusPill, type PillTone } from "@/components/admin/ui/StatusPill";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { rosterNameFor, useRoster } from "@/components/admin/marketing/useRoster";
+import { useConfirm } from "@/components/admin/ui/ConfirmDialog";
 
 /**
  * The lead tracker and the follow-up log, on one screen.
@@ -81,6 +82,7 @@ const TONE_BY_BUDGET: Record<BudgetLevel, PillTone> = {
 };
 
 export function LeadTrackerScreen() {
+  const { ask, dialog } = useConfirm();
   const session = useErpSession();
   const canRecord = session.can("marketing.record");
   const canManage = session.can("marketing.manage");
@@ -335,17 +337,35 @@ export function LeadTrackerScreen() {
     /*
      * Cancel means cancel, on both branches.
      *
-     * `window.prompt` returns null when dismissed and "" when submitted empty. The win branch
+     * `ask` returns null when dismissed and "" when submitted empty. The win branch
      * used to coalesce the null to "" because a note is optional — which meant dismissing the
      * dialog still marked the lead won, and `setLeadStatus` clears its follow-up schedule on the
      * way. An accidental click on "Won" was unrecoverable.
      */
     const reason =
       status === "lost"
-        ? window.prompt(
-            `Why was ${lead.clientName} lost?\n\nPrice, timing, already had a carpenter — whatever it was. This is the only chance to record it.`
-          )
-        : window.prompt(`Won ${lead.clientName}. Any note? (optional)`);
+        ? await ask({
+            title: `Why was ${lead.clientName} lost?`,
+            body: "Price, timing, already had a carpenter — whatever it was. This is the only chance to record it.",
+            confirmLabel: "Mark lost",
+            tone: "warn",
+            input: {
+              label: "Reason",
+              kind: "textarea",
+              placeholder: "Went with a cheaper carpenter in Ikorodu.",
+            },
+          })
+        : await ask({
+            title: `Mark ${lead.clientName} as won?`,
+            body: "The lead moves to won and its follow-up schedule is cleared.",
+            confirmLabel: "Mark won",
+            tone: "neutral",
+            input: {
+              label: "Note (optional)",
+              kind: "textarea",
+              placeholder: "Deposit paid, starting next Monday.",
+            },
+          });
     if (reason === null) return;
 
     setError("");
@@ -363,9 +383,13 @@ export function LeadTrackerScreen() {
   }
 
   async function remove(lead: Lead) {
-    const reason = window.prompt(
-      `Delete ${lead.clientName} from the tracker?\n\nGive a reason — it is kept in the audit log.`
-    );
+    const reason = await ask({
+      title: `Delete ${lead.clientName} from the tracker?`,
+      body: "The lead and its follow-up history come off the tracker. The reason is kept in the audit log.",
+      confirmLabel: "Delete lead",
+      tone: "danger",
+      input: { label: "Reason", kind: "textarea", placeholder: "Duplicate of another lead." },
+    });
     if (reason === null) return;
     setError("");
     setBusy(true);
@@ -752,6 +776,7 @@ export function LeadTrackerScreen() {
         Leads are also created automatically when a site visit with a phone number is promoted
         from the visits screen, so a number taken in the field never has to be typed twice.
       </p>
+      {dialog}
     </div>
   );
 }

@@ -36,6 +36,7 @@ import { toDateInputValue, fromDateInputValue } from "@/lib/erp/workLogs";
 import { Button, DateField, NumberField, TextField } from "@/components/admin/ui/Fields";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { StaffRatesPanel } from "./StaffRatesPanel";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 interface RateRow {
   id: string;
@@ -62,6 +63,7 @@ interface RateRow {
  * opens a new one instead of editing history.
  */
 export function WageRatesScreen() {
+  const { confirm, dialog } = useConfirmBoolean();
   const session = useErpSession();
   // Capability, not role: an admin may grant rate-keeping to a payroll clerk.
   const isAdmin = session.can("wage.editRates");
@@ -462,13 +464,14 @@ export function WageRatesScreen() {
                     type="button"
                     aria-label={`Stop offering ${type.label}`}
                     title="Stop offering this kind of work. Existing logs and rates keep it."
-                    onClick={() => {
-                      if (
-                        !window.confirm(
-                          `Stop offering "${type.label}"?\n\nIt disappears from the work log and rate pickers. Work already logged against it keeps its rate and still pays.`
-                        )
-                      )
-                        return;
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Stop offering "${type.label}"?`,
+                        body: "It disappears from the work log and rate pickers. Work already logged against it keeps its rate and still pays.",
+                        confirmLabel: "Stop offering",
+                        tone: "warn",
+                      });
+                      if (!ok) return;
                       hideWorkType(getDb(), actor, wt, type.label)
                         .then(() => {
                           setNotice(`"${type.label}" is no longer offered.`);
@@ -560,6 +563,7 @@ export function WageRatesScreen() {
 
       {/* Rates for named people, which override the work-type rates above. */}
       <StaffRatesPanel />
+      {dialog}
     </div>
   );
 }

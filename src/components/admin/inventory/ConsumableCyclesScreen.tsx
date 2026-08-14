@@ -37,6 +37,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useConfirm } from "@/components/admin/ui/ConfirmDialog";
 
 /**
  * Blade and gum cycles.
@@ -57,6 +58,7 @@ const TABS: Array<{ key: CycleConsumable; icon: typeof Disc3 }> = [
 ];
 
 export function ConsumableCyclesScreen() {
+  const { ask, dialog } = useConfirm();
   const session = useErpSession();
   /*
    * Issuing books an expense in the same batch, so it needs exactly the grant the expense ledger
@@ -136,12 +138,38 @@ export function ConsumableCyclesScreen() {
   }
 
   async function close() {
-    const when = window.prompt(
-      `What day did it come off the machine?\n\nUse yyyy-mm-dd. Leave blank for today.`,
-      todayIso()
-    );
+    const when = await ask({
+      title: `What day did the ${CYCLE_UNIT[tab]} come off the machine?`,
+      body: "The cycle closes on that day, and the boards cut up to it are what the wear figures are worked out from.",
+      confirmLabel: "Continue",
+      tone: "warn",
+      input: {
+        label: "Day it came off",
+        kind: "date",
+        initial: todayIso(),
+        hint: "Leave blank for today.",
+      },
+    });
     if (when === null) return;
-    const reason = window.prompt("Why was it taken off without a replacement? (optional)") ?? "";
+
+    const reasonAnswer = await ask({
+      title: "Why was it taken off without a replacement?",
+      body: "Optional, but it is what explains a short cycle when the figures are read later.",
+      confirmLabel: "Close cycle",
+      cancelLabel: "Close without a reason",
+      tone: "warn",
+      input: {
+        label: "Reason (optional)",
+        kind: "textarea",
+        placeholder: "Chipped teeth after hitting a nail.",
+      },
+    });
+    /*
+     * Either button closes the cycle, as before: the old prompt coalesced a dismissal to "" and
+     * carried on, so the reason was never what the decision hung on. The date box above is the
+     * one that aborts, and the cancel label here says so rather than implying otherwise.
+     */
+    const reason = reasonAnswer ?? "";
 
     const dateKey = validDateKey(when.trim() || todayIso());
     if (!dateKey) {
@@ -405,6 +433,7 @@ export function ConsumableCyclesScreen() {
           ? "Gum counts boards that went through the edge bander. A board that was only cut never reached it and used no gum, so those are left out — counting them would flatter every figure here."
           : "The blade counts every board that went through the saw, including the ones that were cut but not edged."}
       </p>
+      {dialog}
     </div>
   );
 }

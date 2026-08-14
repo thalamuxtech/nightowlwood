@@ -30,10 +30,12 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getDb, getFirebaseStorage } from "@/lib/firebase";
 import type { PortfolioItem } from "@/lib/types";
 import { RequireCapability } from "@/components/admin/RequireCapability";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 const CATEGORIES = ["Residential", "Commercial", "Joinery", "Custom"];
 
 function WorkManagerPageInner() {
+  const { confirm, dialog } = useConfirmBoolean();
   const [items, setItems] = useState<PortfolioItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<PortfolioItem | "new" | null>(null);
@@ -56,7 +58,13 @@ function WorkManagerPageInner() {
   }
 
   async function remove(item: PortfolioItem) {
-    if (!window.confirm(`Delete "${item.title}"? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete "${item.title}"?`,
+      body: "The photo comes off the public Our Work gallery immediately. This cannot be undone.",
+      confirmLabel: "Delete work item",
+      tone: "danger",
+    });
+    if (!ok) return;
     await deleteDoc(doc(getDb(), "workItems", item.id));
   }
 
@@ -179,6 +187,7 @@ function WorkManagerPageInner() {
           />
         )}
       </AnimatePresence>
+      {dialog}
     </div>
   );
 }

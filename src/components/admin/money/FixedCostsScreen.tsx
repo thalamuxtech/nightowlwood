@@ -46,6 +46,7 @@ import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { describeIso } from "@/components/admin/ui/DateField";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import type { AuditActor } from "@/lib/erp/audit";
+import { useConfirm } from "@/components/admin/ui/ConfirmDialog";
 
 /**
  * Fixed costs and the closure calendar.
@@ -66,6 +67,7 @@ const CADENCES = [
 ] as const;
 
 export function FixedCostsScreen() {
+  const { ask, dialog } = useConfirm();
   const session = useErpSession();
   const canEdit = session.can("expense.create");
   const canDelete = session.can("record.delete");
@@ -144,18 +146,21 @@ export function FixedCostsScreen() {
   }
 
   async function pay(cost: FixedCost) {
-    const when = window.prompt(
-      `Record a payment of ${formatNaira(cost.amountKobo)} for ${cost.name}?\n\nWhat date? (yyyy-mm-dd)`,
-      todayIso()
-    );
+    const when = await ask({
+      title: `Record a payment of ${formatNaira(cost.amountKobo)} for ${cost.name}?`,
+      body: "It goes into the expense ledger against the date you give.",
+      confirmLabel: "Record payment",
+      tone: "warn",
+      input: { label: "Payment date", kind: "date", initial: todayIso() },
+    });
     if (when === null) return;
 
     /*
      * Validated before it reaches a money write.
      *
-     * A prompt returns whatever was typed. `"garbage".split("-").map(Number)` is `[NaN]`, which
-     * becomes an Invalid Date and then a corrupt timestamp on an expense nobody notices until a
-     * month is short.
+     * The date field can still be left blank or cleared. `"garbage".split("-").map(Number)` is
+     * `[NaN]`, which becomes an Invalid Date and then a corrupt timestamp on an expense nobody
+     * notices until a month is short.
      */
     const dateKey = validDateKey(when.trim() || todayIso());
     if (!dateKey) {
@@ -179,9 +184,13 @@ export function FixedCostsScreen() {
   }
 
   async function remove(cost: FixedCost) {
-    const reason = window.prompt(
-      `Remove ${cost.name} from the fixed costs?\n\nGive a reason — it is kept in the audit log.`
-    );
+    const reason = await ask({
+      title: `Remove ${cost.name} from the fixed costs?`,
+      body: "It stops appearing in the monthly commitment total. The reason is kept in the audit log.",
+      confirmLabel: "Remove commitment",
+      tone: "danger",
+      input: { label: "Reason", kind: "textarea", placeholder: "Contract ended." },
+    });
     if (reason === null) return;
     setError("");
     setBusy(true);
@@ -540,6 +549,7 @@ export function FixedCostsScreen() {
           </section>
         </>
       )}
+      {dialog}
     </div>
   );
 }

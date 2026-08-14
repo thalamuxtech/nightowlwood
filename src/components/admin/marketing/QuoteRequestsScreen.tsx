@@ -42,6 +42,7 @@ import {
 import { StatusPill, type PillTone } from "@/components/admin/ui/StatusPill";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { rosterNameFor, useRoster } from "@/components/admin/marketing/useRoster";
+import { useConfirm } from "@/components/admin/ui/ConfirmDialog";
 
 /**
  * Quotation requests — the marketer's handover to the office.
@@ -67,6 +68,7 @@ const URGENCY_TONE: Record<UrgencyLevel, PillTone> = {
 };
 
 export function QuoteRequestsScreen() {
+  const { ask, dialog } = useConfirm();
   const session = useErpSession();
   const canRecord = session.can("marketing.record");
   const canDelete = session.can("record.delete");
@@ -179,19 +181,35 @@ export function QuoteRequestsScreen() {
     /*
      * Cancel means cancel, on both branches.
      *
-     * `window.prompt` returns null when dismissed and "" when submitted empty. Coalescing the
+     * `ask` returns null when dismissed and "" when submitted empty. Coalescing the
      * null away — which the reference prompt used to do, since a reference is optional — turned
      * a dismissed dialog into an empty answer, so backing out of "Mark quoted" still marked it
      * quoted. The null is checked first and the empty string handled afterwards.
      */
     const detail =
       status === "quoted"
-        ? window.prompt(
-            `Quotation sent to ${request.clientName}.\n\nReference? (an invoice or estimate number, optional)`
-          )
-        : window.prompt(
-            `Decline the request for ${request.clientName}?\n\nWhy — so the same one is not brought twice.`
-          );
+        ? await ask({
+            title: `Quotation sent to ${request.clientName}?`,
+            body: "The request leaves the pending queue and is marked quoted.",
+            confirmLabel: "Mark quoted",
+            tone: "neutral",
+            input: {
+              label: "Reference (optional)",
+              kind: "text",
+              placeholder: "Invoice or estimate number",
+            },
+          })
+        : await ask({
+            title: `Decline the request for ${request.clientName}?`,
+            body: "It leaves the pending queue. Say why, so the same one is not brought twice.",
+            confirmLabel: "Decline request",
+            tone: "warn",
+            input: {
+              label: "Reason",
+              kind: "textarea",
+              placeholder: "Outside our work area.",
+            },
+          });
     if (detail === null) return;
 
     setError("");
@@ -212,9 +230,13 @@ export function QuoteRequestsScreen() {
   }
 
   async function remove(request: QuoteRequest) {
-    const reason = window.prompt(
-      `Delete the request for ${request.clientName}?\n\nGive a reason — it is kept in the audit log.`
-    );
+    const reason = await ask({
+      title: `Delete the request for ${request.clientName}?`,
+      body: "The request comes off the queue. The reason is kept in the audit log.",
+      confirmLabel: "Delete request",
+      tone: "danger",
+      input: { label: "Reason", kind: "textarea", placeholder: "Raised twice by mistake." },
+    });
     if (reason === null) return;
     setError("");
     setBusy(true);
@@ -476,6 +498,7 @@ export function QuoteRequestsScreen() {
       <p className="mt-8 text-xs text-cream-600">
         Statuses: {QUOTE_REQUEST_STATUSES.map((s) => QUOTE_REQUEST_STATUS_LABELS[s]).join(" · ")}
       </p>
+      {dialog}
     </div>
   );
 }

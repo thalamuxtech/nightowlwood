@@ -40,6 +40,7 @@ import { formatNaira, formatNairaCompact } from "@/lib/erp/money";
 import { LiveCounter } from "@/components/admin/ui/LiveCounter";
 import { InsightsPanel } from "@/components/admin/InsightsPanel";
 import { DashboardAlerts } from "@/components/admin/DashboardAlerts";
+import { MeterSummaryPanel } from "@/components/admin/MeterSummaryPanel";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import {
   bucketFor,
@@ -88,20 +89,38 @@ interface ProjectPoint {
   customerName: string;
 }
 
+/** A counter sale, reduced to what the dashboard needs. */
+interface SalePoint {
+  id: string;
+  /**
+   * Net of tax.
+   *
+   * Tax collected is held for the revenue service rather than earned, so including it would
+   * overstate what the counter made. `profit.ts` nets it off the same way, and the two figures
+   * have to agree or the dashboard and the P&L tell different stories about the same week.
+   */
+  netKobo: number;
+  costKobo: number;
+  soldAtMs: number | null;
+  customerName: string;
+}
+
 /**
  * Which revenue line the figures cover.
  *
- * The dashboard read only service jobs, so project earnings were invisible and the
- * headline revenue understated the business by whatever Products had brought in.
- * The two lines are genuinely different trades with different rhythms, so they are
- * worth seeing apart as well as together.
+ * Three trades, and they were added one at a time as each turned out to be missing: the
+ * dashboard first read only service jobs, so project earnings were invisible; then only those
+ * two, so every naira taken at the counter was absent from the headline figure the screen opens
+ * on. A fitted kitchen, a day's cutting and a sheet sold over the counter have different
+ * rhythms, so they are worth seeing apart as well as together.
  */
-type LineFilter = "all" | "service" | "product";
+type LineFilter = "all" | "service" | "product" | "retail";
 
 const LINE_TABS: Array<{ key: LineFilter; label: string }> = [
   { key: "all", label: "All revenue" },
   { key: "service", label: "Services" },
   { key: "product", label: "Products" },
+  { key: "retail", label: "Counter Sales" },
 ];
 
 /**
@@ -125,6 +144,7 @@ export function OverviewDashboard() {
   const canSeeFinance = session.can("dashboard.view.finance");
   const [jobs, setJobs] = useState<JobPoint[]>([]);
   const [projects, setProjects] = useState<ProjectPoint[]>([]);
+  const [sales, setSales] = useState<SalePoint[]>([]);
   const [expenses, setExpenses] = useState<ExpensePoint[]>([]);
   const [loading, setLoading] = useState(true);
   /** Which revenue line the charts and tiles cover. */
@@ -232,6 +252,49 @@ export function OverviewDashboard() {
   }, [since]);
 
   useEffect(() => {
+    /*
+     * Counter sales, the third trade.
+     *
+     * Voided sales are dropped: those goods came back, so nothing was earned. Filtered
+     * client-side for the same reason as cancelled projects — excluding one value server-side
+     * would need a composite index to save a handful of documents.
+     *
+     * A sale on account still counts in full. The goods left and their cost was incurred, so
+     * the revenue belongs to the day of the sale whether or not the money has arrived; what is
+     * still owed is a receivable, shown on the counter screen. Using the amount collected
+     * instead would report a loss on every credit sale and a windfall whenever it was settled.
+     */
+    const salesRef = collection(getDb(), COL.sales);
+    const q =
+      since > 0
+        ? query(
+            salesRef,
+            where("soldAt", ">=", Timestamp.fromMillis(since)),
+            orderBy("soldAt", "desc")
+          )
+        : query(salesRef, orderBy("soldAt", "desc"));
+    return onSnapshot(
+      q,
+      (snap) =>
+        setSales(
+          snap.docs
+            .filter((d) => d.data().status !== "voided")
+            .map((d) => {
+              const x = d.data();
+              return {
+                id: d.id,
+                netKobo: (x.totalKobo ?? 0) - (x.taxKobo ?? 0),
+                costKobo: x.costOfGoodsKobo ?? 0,
+                soldAtMs: x.soldAt?.toMillis?.() ?? null,
+                customerName: x.customerName ?? "",
+              };
+            })
+        ),
+      () => {}
+    );
+  }, [since]);
+
+  useEffect(() => {
     const expensesRef = collection(getDb(), COL.expenses);
     const q =
       since > 0
@@ -272,6 +335,11 @@ export function OverviewDashboard() {
     [projects, since]
   );
 
+  const salesInRange = useMemo(
+    () => sales.filter((s) => s.soldAtMs !== null && s.soldAtMs >= since),
+    [sales, since]
+  );
+
   /**
    * The earning events the selected line covers, reduced to a common shape.
    *
@@ -282,10 +350,14 @@ export function OverviewDashboard() {
   const earnings = useMemo(() => {
     const svc = inRange.map((j) => ({ at: j.receivedAtMs!, kobo: j.totalKobo }));
     const prd = projectsInRange.map((p) => ({ at: p.startedAtMs!, kobo: p.valueKobo }));
+    const ret = salesInRange.map((s) => ({ at: s.soldAtMs!, kobo: s.netKobo }));
     if (line === "service") return svc;
     if (line === "product") return prd;
-    return [...svc, ...prd];
-  }, [inRange, projectsInRange, line]);
+    if (line === "retail") return ret;
+    // "All" is all three. It previously summed only the first two, so every naira taken at
+    // the counter was missing from the headline figure the dashboard opens on.
+    return [...svc, ...prd, ...ret];
+  }, [inRange, projectsInRange, salesInRange, line]);
 
   /**
    * Revenue and expenses, bucketed to suit the span.
@@ -363,16 +435,38 @@ export function OverviewDashboard() {
     const spend = expenses
       .filter((e) => e.dateMs !== null && e.dateMs >= since)
       .reduce((s, e) => s + e.amountKobo, 0);
+    /*
+     * Each line's own revenue, regardless of which tab is showing.
+     *
+     * So the split can be read at a glance without clicking through all four tabs, and so the
+     * three parts can be seen to add up to the total — a breakdown that does not reconcile with
+     * the headline above it is worse than no breakdown.
+     */
+    const serviceRevenue = inRange.reduce((s, j) => s + j.totalKobo, 0);
+    const productRevenue = projectsInRange.reduce((s, p) => s + p.valueKobo, 0);
+    const retailRevenue = salesInRange.reduce((s, x) => s + x.netKobo, 0);
+
     return {
       revenue,
+      serviceRevenue,
+      productRevenue,
+      retailRevenue,
+      /*
+       * All three lines summed, whatever tab is selected.
+       *
+       * `revenue` above follows the tab, so using it as the denominator for the split would
+       * show the selected line as 100% of itself. This is the figure the percentages divide by.
+       */
+      allRevenue: serviceRevenue + productRevenue + retailRevenue,
       collected,
       outstanding,
       spend,
       jobCount: inRange.length,
       projectCount: projectsInRange.length,
+      saleCount: salesInRange.length,
       earningCount: earnings.length,
     };
-  }, [earnings, inRange, projectsInRange, jobs, expenses, since]);
+  }, [earnings, inRange, projectsInRange, salesInRange, jobs, expenses, since]);
 
   const statusMix = useMemo(() => {
     const counts = new Map<JobStatus, number>();
@@ -526,7 +620,9 @@ export function OverviewDashboard() {
                       ? "Service revenue"
                       : line === "product"
                         ? "Product revenue"
-                        : "Revenue, both lines"
+                        : line === "retail"
+                          ? "Counter revenue"
+                          : "Revenue, all three lines"
                   }
                   value={totals.revenue}
                   format={(n) => formatNaira(n)}
@@ -549,11 +645,75 @@ export function OverviewDashboard() {
               </>
             )}
             <Figure
-              label={line === "product" ? "Projects" : "Jobs"}
-              value={line === "product" ? totals.projectCount : totals.jobCount}
+              label={
+                line === "product" ? "Projects" : line === "retail" ? "Sales" : "Jobs"
+              }
+              value={
+                line === "product"
+                  ? totals.projectCount
+                  : line === "retail"
+                    ? totals.saleCount
+                    : totals.jobCount
+              }
               format={(n) => String(Math.round(n))}
             />
           </div>
+
+          {/*
+            * The split, always visible rather than only on the tab that shows it.
+            *
+            * Three trades with different rhythms — a fitted kitchen, a day's cutting, a sheet
+            * sold over the counter — and the useful question is usually the mix rather than any
+            * one line. Shown as a reconciliation: the three add to the headline above, so a
+            * figure that does not add up is visible rather than hidden behind a tab.
+            */}
+          {canSeeFinance && totals.allRevenue > 0 && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              {(
+                [
+                  ["Services", totals.serviceRevenue, "service"],
+                  ["Products", totals.productRevenue, "product"],
+                  ["Counter", totals.retailRevenue, "retail"],
+                ] as Array<[string, number, LineFilter]>
+              ).map(([label, value, key]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setLine(key)}
+                  className={`cursor-pointer rounded-2xl border px-4 py-3 text-left transition-all duration-300 ${
+                    line === key
+                      ? "border-brass-500/60 bg-brass-500/10"
+                      : "border-night-700/60 bg-night-900/30 hover:border-brass-500/40"
+                  }`}
+                >
+                  <p className="text-xs uppercase tracking-wide text-cream-500">{label}</p>
+                  <p className="mt-1 font-display text-lg text-cream-100">
+                    {formatNaira(value)}
+                  </p>
+                  <p className="mt-0.5 text-xs text-cream-600">
+                    {Math.round((value / totals.allRevenue) * 100)}% of all revenue
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/*
+            * Power, above the revenue chart.
+            *
+            * Metered power never reaches the expense ledger — the profit report adds it on
+            * separately — so it was the one significant cost with no presence on this screen at
+            * all. For a workshop whose machines are its main cost, that is the wrong thing to
+            * leave out.
+            */}
+          {canSeeFinance && (
+            <MeterSummaryPanel
+              since={since}
+              rangeLabel={
+                days === null ? "All time" : days === 1 ? "Today" : `Last ${days} days`
+              }
+            />
+          )}
 
           {/* Revenue vs expenses */}
           {canSeeFinance && (

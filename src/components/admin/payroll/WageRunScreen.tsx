@@ -39,6 +39,7 @@ import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { Button, DateField, EmptyState, NumberField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import type { AuditActor } from "@/lib/erp/audit";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 interface RunRow {
   id: string;
@@ -106,6 +107,7 @@ function fmtRunDate(ms: number | null): string {
  * the week's work is logged, so the current week is always incomplete.
  */
 export function WageRunScreen() {
+  const { confirm, dialog } = useConfirmBoolean();
   const session = useErpSession();
   // Capability, not role: an admin can grant this, and a hardcoded role check
   // would leave that grant inert while the database allowed the work.
@@ -256,13 +258,15 @@ export function WageRunScreen() {
     // Confirmed for a paid run specifically: undoing a payment record is not the
     // same kind of action as correcting a draft, and the expense reversal is the
     // part someone would not expect.
-    if (
-      from === "paid" &&
-      !window.confirm(
-        "Reopen this paid run? It returns to draft and the payroll expense it booked is reversed. What it was paid at stays in the audit log."
-      )
-    )
-      return;
+    if (from === "paid") {
+      const ok = await confirm({
+        title: "Reopen this paid run?",
+        body: "It returns to draft and the payroll expense it booked is reversed. What it was paid at stays in the audit log.",
+        confirmLabel: "Reopen run",
+        tone: "warn",
+      });
+      if (!ok) return;
+    }
 
     setBusy(true);
     setError("");
@@ -400,13 +404,14 @@ export function WageRunScreen() {
                           <button
                             type="button"
                             aria-label="Discard this draft"
-                            onClick={() => {
-                              if (
-                                !window.confirm(
-                                  "Discard this draft run and its lines? This cannot be undone."
-                                )
-                              )
-                                return;
+                            onClick={async () => {
+                              const ok = await confirm({
+                                title: "Discard this draft run?",
+                                body: "The draft and all its lines go. Nothing has been paid, so no expense is affected. This cannot be undone.",
+                                confirmLabel: "Discard draft",
+                                tone: "danger",
+                              });
+                              if (!ok) return;
                               discard(r.id);
                             }}
                             className="cursor-pointer text-cream-500 transition-colors hover:text-red-400"

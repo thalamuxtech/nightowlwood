@@ -55,6 +55,7 @@ import {
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { useRoster } from "@/components/admin/marketing/useRoster";
+import { useConfirm } from "@/components/admin/ui/ConfirmDialog";
 
 /**
  * The daily site visit report.
@@ -80,6 +81,7 @@ const TONE_BY_INTEREST: Record<InterestLevel, "positive" | "warn" | "neutral"> =
 const NAME_KEY = "nw.marketing.staffName";
 
 export function SiteVisitScreen() {
+  const { ask, dialog } = useConfirm();
   const session = useErpSession();
   const canRecord = session.can("marketing.record");
   const canDelete = session.can("record.delete");
@@ -229,9 +231,13 @@ export function SiteVisitScreen() {
   }
 
   async function remove(visit: SiteVisit) {
-    const reason = window.prompt(
-      `Delete the report for ${visit.siteName}?\n\nGive a reason — it is kept in the audit log.`
-    );
+    const reason = await ask({
+      title: `Delete the report for ${visit.siteName}?`,
+      body: "The visit report comes off the list. The reason is kept in the audit log.",
+      confirmLabel: "Delete report",
+      tone: "danger",
+      input: { label: "Reason", kind: "textarea", placeholder: "Filed against the wrong site." },
+    });
     if (reason === null) return;
     setError("");
     setBusy(true);
@@ -665,6 +671,7 @@ export function SiteVisitScreen() {
           </div>
         )}
       </section>
+      {dialog}
     </div>
   );
 }

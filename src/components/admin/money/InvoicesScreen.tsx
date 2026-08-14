@@ -43,6 +43,7 @@ import {
 import { type InvoiceLike } from "@/components/admin/print/InvoiceSheet";
 import { InvoicePdfModal } from "@/components/admin/money/InvoicePdfModal";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useConfirm, useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 const REGION = "europe-west1";
 
@@ -72,6 +73,9 @@ interface SourceOption {
  * Function rather than a client write.
  */
 export function InvoicesScreen() {
+  const { confirm, dialog } = useConfirmBoolean();
+  // A second instance, because the void reason needs the input form of the dialog.
+  const { ask, dialog: askDialog } = useConfirm();
   const session = useErpSession();
   // Marking paid and emailing an invoice. Grantable, so read as a capability.
   const isAdmin = session.can("invoice.markPaid");
@@ -536,13 +540,14 @@ export function InvoicesScreen() {
                         type="button"
                         aria-label={`Delete draft ${r.invoiceNumber}`}
                         disabled={busyId === r.id}
-                        onClick={() => {
-                          if (
-                            !window.confirm(
-                              `Delete draft ${r.invoiceNumber}? It has never been issued, so nothing has reached the customer.`
-                            )
-                          )
-                            return;
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: `Delete draft ${r.invoiceNumber}?`,
+                            body: "It has never been issued, so nothing has reached the customer. The draft and its lines go for good.",
+                            confirmLabel: "Delete draft",
+                            tone: "danger",
+                          });
+                          if (!ok) return;
                           setBusyId(r.id);
                           deleteDraftInvoice(getDb(), actor, r.id)
                             .then(() => {
@@ -565,11 +570,20 @@ export function InvoicesScreen() {
                     {r.status !== "draft" && r.status !== "void" && canVoid && (
                       <button
                         type="button"
-                        onClick={() => {
-                          const reason = window.prompt(
-                            `Void ${r.invoiceNumber}? Give a reason — it stays on the record.`
-                          );
-                          if (!reason?.trim()) return;
+                        onClick={async () => {
+                          const reason = await ask({
+                            title: `Void ${r.invoiceNumber}?`,
+                            body: "The invoice keeps its number but stops counting towards what is owed. The reason stays on the record.",
+                            confirmLabel: "Void invoice",
+                            tone: "danger",
+                            input: {
+                              label: "Reason",
+                              kind: "textarea",
+                              required: true,
+                              placeholder: "Raised against the wrong customer.",
+                            },
+                          });
+                          if (reason === null) return;
                           setBusyId(r.id);
                           voidInvoice(getDb(), actor, r.id, r.invoiceNumber, reason.trim())
                             .then(() => {
@@ -705,6 +719,8 @@ export function InvoicesScreen() {
           </div>
         )}
       </div>
+      {dialog}
+      {askDialog}
     </div>
   );
 }

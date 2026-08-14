@@ -6,8 +6,10 @@ import { Download, Trash2, Users } from "lucide-react";
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import type { Subscriber } from "@/lib/types";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 export function SubscribersPanel() {
+  const { confirm, dialog } = useConfirmBoolean();
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -41,7 +43,13 @@ export function SubscribersPanel() {
   }
 
   async function remove(sub: Subscriber) {
-    if (!window.confirm(`Remove ${sub.email} from the list?`)) return;
+    const ok = await confirm({
+      title: `Remove ${sub.email} from the list?`,
+      body: "They stop receiving the newsletter and drop off the CSV export.",
+      confirmLabel: "Remove subscriber",
+      tone: "danger",
+    });
+    if (!ok) return;
     await deleteDoc(doc(getDb(), "subscribers", sub.id));
   }
 
@@ -95,6 +103,7 @@ export function SubscribersPanel() {
       <p className="mt-4 text-right text-xs text-cream-500">
         {subscribers.length} subscriber{subscribers.length === 1 ? "" : "s"}
       </p>
+      {dialog}
     </div>
   );
 }

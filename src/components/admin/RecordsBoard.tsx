@@ -15,6 +15,7 @@ import {
 import { getDb } from "@/lib/firebase";
 import type { RecordStatus } from "@/lib/types";
 import type { Timestamp } from "firebase/firestore";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 const STATUSES: RecordStatus[] = ["new", "contacted", "scheduled", "closed"];
 
@@ -58,6 +59,7 @@ export function RecordsBoard({
   detailFields,
   messageKey = "message",
 }: RecordsBoardProps) {
+  const { confirm, dialog } = useConfirmBoolean();
   const [records, setRecords] = useState<BaseRecord[]>([]);
   const [filter, setFilter] = useState<RecordStatus | "all">("all");
   const [selected, setSelected] = useState<BaseRecord | null>(null);
@@ -92,7 +94,13 @@ export function RecordsBoard({
   }
 
   async function remove(record: BaseRecord) {
-    if (!window.confirm(`Delete the record from ${record.name}? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete the record from ${record.name}?`,
+      body: "The enquiry and its message are removed for good. This cannot be undone.",
+      confirmLabel: "Delete record",
+      tone: "danger",
+    });
+    if (!ok) return;
     await deleteDoc(doc(getDb(), collectionName, record.id));
     setSelected(null);
   }
@@ -307,6 +315,7 @@ export function RecordsBoard({
           </motion.div>
         )}
       </AnimatePresence>
+      {dialog}
     </div>
   );
 }

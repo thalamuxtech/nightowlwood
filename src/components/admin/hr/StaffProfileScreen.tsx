@@ -58,6 +58,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { StatusPill, type PillTone } from "@/components/admin/ui/StatusPill";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 /**
  * One person's whole file, on one screen.
@@ -93,6 +94,7 @@ interface ToolHeld {
 }
 
 export function StaffProfileScreen({ staff }: { staff: Staff }) {
+  const { confirm, dialog } = useConfirmBoolean();
   const session = useErpSession();
   const canDeduct = session.can("deduction.create");
   const canMarkAttendance = session.can("worklog.viewAll") || session.can("staff.edit");
@@ -349,10 +351,12 @@ export function StaffProfileScreen({ staff }: { staff: Staff }) {
    */
   async function removeDeduction(deductionId: string, amountKobo: number) {
     if (
-      !window.confirm(
-        `Remove this ${formatNaira(amountKobo)} deduction? ` +
-          `It has not been taken by a run yet, so ${staff.name} keeps the money.`
-      )
+      !(await confirm({
+        title: `Remove this ${formatNaira(amountKobo)} deduction?`,
+        body: `It has not been taken by a run yet, so ${staff.name} keeps the money.`,
+        confirmLabel: "Remove deduction",
+        tone: "danger",
+      }))
     ) {
       return;
     }
@@ -824,6 +828,7 @@ export function StaffProfileScreen({ staff }: { staff: Staff }) {
           </section>
         </>
       )}
+      {dialog}
     </div>
   );
 }

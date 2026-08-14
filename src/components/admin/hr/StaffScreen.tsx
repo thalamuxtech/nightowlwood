@@ -61,6 +61,7 @@ import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 import { AppointmentLetter } from "@/components/admin/print/AppointmentLetter";
 import { StaffIdCard } from "@/components/admin/print/StaffIdCard";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useConfirm } from "@/components/admin/ui/ConfirmDialog";
 import type { AuditActor } from "@/lib/erp/audit";
 
 interface Row extends Staff {
@@ -81,6 +82,8 @@ type Printing =
  * time, so a reprint matches the original.
  */
 export function StaffScreen() {
+  /** One dialog for the screen; both the roster seed and the end-of-employment flow use it. */
+  const { ask, dialog } = useConfirm();
   const session = useErpSession();
   const canEdit = session.can("staff.edit");
   const canHr = session.can("hr.manage");
@@ -173,19 +176,40 @@ export function StaffScreen() {
    * reason, and drops out of the active list and the salary bill.
    */
   async function endEmploymentFor(staff: Row) {
-    const how = window.confirm(
-      `End employment for ${staff.name}?\n\nOK = resigned (they left)\nCancel = go back\n\nUse the staff record to mark a termination instead.`
-    );
-    if (!how) return;
-
-    const when = window.prompt(`Last day worked? Use yyyy-mm-dd.`, toDateInputValue(new Date()));
+    /*
+     * Two steps, as before: the date, then the reason.
+     *
+     * The old flow opened a bare confirm first only to say what this button does — it marks a
+     * resignation, and a termination has to be done from the staff record. That sentence is now
+     * the body of the date dialog, so the same warning is read before the same decision without
+     * a third box in front of it.
+     */
+    const when = await ask({
+      title: `Mark ${staff.name} as resigned?`,
+      body: "They come off the salary bill and out of the pickers; the record itself stays. To mark a termination instead, use the staff record.",
+      confirmLabel: "Continue",
+      tone: "warn",
+      input: {
+        label: "Last day worked",
+        kind: "date",
+        initial: toDateInputValue(new Date()),
+      },
+    });
     if (when === null) return;
-    const reason = window.prompt("Why did the employment end? This is kept on the record.");
+
+    const reason = await ask({
+      title: `Why did ${staff.name}'s employment end?`,
+      body: "This is kept on the record, and it is what explains the gap in next month's payroll.",
+      confirmLabel: "End employment",
+      tone: "warn",
+      input: {
+        label: "Reason",
+        kind: "textarea",
+        required: true,
+        placeholder: "Resigned to move back to Kano.",
+      },
+    });
     if (reason === null) return;
-    if (!reason.trim()) {
-      setError("A reason is needed — it is what explains the gap in next month's payroll.");
-      return;
-    }
 
     setError("");
     try {
@@ -321,11 +345,14 @@ export function StaffScreen() {
               <Button
                 variant="secondary"
                 busy={seeding}
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    !window.confirm(
-                      "Add the workshop's known staff and standing fixed costs?\n\nSafe to run twice: anyone already on the list is updated rather than duplicated."
-                    )
+                    (await ask({
+                      title: "Add the workshop's known staff and standing fixed costs?",
+                      body: "Safe to run twice: anyone already on the list is updated rather than duplicated.",
+                      confirmLabel: "Load roster",
+                      tone: "warn",
+                    })) === null
                   )
                     return;
                   setSeeding(true);
@@ -568,6 +595,7 @@ export function StaffScreen() {
           </ul>
         )}
       </div>
+      {dialog}
     </div>
   );
 }

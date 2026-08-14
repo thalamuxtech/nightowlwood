@@ -75,6 +75,7 @@ import {
   SETTINGS_DOC,
   type CompanySettings,
 } from "@/lib/erp/settings";
+import { useConfirm } from "@/components/admin/ui/ConfirmDialog";
 
 /** A line in the basket. Naira in the boxes, kobo on the document. */
 interface BasketLine {
@@ -115,6 +116,7 @@ interface SaleRow {
  * transaction, so the shelf and the record cannot drift apart.
  */
 export function PosScreen() {
+  const { ask, dialog } = useConfirm();
   const session = useErpSession();
   const canSell = session.can("sale.create");
   const canVoid = session.can("sale.void");
@@ -1343,11 +1345,20 @@ export function PosScreen() {
                             {!voided && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  const reason = window.prompt(
-                                    `Void ${s.receiptNumber}? The stock goes back on the shelf and the takings are reversed. Give a reason.`
-                                  );
-                                  if (!reason?.trim()) return;
+                                onClick={async () => {
+                                  const reason = await ask({
+                                    title: `Void ${s.receiptNumber}?`,
+                                    body: "The stock goes back on the shelf and the takings are reversed.",
+                                    confirmLabel: "Void sale",
+                                    tone: "danger",
+                                    input: {
+                                      label: "Reason",
+                                      kind: "textarea",
+                                      required: true,
+                                      placeholder: "Customer returned the goods.",
+                                    },
+                                  });
+                                  if (reason === null) return;
                                   voidSale(getDb(), actor, s.id, reason.trim())
                                     .then(() => {
                                       setNotice(`${s.receiptNumber} voided.`);
@@ -1386,6 +1397,7 @@ export function PosScreen() {
           </p>
         )}
       </div>
+      {dialog}
     </div>
   );
 }

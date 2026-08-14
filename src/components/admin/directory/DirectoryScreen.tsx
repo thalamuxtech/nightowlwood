@@ -51,6 +51,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { CustomerProfilePanel } from "@/components/admin/directory/CustomerProfilePanel";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 import type { Role } from "@/lib/erp/enums";
 
 /**
@@ -1019,6 +1020,7 @@ function AccessCodePanel({
   lastUsedMs: number | null;
   onError: (m: string) => void;
 }) {
+  const { confirm, dialog } = useConfirmBoolean();
   const [busy, setBusy] = useState(false);
   const [issued, setIssued] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -1028,9 +1030,12 @@ function AccessCodePanel({
   async function issue() {
     if (
       hasCode &&
-      !window.confirm(
-        `${staffName} already has a code. Issuing a new one stops the old one working immediately. Continue?`
-      )
+      !(await confirm({
+        title: `Issue a new code for ${staffName}?`,
+        body: "Their current code stops working immediately, so they cannot sign in to the work log until you give them the new one.",
+        confirmLabel: "Issue new code",
+        tone: "warn",
+      }))
     )
       return;
 
@@ -1054,7 +1059,14 @@ function AccessCodePanel({
   }
 
   async function revoke() {
-    if (!window.confirm(`Withdraw ${staffName}'s code? They will be signed out.`))
+    if (
+      !(await confirm({
+        title: `Withdraw ${staffName}'s code?`,
+        body: "They are signed out and cannot log work again until a new code is issued.",
+        confirmLabel: "Withdraw code",
+        tone: "danger",
+      }))
+    )
       return;
     setBusy(true);
     try {
@@ -1138,6 +1150,7 @@ function AccessCodePanel({
           </button>
         )}
       </div>
+      {dialog}
     </div>
   );
 }

@@ -31,6 +31,7 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getDb, getFirebaseStorage } from "@/lib/firebase";
 import type { Post } from "@/lib/types";
 import { RequireCapability } from "@/components/admin/RequireCapability";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 function slugify(title: string) {
   return title
@@ -42,6 +43,7 @@ function slugify(title: string) {
 }
 
 function BlogAdminPageInner() {
+  const { confirm, dialog } = useConfirmBoolean();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Post | "new" | null>(null);
@@ -64,7 +66,13 @@ function BlogAdminPageInner() {
   }
 
   async function remove(post: Post) {
-    if (!window.confirm(`Delete "${post.title}"? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete "${post.title}"?`,
+      body: "The post comes off the website immediately. This cannot be undone.",
+      confirmLabel: "Delete post",
+      tone: "danger",
+    });
+    if (!ok) return;
     await deleteDoc(doc(getDb(), "posts", post.id));
   }
 
@@ -161,6 +169,7 @@ function BlogAdminPageInner() {
           />
         )}
       </AnimatePresence>
+      {dialog}
     </div>
   );
 }

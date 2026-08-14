@@ -33,6 +33,7 @@ import { Button, EmptyState, TextField } from "@/components/admin/ui/Fields";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { PurchaseOrdersPanel } from "./PurchaseOrdersPanel";
 import type { AuditActor } from "@/lib/erp/audit";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 interface SupplierRow {
   id: string;
@@ -433,6 +434,7 @@ function SupplierCard({
   canSeePerformance: boolean;
   onError: (m: string) => void;
 }) {
+  const { confirm, dialog } = useConfirmBoolean();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(s.name);
   const [phone, setPhone] = useState(s.phone ?? "");
@@ -595,8 +597,14 @@ function SupplierCard({
             <button
               type="button"
               disabled={busy}
-              onClick={() => {
-                if (!window.confirm(`Delete "${s.name}"?`)) return;
+              onClick={async () => {
+                const ok = await confirm({
+                  title: `Delete "${s.name}"?`,
+                  body: "The supplier comes off the list along with their scorecard. Deactivate instead to keep the history.",
+                  confirmLabel: "Delete supplier",
+                  tone: "danger",
+                });
+                if (!ok) return;
                 deleteSupplier(getDb(), actor, s.id, s.name).catch((e) =>
                   onError(
                     e instanceof Error ? e.message : "Could not delete the supplier."
@@ -610,6 +618,7 @@ function SupplierCard({
           )}
         </div>
       )}
+      {dialog}
     </div>
   );
 }

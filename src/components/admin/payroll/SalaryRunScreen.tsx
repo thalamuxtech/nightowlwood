@@ -42,6 +42,7 @@ import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { Button, EmptyState, NumberField, TextField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import type { AuditActor } from "@/lib/erp/audit";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 interface StaffRow {
   id: string;
@@ -93,6 +94,7 @@ function formatMonth(ms: number | null): string {
  * current month would always be a half-month nobody wants to pay from.
  */
 export function SalaryRunScreen() {
+  const { confirm, dialog } = useConfirmBoolean();
   const session = useErpSession();
   // Capability, not role: see WageRunScreen.
   const isAdmin = session.can("wage.run");
@@ -265,13 +267,15 @@ export function SalaryRunScreen() {
     // Confirmed for a paid run: undoing a payment record is a different kind of
     // action from correcting a draft, and the expense reversal is the part someone
     // would not expect.
-    if (
-      from === "paid" &&
-      !window.confirm(
-        "Reopen this paid run? It returns to draft and the payroll expense it booked is reversed. What it was paid at stays in the audit log."
-      )
-    )
-      return;
+    if (from === "paid") {
+      const ok = await confirm({
+        title: "Reopen this paid run?",
+        body: "It returns to draft and the payroll expense it booked is reversed. What it was paid at stays in the audit log.",
+        confirmLabel: "Reopen run",
+        tone: "warn",
+      });
+      if (!ok) return;
+    }
 
     setBusy(true);
     setError("");
@@ -474,6 +478,7 @@ export function SalaryRunScreen() {
           </div>
         )}
       </section>
+      {dialog}
     </div>
   );
 }
@@ -905,6 +910,4 @@ function Tile({
     <div className="rounded-2xl border border-night-700/60 bg-night-950/40 p-4">
       <p className="text-xs uppercase tracking-wider text-cream-500">{label}</p>
       <p className={`mt-1.5 font-display text-xl ${colour}`}>{value}</p>
-    </div>
-  );
-}
+    <

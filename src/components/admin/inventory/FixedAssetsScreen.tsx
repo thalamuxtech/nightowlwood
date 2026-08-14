@@ -42,6 +42,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { StatusPill, type PillTone } from "@/components/admin/ui/StatusPill";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useConfirm } from "@/components/admin/ui/ConfirmDialog";
 import type { AuditActor } from "@/lib/erp/audit";
 
 /**
@@ -65,6 +66,7 @@ const TONE: Record<AssetStatus, PillTone> = {
 };
 
 export function FixedAssetsScreen() {
+  const { ask, dialog } = useConfirm();
   const session = useErpSession();
   const canEdit = session.can("inventory.edit");
 
@@ -100,12 +102,30 @@ export function FixedAssetsScreen() {
   );
 
   async function dispose(asset: AssetWithDepreciation) {
-    const when = window.prompt(
-      `When did ${asset.assetTag} — ${asset.name} — leave?\n\nUse yyyy-mm-dd.`,
-      todayIso()
-    );
+    const when = await ask({
+      title: `When did ${asset.assetTag} — ${asset.name} — leave?`,
+      body: "Depreciation stops on that day, and the asset comes off the register's current value.",
+      confirmLabel: "Continue",
+      tone: "warn",
+      input: {
+        label: "Date it left",
+        kind: "date",
+        initial: todayIso(),
+      },
+    });
     if (when === null) return;
-    const note = window.prompt("What happened to it? Sold, scrapped, stolen.");
+
+    const note = await ask({
+      title: "What happened to it?",
+      body: "Sold, scrapped, stolen. This is what the register shows in place of the machine.",
+      confirmLabel: "Record disposal",
+      tone: "warn",
+      input: {
+        label: "What happened",
+        kind: "text",
+        placeholder: "Sold to Alhaji Bello's workshop.",
+      },
+    });
     if (note === null) return;
 
     const dateKey = validDateKey(when.trim() || todayIso());
@@ -376,6 +396,7 @@ export function FixedAssetsScreen() {
         current. It is a book figure for the accounts — no expense is posted for it, because the cash
         already left when the asset was bought.
       </p>
+      {dialog}
     </div>
   );
 }

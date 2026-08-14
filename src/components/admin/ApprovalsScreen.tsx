@@ -21,6 +21,7 @@ import type { ApprovalRequest } from "@/lib/erp/types";
 import { Button, EmptyState, TextField } from "@/components/admin/ui/Fields";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 type Filter = "pending" | "decided" | "mine";
 
@@ -36,6 +37,7 @@ type Filter = "pending" | "decided" | "mine";
  * record has moved since, the diff shown is still the one the request was made about.
  */
 export function ApprovalsScreen() {
+  const { confirm, dialog } = useConfirmBoolean();
   const session = useErpSession();
   const canDecide = session.can("approval.decide");
 
@@ -271,12 +273,15 @@ export function ApprovalsScreen() {
                         </div>
                         <Button
                           busy={busyId === r.id}
-                          onClick={() => {
+                          onClick={async () => {
                             if (
                               r.kind === "delete" &&
-                              !window.confirm(
-                                `Approve deletion of ${r.targetLabel}? This cannot be undone.`
-                              )
+                              !(await confirm({
+                                title: `Approve deletion of ${r.targetLabel}?`,
+                                body: "The record is deleted as soon as you approve. This cannot be undone.",
+                                confirmLabel: "Approve deletion",
+                                tone: "danger",
+                              }))
                             )
                               return;
                             setBusyId(r.id);
@@ -371,6 +376,7 @@ export function ApprovalsScreen() {
           <ClipboardCheck size={14} /> Nothing is waiting on you.
         </p>
       )}
+      {dialog}
     </div>
   );
 }

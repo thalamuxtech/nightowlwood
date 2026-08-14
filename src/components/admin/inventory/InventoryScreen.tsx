@@ -36,6 +36,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import type { AuditActor } from "@/lib/erp/audit";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 interface ItemRow {
   id: string;
@@ -287,6 +288,7 @@ function ItemPanel({
   actor: AuditActor;
   onError: (m: string) => void;
 }) {
+  const { confirm, dialog } = useConfirmBoolean();
   const [movements, setMovements] = useState<MovementRow[]>([]);
   const [mode, setMode] = useState<MovementType | null>(null);
   const [editing, setEditing] = useState(false);
@@ -512,13 +514,14 @@ function ItemPanel({
               {canDelete && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (
-                      !window.confirm(
-                        `Delete "${item.name}"? This only works if no stock has ever moved through it — otherwise retire it instead.`
-                      )
-                    )
-                      return;
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: `Delete "${item.name}"?`,
+                      body: "This only works if no stock has ever moved through it — otherwise retire it instead.",
+                      confirmLabel: "Delete item",
+                      tone: "danger",
+                    });
+                    if (!ok) return;
                     deleteInventoryItem(getDb(), actor, item.id, item.name).catch(
                       (e) =>
                         onError(
@@ -687,6 +690,7 @@ function ItemPanel({
           )}
         </div>
       )}
+      {dialog}
     </div>
   );
 }

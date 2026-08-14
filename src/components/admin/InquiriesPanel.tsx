@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import type { Inquiry, InquiryStatus } from "@/lib/types";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 const STATUSES: InquiryStatus[] = ["new", "contacted", "scheduled", "closed"];
 
@@ -25,6 +26,7 @@ const STATUS_STYLE: Record<InquiryStatus, string> = {
 };
 
 export function InquiriesPanel() {
+  const { confirm, dialog } = useConfirmBoolean();
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [filter, setFilter] = useState<InquiryStatus | "all">("all");
   const [selected, setSelected] = useState<Inquiry | null>(null);
@@ -54,7 +56,13 @@ export function InquiriesPanel() {
   }
 
   async function remove(inquiry: Inquiry) {
-    if (!window.confirm(`Delete the inquiry from ${inquiry.name}? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete the inquiry from ${inquiry.name}?`,
+      body: "The message, contact details and budget are removed for good. This cannot be undone.",
+      confirmLabel: "Delete inquiry",
+      tone: "danger",
+    });
+    if (!ok) return;
     await deleteDoc(doc(getDb(), "inquiries", inquiry.id));
     setSelected(null);
   }
@@ -245,6 +253,7 @@ export function InquiriesPanel() {
           </motion.div>
         )}
       </AnimatePresence>
+      {dialog}
     </div>
   );
 }
