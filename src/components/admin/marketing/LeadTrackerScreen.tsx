@@ -48,7 +48,7 @@ import {
   todayIso,
 } from "@/components/admin/ui/Fields";
 import { StatusPill, type PillTone } from "@/components/admin/ui/StatusPill";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { rosterNameFor, useRoster } from "@/components/admin/marketing/useRoster";
 
 /**
@@ -120,14 +120,7 @@ export function LeadTrackerScreen() {
   const [fuNextOn, setFuNextOn] = useState("");
   const [fuNextAction, setFuNextAction] = useState("");
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   /*
    * The name this person's work is recorded under.

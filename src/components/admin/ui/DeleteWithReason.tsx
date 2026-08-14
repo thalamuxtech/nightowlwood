@@ -5,16 +5,7 @@ import { AlertTriangle, ShieldAlert, Trash2 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { clearStaleLock, deleteOrRequest } from "@/lib/erp/approvals";
 import { Button, TextAreaField } from "@/components/admin/ui/Fields";
-import { useErpSession, type ErpSession } from "@/components/admin/ErpAuthProvider";
-
-/** The audit actor for the person actually signed in. */
-function actorOf(session: ErpSession) {
-  return {
-    uid: session.user?.uid ?? "",
-    email: session.user?.email ?? "",
-    role: session.role ?? "manager",
-  };
-}
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 /**
  * The delete control for records whose removal changes what somebody is owed.
@@ -70,6 +61,7 @@ export function DeleteWithReason({
   startOpen?: boolean;
 }) {
   const session = useErpSession();
+  const actor = useAuditActor();
   /**
    * Whether this person may delete outright.
    *
@@ -109,7 +101,7 @@ export function DeleteWithReason({
             type="button"
             onClick={async () => {
               try {
-                await clearStaleLock(getDb(), actorOf(session), targetCollection, targetId);
+                await clearStaleLock(getDb(), actor, targetCollection, targetId);
                 onDone("Cleared the stale lock on that record.");
               } catch (e) {
                 onError(
@@ -135,7 +127,7 @@ export function DeleteWithReason({
     }
     setBusy(true);
     try {
-      const res = await deleteOrRequest(getDb(), actorOf(session), {
+      const res = await deleteOrRequest(getDb(), actor, {
         targetCollection,
         targetId,
         targetLabel,

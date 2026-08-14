@@ -24,7 +24,7 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 import { DateField } from "@/components/admin/ui/DateField";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 interface SupplierOption {
   id: string;
@@ -126,14 +126,7 @@ export function PurchaseOrdersPanel() {
   const [counts, setCounts] = useState<Record<string, { got: string; bad: string }>>({});
   const [issueNotes, setIssueNotes] = useState("");
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   useEffect(() => {
     const db = getDb();

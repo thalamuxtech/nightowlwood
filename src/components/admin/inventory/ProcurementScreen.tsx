@@ -30,7 +30,7 @@ import {
   type SupplierScorecard,
 } from "@/lib/erp/procurement";
 import { Button, EmptyState, TextField } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { PurchaseOrdersPanel } from "./PurchaseOrdersPanel";
 import type { AuditActor } from "@/lib/erp/audit";
 
@@ -158,14 +158,7 @@ export function ProcurementScreen() {
     ];
   }, [brands, suppliers, canSeePerformance]);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const activeSuppliers = useMemo(() => suppliers.filter((s) => s.active), [suppliers]);
   const inactiveSuppliers = useMemo(

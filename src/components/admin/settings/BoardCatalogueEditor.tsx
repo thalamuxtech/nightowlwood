@@ -18,7 +18,7 @@ import {
   TextAreaField,
   TextField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 /**
  * The board catalogue — what each material looks like on the public site.
@@ -46,14 +46,7 @@ export function BoardCatalogueEditor() {
       .finally(() => setLoading(false));
   }, []);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "admin",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   function patch(type: BoardType, next: Partial<BoardCatalogueSettings["entries"][BoardType]>) {
     setCatalogue((prev) => ({

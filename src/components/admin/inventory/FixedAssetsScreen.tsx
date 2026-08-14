@@ -41,7 +41,7 @@ import {
   validDateKey,
 } from "@/components/admin/ui/Fields";
 import { StatusPill, type PillTone } from "@/components/admin/ui/StatusPill";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import type { AuditActor } from "@/lib/erp/audit";
 
 /**
@@ -79,14 +79,7 @@ export function FixedAssetsScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const load = useCallback(() => {
     setLoading(true);

@@ -16,7 +16,7 @@ import { createProject } from "@/lib/erp/projects";
 import { PROJECT_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { Button, EmptyState, TextField } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { CustomerPicker, type PickedCustomer } from "@/components/admin/services/CustomerPicker";
 
 interface ProjectRow {
@@ -279,6 +279,7 @@ function NewProjectForm({
   onError: (m: string) => void;
 }) {
   const session = useErpSession();
+  const actor = useAuditActor();
   const [customer, setCustomer] = useState<PickedCustomer | null>(null);
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState("");
@@ -297,11 +298,7 @@ function NewProjectForm({
     try {
       await createProject(
         getDb(),
-        {
-          uid: session.user?.uid ?? "",
-          email: session.user?.email ?? "",
-          role: session.role ?? "manager",
-        },
+        actor,
         {
           customerId: customer.id,
           customerName: customer.name,

@@ -42,7 +42,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { type InvoiceLike } from "@/components/admin/print/InvoiceSheet";
 import { InvoicePdfModal } from "@/components/admin/money/InvoicePdfModal";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 const REGION = "europe-west1";
 
@@ -195,14 +195,7 @@ export function InvoicesScreen() {
     };
   }, []);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const sources = useMemo(() => [...jobs, ...projects], [jobs, projects]);
 

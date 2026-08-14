@@ -34,7 +34,7 @@ import {
 } from "@/lib/erp/settings";
 import { toDateInputValue, fromDateInputValue } from "@/lib/erp/workLogs";
 import { Button, DateField, NumberField, TextField } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { StaffRatesPanel } from "./StaffRatesPanel";
 
 interface RateRow {
@@ -160,14 +160,7 @@ export function WageRatesScreen() {
     return map;
   }, [rates]);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "admin",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   /** The types currently offered, built-in and custom together. */
   const activeTypes = useMemo(

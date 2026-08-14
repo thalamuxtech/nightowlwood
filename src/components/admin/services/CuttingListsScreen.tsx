@@ -17,7 +17,7 @@ import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { Button, EmptyState } from "@/components/admin/ui/Fields";
 import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 import { CuttingListSheet } from "@/components/admin/print/CuttingListSheet";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 const STATUS_TONE: Record<CuttingListStatus, "neutral" | "info" | "progress" | "positive"> = {
   draft: "neutral",
@@ -64,14 +64,7 @@ export function CuttingListsScreen() {
     void load();
   }, [load]);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const visible = useMemo(
     () => (filter === "all" ? rows : rows.filter((r) => r.status === filter)),

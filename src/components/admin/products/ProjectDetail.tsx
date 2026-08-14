@@ -69,7 +69,7 @@ import {
   NumberField,
   TextField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import type { AuditActor } from "@/lib/erp/audit";
 
 const fmtDay = (ms: number | null) =>
@@ -246,14 +246,7 @@ export function ProjectDetail() {
       .catch(() => {});
   }, [project?.customerId]);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   // Derived from the project, so pricing a line moves the total immediately.
   const totals = useMemo(

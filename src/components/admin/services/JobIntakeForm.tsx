@@ -23,7 +23,7 @@ import {
   SETTINGS_DOC,
   type ServiceRateCardSettings,
 } from "@/lib/erp/settings";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { CustomerPicker, type PickedCustomer } from "./CustomerPicker";
 import { StaffPicker, type PickedStaff } from "./StaffPicker";
 import {
@@ -72,6 +72,7 @@ const newLine = (): DraftLine => ({
 export function JobIntakeForm() {
   const router = useRouter();
   const session = useErpSession();
+  const actor = useAuditActor();
   const canCreate = session.can("job.create");
 
   const [customer, setCustomer] = useState<PickedCustomer | null>(null);
@@ -170,11 +171,6 @@ export function JobIntakeForm() {
 
     setBusy(true);
     setError("");
-    const actor = {
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    };
 
     try {
       const boardCounts: Record<string, number | string> = {};

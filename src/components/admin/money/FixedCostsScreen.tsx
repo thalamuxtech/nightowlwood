@@ -44,7 +44,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { describeIso } from "@/components/admin/ui/DateField";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import type { AuditActor } from "@/lib/erp/audit";
 
 /**
@@ -88,14 +88,7 @@ export function FixedCostsScreen() {
   const [hTo, setHTo] = useState(todayIso());
   const [hKind, setHKind] = useState<"public" | "closure">("public");
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const load = useCallback(() => {
     setLoading(true);

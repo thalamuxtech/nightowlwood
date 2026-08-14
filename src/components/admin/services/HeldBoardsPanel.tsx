@@ -7,7 +7,7 @@ import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
 import { BOARD_TYPE_LABELS, type BoardType } from "@/lib/erp/enums";
 import { releaseServiceInventory } from "@/lib/erp/inventory";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 interface HeldEntry {
   id: string;
@@ -46,14 +46,7 @@ export function HeldBoardsPanel({
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   useEffect(() => {
     if (!jobId) return;

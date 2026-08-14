@@ -60,7 +60,7 @@ import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 import { AppointmentLetter } from "@/components/admin/print/AppointmentLetter";
 import { StaffIdCard } from "@/components/admin/print/StaffIdCard";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import type { AuditActor } from "@/lib/erp/audit";
 
 interface Row extends Staff {
@@ -133,14 +133,7 @@ export function StaffScreen() {
       .catch(() => {});
   }, []);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "admin",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const visible = useMemo(
     () =>

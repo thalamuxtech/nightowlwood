@@ -48,7 +48,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { HeldBoardsPanel } from "./HeldBoardsPanel";
 import { JobSheet } from "./JobSheet";
 import { JobDetailsEditor } from "./JobDetailsEditor";
@@ -197,14 +197,7 @@ export function JobDetail() {
     );
   }, [jobId]);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   async function move(to: JobStatus) {
     if (!job) return;

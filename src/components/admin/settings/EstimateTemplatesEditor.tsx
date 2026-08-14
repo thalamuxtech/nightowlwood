@@ -33,7 +33,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 /**
  * The estimate templates, editable.
@@ -58,14 +58,7 @@ export function EstimateTemplatesEditor() {
   /** Which template is expanded. One at a time — six open lists of thirty rows is unreadable. */
   const [openKey, setOpenKey] = useState<ProductCategory | null>(null);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "admin",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const load = useCallback(() => {
     setLoading(true);

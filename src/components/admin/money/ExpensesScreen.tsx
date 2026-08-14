@@ -34,7 +34,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { TOOLTIP_PROPS } from "@/components/admin/ui/chartTheme";
 import type { AuditActor } from "@/lib/erp/audit";
 
@@ -112,14 +112,7 @@ export function ExpensesScreen() {
     );
   }, []);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const days = RANGES.find((r) => r.key === range)?.days ?? null;
 

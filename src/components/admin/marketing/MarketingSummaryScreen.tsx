@@ -28,7 +28,7 @@ import {
   NumberField,
   todayIso,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 /**
  * The weekly performance summary, and the targets it is measured against.
@@ -68,14 +68,7 @@ export function MarketingSummaryScreen() {
   const [draft, setDraft] = useState<MarketingTargets>(DEFAULT_MARKETING_TARGETS);
   const [savingTargets, setSavingTargets] = useState(false);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const load = useCallback(() => {
     if (fromKey > toKey) {

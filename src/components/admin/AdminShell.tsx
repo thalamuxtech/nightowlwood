@@ -57,6 +57,7 @@ import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { OperatorCodeLogin } from "@/components/admin/OperatorCodeLogin";
 import type { Capability } from "@/lib/erp/permissions";
 import { ROLE_LABELS } from "@/lib/erp/enums";
+import { ActingAsBanner, RoleSwitcher } from "@/components/admin/RoleSwitcher";
 import { AdminClock } from "@/components/admin/ui/AdminClock";
 import { DemoDataButton } from "@/components/admin/DemoDataButton";
 import { GroupTabs } from "@/components/admin/ui/GroupTabs";
@@ -289,9 +290,15 @@ export function AdminShell({ children }: { children: ReactNode }) {
 function RoleShell({ email, children }: { email: string; children: ReactNode }) {
   const { role, ready } = useErpSession();
 
+  /*
+   * The operator layout has no sidebar, which is where the role switcher lives — so a super
+   * admin who switched to operator would be inside a single-screen interface with no way back.
+   * The banner is the way out, and it renders above this stripped-down shell too.
+   */
   if (ready && role === "operator") {
     return (
       <div className="min-h-svh bg-night-950">
+        <ActingAsBanner />
         <OperatorBar />
         <main className="mx-auto min-w-0 max-w-5xl px-5 pb-16 pt-6 sm:px-8">
           {children}
@@ -303,15 +310,18 @@ function RoleShell({ email, children }: { email: string; children: ReactNode }) 
   return (
     <div className="flex min-h-svh bg-night-950">
       <Sidebar email={email} />
-      <main className="min-w-0 flex-1 px-5 pb-16 pt-24 sm:px-8 lg:pt-6">
-        <div className="mb-6 flex items-center justify-end gap-2.5 print:hidden">
-          <AdminClock />
-          <DemoDataButton />
-        </div>
-        <NoRoleNotice email={email} />
-        <ActiveGroupTabs />
-        {children}
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <ActingAsBanner />
+        <main className="min-w-0 flex-1 px-5 pb-16 pt-24 sm:px-8 lg:pt-6">
+          <div className="mb-6 flex items-center justify-end gap-2.5 print:hidden">
+            <AdminClock />
+            <DemoDataButton />
+          </div>
+          <NoRoleNotice email={email} />
+          <ActiveGroupTabs />
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
@@ -618,6 +628,10 @@ function Sidebar({ email }: { email: string }) {
           })}
         </nav>
         <div className="shrink-0 border-t border-night-700/60 pt-4">
+          {/* Hidden when the rail is collapsed: the buttons carry role names, and reduced to
+              icons they would be a row of unlabelled squares that change what the whole
+              interface does. */}
+          {!collapsed && <RoleSwitcher />}
           {!collapsed && (
             <>
               <p className="truncate text-xs text-cream-500">{email}</p>

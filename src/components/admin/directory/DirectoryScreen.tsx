@@ -49,7 +49,7 @@ import {
   EmptyState,
   TextField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { CustomerProfilePanel } from "@/components/admin/directory/CustomerProfilePanel";
 import type { Role } from "@/lib/erp/enums";
 
@@ -119,14 +119,7 @@ export function DirectoryScreen() {
   const [tab, setTab] = useState<Tab>("customers");
   const [error, setError] = useState("");
 
-  const actor = useMemo<Actor>(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   return (
     <div className="mx-auto max-w-6xl pb-20">

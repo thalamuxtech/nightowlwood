@@ -23,7 +23,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { StaffPicker, type PickedStaff } from "@/components/admin/services/StaffPicker";
 
 interface LoanRow {
@@ -97,14 +97,7 @@ export function LoansScreen() {
     );
   }, []);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "operator",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const totalOutstanding = useMemo(
     () => rows.reduce((sum, r) => sum + r.outstandingKobo, 0),

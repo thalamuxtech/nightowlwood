@@ -29,7 +29,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 interface StaffOption {
   id: string;
@@ -121,14 +121,7 @@ export function StaffRatesPanel() {
     );
   }, []);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "admin",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   /** Only the rates in force now; superseded rows are history, not settings. */
   const live = useMemo(() => {

@@ -91,7 +91,7 @@ import {
   TextAreaField,
   TextField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { StaffPicker, type PickedStaff } from "@/components/admin/services/StaffPicker";
 import { WorkLogSheet } from "./WorkLogSheet";
 import { PrintPreview } from "@/components/admin/ui/PrintPreview";
@@ -396,14 +396,7 @@ export function WorkLogScreen() {
     );
   }, [canLogForOthers, session.staffId]);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "operator",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const assistantPool = useMemo(() => staff.filter((s) => s.isAssistant), [staff]);
 

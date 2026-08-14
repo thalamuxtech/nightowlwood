@@ -31,7 +31,7 @@ import { DEFAULT_HR_SETTINGS, type HrSettings } from "@/lib/erp/settings";
 import type { Staff } from "@/lib/erp/types";
 import { Button, DateField, EmptyState, todayIso } from "@/components/admin/ui/Fields";
 import { describeIso } from "@/components/admin/ui/DateField";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 /**
  * The daily attendance register.
@@ -65,14 +65,7 @@ export function AttendanceScreen() {
   /** Which row is mid-write, so only that button spins rather than the whole screen. */
   const [saving, setSaving] = useState<string | null>(null);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   // The roster and the settings, once.
   useEffect(() => {

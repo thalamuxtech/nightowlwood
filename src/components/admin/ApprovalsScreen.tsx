@@ -20,7 +20,7 @@ import {
 import type { ApprovalRequest } from "@/lib/erp/types";
 import { Button, EmptyState, TextField } from "@/components/admin/ui/Fields";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 type Filter = "pending" | "decided" | "mine";
 
@@ -79,14 +79,7 @@ export function ApprovalsScreen() {
     );
   }, [filter]);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const visible = useMemo(() => {
     if (filter === "mine") {

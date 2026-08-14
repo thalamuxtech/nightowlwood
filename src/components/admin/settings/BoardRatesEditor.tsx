@@ -12,7 +12,7 @@ import { formatNaira, toKobo, toNaira } from "@/lib/erp/money";
 import { boardRateCard, saveBoardRateCard } from "@/lib/erp/cutting";
 import type { BoardRateCardSettings } from "@/lib/erp/settings";
 import { Button, CheckboxField, NumberField } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 /**
  * Cutting &amp; edging rates, by board.
@@ -26,6 +26,7 @@ import { useErpSession } from "@/components/admin/ErpAuthProvider";
  */
 export function BoardRatesEditor() {
   const session = useErpSession();
+  const actor = useAuditActor();
 
   const [card, setCard] = useState<BoardRateCardSettings | null>(null);
   const [naira, setNaira] = useState<Record<string, string>>({});
@@ -68,11 +69,7 @@ export function BoardRatesEditor() {
 
       await saveBoardRateCard(
         getDb(),
-        {
-          uid: session.user?.uid ?? "",
-          email: session.user?.email ?? "",
-          role: session.role ?? "admin",
-        },
+        actor,
         { ratesKobo, allowManualOverride: allowOverride }
       );
       setSaved(true);

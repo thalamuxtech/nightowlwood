@@ -53,7 +53,7 @@ import {
   todayIso,
 } from "@/components/admin/ui/Fields";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { useRoster } from "@/components/admin/marketing/useRoster";
 
 /**
@@ -141,14 +141,7 @@ export function SiteVisitScreen() {
       .finally(() => setLoading(false));
   }, [version]);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   /** Today's tally against the target, which is the whole discipline of the thing. */
   const today = useMemo(() => {

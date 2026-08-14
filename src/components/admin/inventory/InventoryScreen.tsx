@@ -34,7 +34,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import type { AuditActor } from "@/lib/erp/audit";
 
 interface ItemRow {
@@ -117,14 +117,7 @@ export function InventoryScreen() {
     );
   }, []);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const active = useMemo(() => rows.filter((r) => r.active), [rows]);
   const retired = useMemo(() => rows.filter((r) => !r.active), [rows]);

@@ -10,7 +10,7 @@ import {
   type MarketingTargets,
 } from "@/lib/erp/marketing";
 import { Button, NumberField } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 /**
  * Daily activity targets for the marketing team.
@@ -38,14 +38,7 @@ export function MarketingTargetsEditor() {
       .finally(() => setLoading(false));
   }, []);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "admin",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   async function save() {
     setError("");

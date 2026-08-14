@@ -51,7 +51,7 @@ import {
   NumberField,
   SelectField,
 } from "@/components/admin/ui/Fields";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { TOOLTIP_PROPS } from "@/components/admin/ui/chartTheme";
 import type { AuditActor } from "@/lib/erp/audit";
 
@@ -145,14 +145,7 @@ export function MetersScreen() {
     );
   }, []);
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   /** Meter names present in the data, so historic meters still appear. */
   const meterNames = useMemo(() => {

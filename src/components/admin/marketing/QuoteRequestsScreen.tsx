@@ -40,7 +40,7 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 import { StatusPill, type PillTone } from "@/components/admin/ui/StatusPill";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 import { rosterNameFor, useRoster } from "@/components/admin/marketing/useRoster";
 
 /**
@@ -91,14 +91,7 @@ export function QuoteRequestsScreen() {
   const [leadId, setLeadId] = useState("");
   const [notes, setNotes] = useState("");
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   useEffect(() => {
     setLoading(true);

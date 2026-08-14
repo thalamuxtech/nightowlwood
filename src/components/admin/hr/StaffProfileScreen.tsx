@@ -57,7 +57,7 @@ import {
   todayIso,
 } from "@/components/admin/ui/Fields";
 import { StatusPill, type PillTone } from "@/components/admin/ui/StatusPill";
-import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
 /**
  * One person's whole file, on one screen.
@@ -119,14 +119,7 @@ export function StaffProfileScreen({ staff }: { staff: Staff }) {
   const [reason, setReason] = useState("");
   const [actionDate, setActionDate] = useState(todayIso());
 
-  const actor = useMemo(
-    () => ({
-      uid: session.user?.uid ?? "",
-      email: session.user?.email ?? "",
-      role: session.role ?? "manager",
-    }),
-    [session.user, session.role]
-  );
+  const actor = useAuditActor();
 
   const load = useCallback(() => {
     setLoading(true);

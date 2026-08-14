@@ -15,7 +15,22 @@ import type { Role } from "./enums";
 export interface AuditActor {
   uid: string;
   email: string;
+  /**
+   * The role this person actually holds — never a role they are acting as.
+   *
+   * A super admin can switch the interface to another role and work in it for real, but the
+   * trail has to say who did the work. Recording the assumed role would produce entries
+   * claiming "operator deleted this work log" when a super admin did, which defeats the one
+   * record that exists to answer who changed a figure.
+   */
   role: Role;
+  /**
+   * The role they were acting as at the time, when it differed from their own.
+   *
+   * Additive: it explains *why* a super admin was on an operator's screen without displacing
+   * the fact that it was them.
+   */
+  actingAs?: Role | null;
 }
 
 /** Verb-noun action names, so the log reads as a sentence. */
@@ -112,6 +127,13 @@ export async function writeAudit(db: Firestore, input: WriteAuditInput): Promise
       actorUid: input.actor.uid,
       actorEmail: input.actor.email,
       actorRole: input.actor.role,
+      /*
+       * Only present when a super admin was working inside another role's interface.
+       *
+       * Null for every ordinary action, so the log is not littered with a field that means
+       * nothing in the normal case — and its presence is a real signal when reading back.
+       */
+      actorActingAs: input.actor.actingAs ?? null,
       action: input.action,
       collectionName: input.collectionName,
       docId: input.docId,
