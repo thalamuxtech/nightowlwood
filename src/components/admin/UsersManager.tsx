@@ -50,7 +50,14 @@ export function UsersManager() {
   const [draftName, setDraftName] = useState("");
   const [error, setError] = useState("");
 
-  const isAdmin = session.role === "admin";
+  /*
+   * Super admin only, on the real role.
+   *
+   * Creating logins and setting roles is the security boundary of the whole application —
+   * including the ability to make somebody else an admin — so it sits above admin. Judged on
+   * the real role so switching roles to look around does not hide it.
+   */
+  const isAdmin = session.realRole === "super_admin";
 
   useEffect(() => {
     if (!isAdmin) {

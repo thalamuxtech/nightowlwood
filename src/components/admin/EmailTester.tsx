@@ -6,6 +6,7 @@ import { CheckCircle2, Eye, Mail, ShieldAlert, X, XCircle } from "lucide-react";
 import { getFirebaseApp } from "@/lib/firebase";
 import { Button, TextField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { roleAtLeast } from "@/lib/erp/enums";
 
 /** Must match the region the functions are deployed to. */
 const REGION = "europe-west1";
@@ -24,7 +25,8 @@ export function EmailTester() {
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  const isAdmin = session.role === "admin";
+  // Admin or above: an exact match on "admin" would have excluded the super admin.
+  const isAdmin = roleAtLeast(session.role, "admin");
 
   async function preview() {
     setPreviewing(true);

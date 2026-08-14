@@ -39,7 +39,14 @@ type Overrides = Partial<Record<Role, Capability[]>>;
  */
 export function RolePermissionsEditor() {
   const session = useErpSession();
-  const isAdmin = session.role === "admin";
+  /*
+   * Super admin only, on the real role.
+   *
+   * This screen decides what every other role may do, so it cannot belong to a role it can
+   * edit. Judged on the real role so it does not vanish when a super admin switches to admin
+   * to check what that role sees.
+   */
+  const isAdmin = session.realRole === "super_admin";
 
   const [overrides, setOverrides] = useState<Overrides>({});
   const [draft, setDraft] = useState<Overrides>({});

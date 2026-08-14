@@ -175,6 +175,20 @@ service cloud.firestore {
       return isSuperAdmin() || bootstrapAdmin();
     }
 
+    /**
+     * True unless the approval policy reserves decisions for the super admin.
+     *
+     * Absent document or absent flag means anybody with `approval.decide` may decide, which is
+     * how the module behaved before the setting existed — a missing configuration should not
+     * quietly freeze the queue.
+     */
+    function mayDecideApprovals() {
+      return isSuperAdminOnly()
+        || !exists(/databases/$(database)/documents/settings/approvals)
+        || get(/databases/$(database)/documents/settings/approvals)
+             .data.get('superAdminDecidesOnly', false) != true;
+    }
+
     /** The staff record linked to the caller, or '' when unlinked. */
     function myStaffId() {
       return isStaff() && 'staffId' in userDoc().data ? userDoc().data.staffId : '';
@@ -331,9 +345,19 @@ service cloud.firestore {
       // discovers its role. Ops may read the staff directory.
       allow read: if signedIn() && (request.auth.uid == uid || isOps());
 
-      // Role and active status are the security boundary: admin only.
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin()
+      /*
+       * Role and active status are the security boundary, so creating logins and changing
+       * roles belongs to the super admin.
+       *
+       * Admin is not enough: `role` is what this whole file keys off, so an admin who could
+       * write it could make themselves a super admin and take the settings and the approval
+       * matrix with them. `user.manage` is on the ungrantable list for the same reason.
+       *
+       * Anyone may still edit their own document apart from those three fields, which is how a
+       * staff member changes their own display name.
+       */
+      allow create, delete: if isSuperAdminOnly();
+      allow update: if isSuperAdminOnly()
         || (request.auth.uid == uid
             && fieldsUnchanged(['role', 'active', 'staffId']));
     }
@@ -895,7 +919,15 @@ service cloud.firestore {
         && request.resource.data.reason is string
         && request.resource.data.reason.size() > 3;
 
-      allow update: if isAdminOr('approval.decide')
+      /*
+       * Deciding, or withdrawing your own request.
+       *
+       * When `settings/approvals.superAdminDecidesOnly` is on, only the super admin may decide
+       * — enforced here and not only in the client, because the client check is a convenience
+       * and this is the control. Withdrawing stays open to whoever raised it either way:
+       * cancelling your own ask is not a decision about somebody else's work.
+       */
+      allow update: if (isAdminOr('approval.decide') && mayDecideApprovals())
         || (resource.data.requestedByUid == request.auth.uid
             && resource.data.status == 'pending'
             && request.resource.data.status == 'cancelled'

@@ -14,6 +14,7 @@ import {
 import { writeAudit } from "@/lib/erp/audit";
 import { Button, NumberField, TextField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { roleAtLeast } from "@/lib/erp/enums";
 
 const SETTINGS_DOC_ID = "reporting";
 
@@ -28,7 +29,8 @@ const SETTINGS_DOC_ID = "reporting";
  */
 export function ReportRangesEditor() {
   const session = useErpSession();
-  const isAdmin = session.role === "admin";
+  // Admin or above: an exact match on "admin" would have excluded the super admin.
+  const isAdmin = roleAtLeast(session.role, "admin");
 
   const [ranges, setRanges] = useState<ReportRange[]>(DEFAULT_RANGES);
   const [loaded, setLoaded] = useState(false);

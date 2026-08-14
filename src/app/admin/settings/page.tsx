@@ -6,6 +6,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import { EmailTester } from "@/components/admin/EmailTester";
 import { ReportRangesEditor } from "@/components/admin/ReportRangesEditor";
+import { ApprovalPolicyEditor } from "@/components/admin/settings/ApprovalPolicyEditor";
 import { EstimateTemplatesEditor } from "@/components/admin/settings/EstimateTemplatesEditor";
 import { CompanySettingsEditor } from "@/components/admin/settings/CompanySettingsEditor";
 import { HrSettingsEditor } from "@/components/admin/settings/HrSettingsEditor";
@@ -122,6 +123,13 @@ function SettingsPageInner() {
           groups produce, and an invoice with no address or account number cannot be paid. */}
       <div className="mt-8">
         <CompanySettingsEditor />
+      </div>
+
+      {/* Ahead of the operational settings: this one decides how the rest of the system
+          treats everybody, so it belongs with the company details rather than buried under
+          the rate cards it has nothing to do with. */}
+      <div className="mt-8">
+        <ApprovalPolicyEditor />
       </div>
 
       <div className="mt-8">

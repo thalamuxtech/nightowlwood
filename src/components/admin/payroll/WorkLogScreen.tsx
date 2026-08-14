@@ -886,6 +886,7 @@ export function WorkLogScreen() {
                           targetLabel={`${r.staffName} · ${describeItems(r.items)}`}
                           description="This is what the wage run reads, so removing it changes what is paid for that period."
                           locked={Boolean(r.pendingApprovalId)}
+                          operation="workLog.delete"
                           before={{
                             staffName: r.staffName,
                             items: describeItems(r.items),

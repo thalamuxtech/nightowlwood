@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, ShieldAlert, Trash2 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { clearStaleLock, deleteOrRequest } from "@/lib/erp/approvals";
+import type { ApprovalOperation } from "@/lib/erp/approvalPolicy";
 import { Button, TextAreaField } from "@/components/admin/ui/Fields";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
 
@@ -39,6 +40,8 @@ export function DeleteWithReason({
   onError,
   /** Set when the record already has a change awaiting a decision. */
   locked,
+  /** Which configurable operation this is, so the approval policy can gate it. */
+  operation,
   size = "icon",
   startOpen,
 }: {
@@ -51,6 +54,7 @@ export function DeleteWithReason({
   onDone: (message: string) => void;
   onError: (message: string) => void;
   locked?: boolean;
+  operation?: ApprovalOperation;
   size?: "icon" | "button";
   /**
    * Renders the reason panel straight away, without its own trigger.
@@ -133,6 +137,7 @@ export function DeleteWithReason({
         targetLabel,
         reason: trimmed,
         canDeleteDirectly,
+        operation,
         before,
         hardDelete,
       });

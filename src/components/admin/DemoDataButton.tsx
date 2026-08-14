@@ -26,7 +26,19 @@ export function DemoDataButton() {
   const [confirming, setConfirming] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const isAdmin = session.role === "admin";
+  /*
+   * Super admin only, and judged on the real role.
+   *
+   * Seeding writes across nearly forty collections and clearing deletes everything it wrote, so
+   * it is the most destructive control in the application — one mis-click on live data and a
+   * workshop's records are gone. It also has to survive the role switcher: judged on the acting
+   * role, the button would vanish the moment a super admin switched to admin to check something,
+   * and reappear when they switched back, which reads as a bug.
+   *
+   * This was `session.role === "admin"` — an exact string match that a super admin would have
+   * *failed*, hiding the control from the only person now meant to have it.
+   */
+  const isAdmin = session.realRole === "super_admin";
   /** Drives the trigger label: the action offered depends on what is loaded. */
   const loaded = (count ?? 0) > 0;
 

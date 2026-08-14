@@ -13,6 +13,11 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { COL } from "./collections";
+import {
+  loadApprovalPolicy,
+  requiresApproval,
+  type ApprovalOperation,
+} from "./approvalPolicy";
 import type { ApprovalRequest } from "./types";
 import { writeAudit, type AuditActor } from "./audit";
 
@@ -43,6 +48,26 @@ import { writeAudit, type AuditActor } from "./audit";
 
 /** Fields the workflow writes on a target record. Never business data. */
 export const APPROVAL_LOCK_FIELDS = ["pendingApprovalId", "pendingApprovalKind"] as const;
+
+/**
+ * Refuses the decision when the policy reserves it for the super admin.
+ *
+ * Checked here rather than only in the screen for the usual reason — the button is a
+ * convenience and this is the control. The actor's role is the *real* one, never a role a
+ * super admin is acting as, so switching to admin does not become a way to sidestep a
+ * restriction the super admin themselves configured.
+ *
+ * Note the asymmetry with `cancelRequest`: cancelling is the requester withdrawing their own
+ * ask, which is not a decision about somebody else's work, so it stays open.
+ */
+async function assertMayDecide(db: Firestore, actor: AuditActor): Promise<void> {
+  const policy = await loadApprovalPolicy(db);
+  if (!policy.superAdminDecidesOnly) return;
+  if (actor.role === "super_admin") return;
+  throw new Error(
+    "Only the super admin can approve or refuse requests. Ask them to review this one."
+  );
+}
 
 export interface RaiseRequestInput {
   kind: "delete" | "update";
@@ -141,6 +166,8 @@ export async function approveRequest(
   requestId: string,
   note?: string
 ): Promise<{ applied: "deleted" | "updated" }> {
+  await assertMayDecide(db, actor);
+
   const requestRef = doc(db, COL.approvals, requestId);
 
   const outcome = await runTransaction(db, async (tx) => {
@@ -223,6 +250,7 @@ export async function rejectRequest(
   if (!note.trim()) {
     throw new Error("Say why it is refused, so the requester learns something.");
   }
+  await assertMayDecide(db, actor);
 
   const requestRef = doc(db, COL.approvals, requestId);
 
@@ -333,6 +361,15 @@ export async function deleteOrRequest(
     reason: string;
     /** True when the caller may delete outright. Read from a capability, not a role. */
     canDeleteDirectly: boolean;
+    /**
+     * Which configurable operation this is, when it is one.
+     *
+     * Supplied by the calling screen because only it knows what the record represents — the
+     * collection name alone cannot tell a job payment from any other subcollection document.
+     * Omitted means "not a gated operation", so the capability check decides on its own and
+     * existing callers keep working unchanged.
+     */
+    operation?: ApprovalOperation;
     before?: Record<string, unknown>;
     /** Performs the real removal, including any paired records. */
     hardDelete: () => Promise<void>;
@@ -343,7 +380,18 @@ export async function deleteOrRequest(
     throw new Error("Give a reason for removing this. It is recorded either way.");
   }
 
-  if (!input.canDeleteDirectly) {
+  /*
+   * Two independent reasons to queue rather than delete.
+   *
+   * Either the caller lacks the grant to delete at all, or the super admin has put *this
+   * operation* behind approval for everybody. The second is why the policy is read here rather
+   * than in the screen: a gate that only applied to people who could already be stopped would
+   * gate nothing that matters.
+   */
+  const policy = await loadApprovalPolicy(db);
+  const gated = requiresApproval(policy, input.operation);
+
+  if (!input.canDeleteDirectly || gated) {
     const requestId = await requestApproval(db, actor, {
       kind: "delete",
       targetCollection: input.targetCollection,
