@@ -42,6 +42,7 @@ import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { StaffPicker, type PickedStaff } from "@/components/admin/services/StaffPicker";
 import { ToolRequestSheet } from "@/components/admin/print/ToolRequestSheet";
+import type { AuditActor } from "@/lib/erp/audit";
 
 interface ItemRow {
   id: string;
@@ -310,7 +311,7 @@ function RequestPanel({
   canIssue: boolean;
   canRequest: boolean;
   canDelete: boolean;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (m: string) => void;
   onPrint: (items: ItemRow[]) => void;
 }) {
@@ -675,7 +676,7 @@ function NewRequestForm({
   onClose,
   onError,
 }: {
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onClose: () => void;
   onError: (m: string) => void;
 }) {
@@ -871,7 +872,7 @@ function EditRequestForm({
 }: {
   request: RequestRow;
   items: ItemRow[];
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onClose: () => void;
   onError: (m: string) => void;
 }) {

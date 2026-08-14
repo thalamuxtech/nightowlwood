@@ -97,6 +97,7 @@ import { WorkLogSheet } from "./WorkLogSheet";
 import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 import { DeleteWithReason } from "@/components/admin/ui/DeleteWithReason";
 import { TOOLTIP_PROPS } from "@/components/admin/ui/chartTheme";
+import type { AuditActor } from "@/lib/erp/audit";
 
 interface StaffOption {
   id: string;
@@ -1040,7 +1041,7 @@ function WorkLogForm({
   onClose,
   onError,
 }: {
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   staff: StaffOption[];
   assistantPool: StaffOption[];
   rates: WageRate[];

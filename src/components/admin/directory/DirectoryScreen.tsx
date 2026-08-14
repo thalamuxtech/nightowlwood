@@ -51,6 +51,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { CustomerProfilePanel } from "@/components/admin/directory/CustomerProfilePanel";
+import type { Role } from "@/lib/erp/enums";
 
 /**
  * The directory: customers, staff and suppliers in one place.
@@ -104,7 +105,7 @@ interface SupplierRow {
 interface Actor {
   uid: string;
   email: string;
-  role: "admin" | "manager" | "operator";
+  role: Role;
 }
 
 const TABS: Array<{ key: Tab; label: string; icon: LucideIcon }> = [

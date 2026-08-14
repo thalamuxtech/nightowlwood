@@ -70,6 +70,7 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import type { AuditActor } from "@/lib/erp/audit";
 
 const fmtDay = (ms: number | null) =>
   ms
@@ -759,7 +760,7 @@ function RatesEditor({
   onSaved,
 }: {
   projectId: string;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   errorMarginPercent: number;
   nightowlChargePercent: number;
   onClose: () => void;
@@ -836,7 +837,7 @@ function AddComponentForm({
   onAdded,
 }: {
   projectId: string;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   nextOrder: number;
   onClose: () => void;
   onError: (m: string) => void;
@@ -975,7 +976,7 @@ function ComponentPanel({
   open: boolean;
   onToggle: () => void;
   canEdit: boolean;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (m: string) => void;
 }) {
   const [features, setFeatures] = useState<FeatureRow[]>([]);
@@ -1259,7 +1260,7 @@ function FeatureRowEditor({
   componentId: string;
   feature: FeatureRow;
   canEdit: boolean;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (m: string) => void;
 }) {
   const [item, setItem] = useState(feature.item);

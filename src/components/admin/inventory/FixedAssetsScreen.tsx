@@ -42,6 +42,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { StatusPill, type PillTone } from "@/components/admin/ui/StatusPill";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import type { AuditActor } from "@/lib/erp/audit";
 
 /**
  * The fixed assets register.
@@ -394,7 +395,7 @@ function AssetForm({
   onSaved,
   onError,
 }: {
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   editing?: AssetWithDepreciation;
   onClose: () => void;
   onSaved: (assetTag: string) => void;

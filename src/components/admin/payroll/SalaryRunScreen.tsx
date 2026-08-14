@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { getDb } from "@/lib/firebase";
 import { COL } from "@/lib/erp/collections";
-import { DEDUCTION_TYPE_LABELS, type WageRunStatus } from "@/lib/erp/enums";
+import { DEDUCTION_TYPE_LABELS, type WageRunStatus, type Role } from "@/lib/erp/enums";
 import { formatNaira, parseNairaInput } from "@/lib/erp/money";
 import {
   adjustSalaryLine,
@@ -41,6 +41,7 @@ import { WAGE_RUN_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { Button, EmptyState, NumberField, TextField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import type { AuditActor } from "@/lib/erp/audit";
 
 interface StaffRow {
   id: string;
@@ -182,7 +183,7 @@ export function SalaryRunScreen() {
       email: session.user?.email ?? "",
       // The caller.s real role: a granted manager reaching this writes audit
       // entries as a manager, not as an administrator they are not.
-      role: (session.role ?? "manager") as "admin" | "manager" | "operator",
+      role: (session.role ?? "manager") as Role,
     }),
     [session.user, session.role]
   );
@@ -627,7 +628,7 @@ function DraftEditor({
   onDone,
 }: {
   run: SalaryRunRow;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (message: string) => void;
   onDone: () => void;
 }) {

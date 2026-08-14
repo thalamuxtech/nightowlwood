@@ -76,7 +76,11 @@ export const TOOL_REQUEST_STATUS_TONE: Record<ToolRequestStatus, PillTone> = {
 };
 
 export const ROLE_TONE: Record<Role, PillTone> = {
-  admin: "danger", // highest privilege, visually distinct on purpose
+  // The two senior roles share the alarm tone: both hold privileges that need to be obvious
+  // at a glance in the user list, and inventing a fifth colour for the rarer one would make
+  // the more common admin look like the more dangerous of the two.
+  super_admin: "danger",
+  admin: "danger",
   manager: "progress",
   operator: "info",
 };

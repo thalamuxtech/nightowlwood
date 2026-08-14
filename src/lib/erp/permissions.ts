@@ -113,9 +113,39 @@ export const CAPABILITIES = [
 
   // Destructive
   "record.delete",
+
+  /*
+   * The super admin's own grants.
+   *
+   * These decide how the system treats everyone else — which operations need a second pair of
+   * eyes, and who provides them — so they cannot belong to the people they constrain. An admin
+   * who could edit the approval matrix could switch off the gate on their own next deletion,
+   * which would make the whole workflow decorative.
+   *
+   * `role.preview` is the odd one out: it grants no authority at all, only the ability to see
+   * the interface as a junior role sees it. It is here rather than with the ops capabilities
+   * because seeing every screen through somebody else's eyes is a supervisory act.
+   */
+  "approval.configure",
+  "role.preview",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
+
+/**
+ * Grants that belong to the super admin alone, and that no override can hand to anybody else.
+ *
+ * These govern how the system treats other roles — what needs approving, who approves it, and
+ * the site-wide settings every document is printed from. An admin able to edit the approval
+ * matrix could switch off the gate on their own next deletion, so the matrix has to sit above
+ * them. `firestore.rules` denies these to every other role regardless of what is saved in
+ * Settings → Roles; the list here keeps the UI from offering a button the database will refuse.
+ */
+export const SUPER_ADMIN_ONLY_CAPABILITIES: Capability[] = [
+  "approval.configure",
+  "role.preview",
+  "settings.change",
+];
 
 /**
  * Manager runs the workshop floor: the jobs coming through, the projects quoted
@@ -223,9 +253,21 @@ const MANAGER_CAPABILITIES: Capability[] = [
  */
 const OPERATOR_CAPABILITIES: Capability[] = ["worklog.viewOwn", "worklog.create"];
 
+/**
+ * Everything an admin holds: the whole list, minus the grants that exist to govern admins.
+ *
+ * Spelled out as a subtraction rather than a hand-written list so a new capability is admin's
+ * by default. The alternative — listing admin's grants explicitly — drifts the moment somebody
+ * adds a capability and forgets one of the two places.
+ */
+const ADMIN_CAPABILITIES: readonly Capability[] = CAPABILITIES.filter(
+  (c) => !SUPER_ADMIN_ONLY_CAPABILITIES.includes(c)
+);
+
 const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
-  // Admin holds every capability by definition; listing them would drift.
-  admin: CAPABILITIES,
+  // The super admin holds every capability by definition; listing them would drift.
+  super_admin: CAPABILITIES,
+  admin: ADMIN_CAPABILITIES,
   manager: MANAGER_CAPABILITIES,
   operator: OPERATOR_CAPABILITIES,
 };
@@ -274,5 +316,17 @@ export function capabilitiesFor(role: Role): readonly Capability[] {
  */
 export const ADMIN_ONLY_CAPABILITIES: Capability[] = [
   "user.manage",
-  "settings.change",
+];
+
+/**
+ * Everything no override may grant, whatever Settings → Roles says.
+ *
+ * The union of the two lists above: admin-only grants, plus the super admin's own. Callers
+ * checking "can this be handed to a manager" want this rather than either list alone —
+ * `settings.change` moved up to the super admin and a check against the admin list alone would
+ * have quietly started allowing it.
+ */
+export const UNGRANTABLE_CAPABILITIES: Capability[] = [
+  ...ADMIN_ONLY_CAPABILITIES,
+  ...SUPER_ADMIN_ONLY_CAPABILITIES,
 ];

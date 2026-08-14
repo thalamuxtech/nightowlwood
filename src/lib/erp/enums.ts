@@ -12,14 +12,40 @@
 // Roles
 // ---------------------------------------------------------------------------
 
-export const ROLES = ["admin", "manager", "operator"] as const;
+/**
+ * Ordered most powerful first, which `ROLE_RANK` below depends on.
+ *
+ * `super_admin` sits above admin: it owns the settings that decide how the rest of the system
+ * behaves — which operations need approval, and who may approve them — so those cannot be
+ * changed by the people they constrain.
+ */
+export const ROLES = ["super_admin", "admin", "manager", "operator"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
+  super_admin: "Super Admin",
   admin: "Admin",
   manager: "Manager",
   operator: "Operator",
 };
+
+/**
+ * Seniority, for comparisons like "may this person act on that person's role".
+ *
+ * Lower is more senior. Derived from the order of `ROLES` so the two cannot drift: adding a
+ * role in the wrong position would be caught by the rank tests rather than silently granting
+ * somebody authority over their own supervisor.
+ */
+export const ROLE_RANK: Record<Role, number> = ROLES.reduce(
+  (acc, role, i) => ({ ...acc, [role]: i }),
+  {} as Record<Role, number>
+);
+
+/** True when `role` is at least as senior as `atLeast`. */
+export function roleAtLeast(role: Role | null | undefined, atLeast: Role): boolean {
+  if (!role) return false;
+  return ROLE_RANK[role] <= ROLE_RANK[atLeast];
+}
 
 // ---------------------------------------------------------------------------
 // Services

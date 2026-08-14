@@ -53,6 +53,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { TOOLTIP_PROPS } from "@/components/admin/ui/chartTheme";
+import type { AuditActor } from "@/lib/erp/audit";
 
 interface ReadingRow {
   id: string;
@@ -520,7 +521,7 @@ function AddReadingForm({
   onWarning,
 }: {
   meters: MeterConfigured[];
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onClose: () => void;
   onError: (m: string) => void;
   onWarning: (m: string) => void;

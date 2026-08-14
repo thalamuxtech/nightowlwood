@@ -22,6 +22,7 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 import { CustomerPicker, type PickedCustomer } from "@/components/admin/services/CustomerPicker";
+import type { AuditActor } from "@/lib/erp/audit";
 
 /**
  * The invoice editor: raises a standalone invoice, or corrects a draft.
@@ -76,7 +77,7 @@ export function InvoiceEditor({
   onClose,
   onSaved,
 }: {
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   /** Absent when raising a new standalone invoice. */
   editing?: EditableInvoice;
   onClose: () => void;

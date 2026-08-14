@@ -17,6 +17,7 @@ import {
 import type { BoardBreakdown } from "@/lib/erp/types";
 import type { BoardRateCardSettings } from "@/lib/erp/settings";
 import { Button } from "@/components/admin/ui/Fields";
+import type { AuditActor } from "@/lib/erp/audit";
 
 /**
  * Cutting &amp; edging on the estimate: derived, not typed.
@@ -42,7 +43,7 @@ export function ProjectCuttingPanel({
   projectId: string;
   boardCounts?: BoardBreakdown;
   canEdit: boolean;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (m: string) => void;
   onSaved?: (m: string) => void;
 }) {

@@ -25,6 +25,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/admin/ui/Fields";
+import type { AuditActor } from "@/lib/erp/audit";
 
 interface Row extends ProjectPurchase {
   id: string;
@@ -58,7 +59,7 @@ export function ProjectPurchasesPanel({
   estimatedCostKobo: number;
   components: Array<{ id: string; name: string }>;
   canEdit: boolean;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (m: string) => void;
 }) {
   const [rows, setRows] = useState<Row[]>([]);
@@ -238,7 +239,7 @@ function PurchaseForm({
   projectId: string;
   projectNumber?: string;
   components: Array<{ id: string; name: string }>;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onClose: () => void;
   onError: (m: string) => void;
 }) {

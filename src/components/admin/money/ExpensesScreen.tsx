@@ -36,6 +36,7 @@ import {
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { TOOLTIP_PROPS } from "@/components/admin/ui/chartTheme";
+import type { AuditActor } from "@/lib/erp/audit";
 
 /** Brand-derived series, reused from the dashboard palette. */
 const SERIES = ["#c08a3e", "#8a6a45", "#d9b678", "#5c3f22", "#e0c99a", "#a08050"];
@@ -465,7 +466,7 @@ function ExpenseForm({
   onClose,
   onError,
 }: {
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   editing?: ExpenseRow;
   onClose: () => void;
   onError: (m: string) => void;

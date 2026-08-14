@@ -22,6 +22,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/admin/ui/Fields";
+import type { AuditActor } from "@/lib/erp/audit";
 
 const CATEGORIES: Array<{ value: ComponentAddon["category"]; label: string }> = [
   { value: "kitchenware", label: "Kitchenware" },
@@ -58,7 +59,7 @@ export function AddonsPanel({
   projectId: string;
   componentId: string;
   canEdit: boolean;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (m: string) => void;
 }) {
   const [rows, setRows] = useState<Row[]>([]);
@@ -221,7 +222,7 @@ function AddonForm({
 }: {
   projectId: string;
   componentId: string;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   editing?: Row;
   onClose: () => void;
   onError: (m: string) => void;

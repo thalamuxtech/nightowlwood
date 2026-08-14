@@ -14,6 +14,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/admin/ui/Fields";
+import type { AuditActor } from "@/lib/erp/audit";
 
 /** A company-stock item that could be moved to the counter. */
 interface CompanyItem {
@@ -39,7 +40,7 @@ export function CounterRestockPanel({
   onDone,
   onClose,
 }: {
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onDone: (message: string) => void;
   onClose: () => void;
 }) {

@@ -61,6 +61,7 @@ import { PrintPreview } from "@/components/admin/ui/PrintPreview";
 import { AppointmentLetter } from "@/components/admin/print/AppointmentLetter";
 import { StaffIdCard } from "@/components/admin/print/StaffIdCard";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import type { AuditActor } from "@/lib/erp/audit";
 
 interface Row extends Staff {
   id: string;
@@ -752,7 +753,7 @@ function StaffForm({
   onSaved,
   onError,
 }: {
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   editing?: Row;
   onClose: () => void;
   onSaved: (m: string) => void;

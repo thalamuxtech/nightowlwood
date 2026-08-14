@@ -45,6 +45,7 @@ import {
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { describeIso } from "@/components/admin/ui/DateField";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import type { AuditActor } from "@/lib/erp/audit";
 
 /**
  * Fixed costs and the closure calendar.
@@ -558,7 +559,7 @@ function CostForm({
   onSaved,
   onError,
 }: {
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   editing?: FixedCost;
   onClose: () => void;
   onSaved: () => void;

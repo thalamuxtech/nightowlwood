@@ -41,8 +41,20 @@ service cloud.firestore {
       return isStaff() && userDoc().data.role == r;
     }
 
+    function isSuperAdmin() {
+      return roleIs('super_admin');
+    }
+
+    /**
+     * Admin *or above*, which is what almost every rule in this file means by "admin".
+     *
+     * The super admin has to be folded in here rather than checked separately. This function
+     * was `roleIs('admin')` — an exact string match — and it gates nine rules plus every
+     * `isAdminOr()` call, so a new senior role that was not included would silently hold *less*
+     * authority than the role beneath it.
+     */
     function isAdmin() {
-      return roleIs('admin') || bootstrapAdmin();
+      return roleIs('admin') || isSuperAdmin() || bootstrapAdmin();
     }
 
     function isManager() {
@@ -79,8 +91,16 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/settings/rolePermissions);
     }
 
+    /**
+     * Capabilities no override may hand to another role.
+     *
+     * Mirrors UNGRANTABLE_CAPABILITIES in permissions.ts. `settings.change`,
+     * `approval.configure` and `role.preview` belong to the super admin: they decide how the
+     * system treats everybody else, so an admin who could grant them to themselves could
+     * switch off the gate on their own next deletion.
+     */
     function ungrantable() {
-      return ['user.manage', 'settings.change'];
+      return ['user.manage', 'settings.change', 'approval.configure', 'role.preview'];
     }
 
     /**
@@ -142,6 +162,17 @@ service cloud.firestore {
     /** Admin, or a role that holds this capability by default or by grant. */
     function isAdminOr(capability) {
       return isAdmin() || granted(capability);
+    }
+
+    /**
+     * Super admin only — deliberately *not* `isAdminOr`, which an admin passes.
+     *
+     * For the handful of grants that govern the other roles. Using `isAdminOr('…')` here would
+     * defeat the point, because `isAdmin()` short-circuits before the capability is ever
+     * examined.
+     */
+    function isSuperAdminOnly() {
+      return isSuperAdmin() || bootstrapAdmin();
     }
 
     /** The staff record linked to the caller, or '' when unlinked. */
@@ -235,9 +266,13 @@ service cloud.firestore {
      * the same reasoning as `settings/public`. It holds nothing private: display names, one-line
      * descriptions, sheet sizes and image URLs, all of it written to be read by customers.
      *
-     * Writing needs `settings.change` like any other settings document — which is on the
-     * ungrantable list, so only a real administrator can write here, not a role an admin has
-     * widened. `boardCatalogue.ts` restricts the image URL to a path or an http(s) address, and
+     * Writing is `isAdminOr('settings.change')`, which in practice means admin or above: the
+     * capability itself now belongs to the super admin, but `isAdmin()` short-circuits ahead of
+     * it, so an ordinary admin still maintains the catalogue. That is deliberate — this is
+     * website copy about materials, not a figure any calculation depends on, and it is the one
+     * settings document the person running the site edits routinely. A role an admin has
+     * widened still cannot write here, because the capability is ungrantable.
+     * `boardCatalogue.ts` restricts the image URL to a path or an http(s) address, and
      * the components that render it re-check the same thing; note that neither is enforced *by
      * this rule*, so the guarantee is "no non-admin can write a bad URL", not "no bad URL can
      * exist in the document".
@@ -260,9 +295,31 @@ service cloud.firestore {
       allow read: if isStaff();
       allow write: if isAdminOr('marketing.manage');
     }
+    /*
+     * The approval matrix: which operations need a second pair of eyes.
+     *
+     * Ahead of the general rule so it wins, and super-admin-only rather than admin, because it
+     * governs admins. An admin able to edit this could clear the requirement on their own next
+     * deletion, and the queue would become decorative.
+     *
+     * Readable by any staff member: the client has to know whether the delete in front of them
+     * needs approving before it offers the button.
+     */
+    match /settings/approvals {
+      allow read: if isStaff();
+      allow write: if isSuperAdminOnly();
+    }
+
+    /*
+     * Everything else under `settings` decides how the system computes — tax and meter rates,
+     * wage defaults, estimate templates, the company details every document prints — so it
+     * belongs to the super admin alone. It used to be `isAdmin()`; the exceptions above keep
+     * the two genuinely delegated documents (the board catalogue and the marketing targets)
+     * with the people who own that work.
+     */
     match /settings/{id} {
       allow read: if isStaff();
-      allow write: if isAdmin();
+      allow write: if isSuperAdminOnly();
     }
 
     // =====================================================================

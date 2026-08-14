@@ -21,8 +21,7 @@ import {
   WAGE_WORK_TYPE_LABELS,
   type DeductionType,
   type WageRunStatus,
-  type WageWorkType,
-} from "@/lib/erp/enums";
+  type WageWorkType, type Role } from "@/lib/erp/enums";
 import { formatNaira, parseNairaInput } from "@/lib/erp/money";
 import {
   adjustWageRunStaff,
@@ -39,6 +38,7 @@ import { WAGE_RUN_STATUS_TONE } from "@/lib/erp/statusTone";
 import { StatusPill } from "@/components/admin/ui/StatusPill";
 import { Button, DateField, EmptyState, NumberField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import type { AuditActor } from "@/lib/erp/audit";
 
 interface RunRow {
   id: string;
@@ -171,7 +171,7 @@ export function WageRunScreen() {
       email: session.user?.email ?? "",
       // The caller.s real role: a granted manager reaching this writes audit
       // entries as a manager, not as an administrator they are not.
-      role: (session.role ?? "manager") as "admin" | "manager" | "operator",
+      role: (session.role ?? "manager") as Role,
     }),
     [session.user, session.role]
   );
@@ -629,7 +629,7 @@ function DraftEditor({
   onDone,
 }: {
   run: RunRow;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (message: string) => void;
   onDone: () => void;
 }) {

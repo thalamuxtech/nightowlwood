@@ -53,6 +53,7 @@ import { HeldBoardsPanel } from "./HeldBoardsPanel";
 import { JobSheet } from "./JobSheet";
 import { JobDetailsEditor } from "./JobDetailsEditor";
 import { PrintPreview } from "@/components/admin/ui/PrintPreview";
+import type { AuditActor } from "@/lib/erp/audit";
 
 interface JobDoc {
   jobNumber: string;
@@ -428,7 +429,7 @@ function JobDetailsCard({
 }: {
   job: JobDoc;
   jobId: string;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   canEdit: boolean;
   onError: (m: string) => void;
 }) {
@@ -524,7 +525,7 @@ function LinesSection({
   jobId: string;
   lines: LineRow[];
   canEdit: boolean;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (m: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -661,7 +662,7 @@ function LineRowEditor({
   jobId: string;
   line: LineRow;
   canEdit: boolean;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (m: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -792,7 +793,7 @@ function PaymentsSection({
   payments: PaymentRow[];
   balanceKobo: number;
   canPay: boolean;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (m: string) => void;
 }) {
   const [adding, setAdding] = useState(false);

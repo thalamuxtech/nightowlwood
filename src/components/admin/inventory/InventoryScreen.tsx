@@ -35,6 +35,7 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import type { AuditActor } from "@/lib/erp/audit";
 
 interface ItemRow {
   id: string;
@@ -290,7 +291,7 @@ function ItemPanel({
   onToggle: () => void;
   canEdit: boolean;
   canDelete: boolean;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   onError: (m: string) => void;
 }) {
   const [movements, setMovements] = useState<MovementRow[]>([]);
@@ -716,7 +717,7 @@ function ItemForm({
   onClose,
   onError,
 }: {
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   editing?: ItemRow;
   onClose: () => void;
   onError: (m: string) => void;

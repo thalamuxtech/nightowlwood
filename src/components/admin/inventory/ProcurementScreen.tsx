@@ -32,6 +32,7 @@ import {
 import { Button, EmptyState, TextField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
 import { PurchaseOrdersPanel } from "./PurchaseOrdersPanel";
+import type { AuditActor } from "@/lib/erp/audit";
 
 interface SupplierRow {
   id: string;
@@ -433,7 +434,7 @@ function SupplierCard({
   onError,
 }: {
   supplier: SupplierRow;
-  actor: { uid: string; email: string; role: "admin" | "manager" | "operator" };
+  actor: AuditActor;
   canEdit: boolean;
   canDelete: boolean;
   canSeePerformance: boolean;
