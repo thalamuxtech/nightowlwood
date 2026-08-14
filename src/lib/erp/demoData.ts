@@ -528,6 +528,39 @@ export async function seedDemoData(
   // --- Customers and staff -------------------------------------------------
   onProgress("Customers and staff");
   let batch = writeBatch(db);
+
+  let ops = 0;
+
+  /*
+   * Commit and start a fresh batch before the 500-operation ceiling.
+   *
+   * `written` already counts every document this seeder writes, so the op count is derived from
+   * it rather than tracked separately. The hand-maintained counter this replaces was incremented
+   * at some call sites and not others: it stopped being touched two thirds of the way through, so
+   * every `commitIfFull()` after that point was dead code and the later sections — attendance
+   * especially, which is days × staff and the most likely to grow — sat under a guard that could
+   * never fire.
+   */
+  let lastCommitAt = 0;
+  const commitIfFull = async () => {
+    if (written - lastCommitAt >= 400) {
+      await batch.commit();
+      batch = writeBatch(db);
+      lastCommitAt = written;
+      ops = 0;
+    }
+  };
+  /*
+   * Every section ends by committing and opening a fresh batch. Routed through here so the
+   * ceiling guard's baseline moves with it — otherwise `written` keeps climbing past a baseline
+   * that never advances and the guard fires on every call for the rest of the run.
+   */
+  const commitSection = async () => {
+    await batch.commit();
+    batch = writeBatch(db);
+    lastCommitAt = written;
+    ops = 0;
+  };
   const customerIds: Array<{ id: string; name: string; phone: string }> = [];
   for (const c of CUSTOMERS) {
     const ref = doc(collection(db, COL.customers));
@@ -574,7 +607,7 @@ export async function seedDemoData(
     });
     written += 1;
   }
-  await batch.commit();
+  await commitSection();
 
   const operators = staffIds.filter((s) => s.op);
   const assistants = staffIds.filter((s) => s.as);
@@ -582,15 +615,6 @@ export async function seedDemoData(
   // --- Service jobs --------------------------------------------------------
   onProgress("Service jobs, lines and payments");
   batch = writeBatch(db);
-  let ops = 0;
-  const commitIfFull = async () => {
-    // Keep well clear of the 500-operation ceiling.
-    if (ops >= 400) {
-      await batch.commit();
-      batch = writeBatch(db);
-      ops = 0;
-    }
-  };
 
   for (let i = 0; i < JOB_TEMPLATES.length; i += 1) {
     const t = JOB_TEMPLATES[i];
@@ -652,7 +676,7 @@ export async function seedDemoData(
     written += 1 + lines.length + (paidKobo > 0 ? 1 : 0);
     await commitIfFull();
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Work logs -----------------------------------------------------------
   onProgress("Work logs");
@@ -714,7 +738,7 @@ export async function seedDemoData(
       written += 1;
     }
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Projects, components, features -------------------------------------
   /**
@@ -865,7 +889,7 @@ export async function seedDemoData(
     written += 1 + p.components.length;
     await commitIfFull();
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Money ledgers ------------------------------------------------------
   onProgress("Expenses, loans and meters");
@@ -924,7 +948,7 @@ export async function seedDemoData(
     });
     written += 1;
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Procurement and inventory ------------------------------------------
   onProgress("Suppliers, inventory and consumables");
@@ -1024,7 +1048,7 @@ export async function seedDemoData(
     });
     written += 1;
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Estimates, invoices, purchases, service inventory, wage runs --------
   // Added so every stage of both pipelines has data: without these the
@@ -1097,14 +1121,25 @@ export async function seedDemoData(
       i % 2 === 0
         ? [["Blade 300mm", 4, 19000, "each"], ["Edge tape 22mm", 10, 4200, "roll"]]
         : [["Pressing gum", 6, 18500, "carton"]];
+    /*
+     * The last order is left open, so the receiving flow has a subject.
+     *
+     * With every seeded order already received, the Receive button never appeared and the
+     * counting form — the half of procurement that produces the defect and on-time figures the
+     * scorecards above are built from — could not be reached in a demo at all.
+     */
+    const stillOpen = i === SUPPLIERS.length - 1;
+
     lineSpecs.forEach(([item, qty, naira, unit], k) => {
       const rejected = !sup.onTime && k === 0 ? 2 : 0;
       batch.set(doc(collection(db, purchaseLinesPath(purchaseRef.id))), {
         item,
         unit,
         quantityOrdered: qty,
-        quantityReceived: qty - rejected,
-        quantityRejected: rejected,
+        // An open order has nothing counted against it yet, which is what the receiving form
+        // reads to default its quantities.
+        quantityReceived: stillOpen ? null : qty - rejected,
+        quantityRejected: stillOpen ? null : rejected,
         unitCostKobo: toKobo(naira),
         amountKobo: lineAmountKobo(qty, toKobo(naira)),
       });
@@ -1118,12 +1153,12 @@ export async function seedDemoData(
       reference: `PO-${pad(50 + i, 3)}`,
       orderedAt: Timestamp.fromDate(ordered),
       promisedAt: Timestamp.fromDate(promised),
-      receivedAt: Timestamp.fromDate(received),
-      status: "received",
+      receivedAt: stillOpen ? null : Timestamp.fromDate(received),
+      status: stillOpen ? "ordered" : "received",
       subtotalKobo: total,
       totalKobo: total,
-      hadIssues: !sup.onTime,
-      issueNotes: sup.onTime ? null : "Two units short, delivered late",
+      hadIssues: stillOpen ? false : !sup.onTime,
+      issueNotes: stillOpen || sup.onTime ? null : "Two units short, delivered late",
     });
     written += 1;
     ops += 1;
@@ -1148,7 +1183,7 @@ export async function seedDemoData(
     written += 1;
     ops += 1;
   }
-  await batch.commit();
+  await commitSection();
 
   // Wage runs for the past weeks, one still draft so approve and pay can both
   // be exercised.
@@ -1238,7 +1273,7 @@ export async function seedDemoData(
       written += 1;
     }
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Salary runs, the monthly counterpart to the weekly wage runs ---------
   //
@@ -1332,7 +1367,7 @@ export async function seedDemoData(
         written += 1;
       }
     }
-    await batch.commit();
+    await commitSection();
   }
 
   // --- Counter stock and sales --------------------------------------------
@@ -1345,7 +1380,14 @@ export async function seedDemoData(
   onProgress("Counter stock and sales");
   batch = writeBatch(db);
 
-  const posItems: Array<{ id: string; name: string; unit: string; costKobo: number; priceKobo: number }> =
+  const posItems: Array<{
+    id: string;
+    name: string;
+    unit: string;
+    costKobo: number;
+    priceKobo: number;
+    tracksStock: boolean;
+  }> =
     [];
   for (const p of POS_STOCK) {
     const ref = doc(collection(db, COL.inventoryPos));
@@ -1367,6 +1409,9 @@ export async function seedDemoData(
       unit: p.unit,
       costKobo: toKobo(p.cost),
       priceKobo: toKobo(p.price),
+      // Carried onto the sale lines below. Hardcoding `true` there sold a service as though it
+      // were stock, and `voidSale` would then hand phantom units back to an item that holds none.
+      tracksStock: p.tracksStock ?? true,
     });
     written += 1;
   }
@@ -1393,7 +1438,7 @@ export async function seedDemoData(
         unitPriceKobo: item.priceKobo,
         unitCostKobo: item.costKobo,
         amountKobo: qty1 * item.priceKobo,
-        tracksStock: true,
+        tracksStock: item.tracksStock,
       },
       ...(qty2 > 0
         ? [
@@ -1405,7 +1450,7 @@ export async function seedDemoData(
               unitPriceKobo: second.priceKobo,
               unitCostKobo: second.costKobo,
               amountKobo: qty2 * second.priceKobo,
-              tracksStock: true,
+              tracksStock: second.tracksStock,
             },
           ]
         : []),
@@ -1442,12 +1487,19 @@ export async function seedDemoData(
       changeKobo: 0,
       soldAt: Timestamp.fromDate(daysAgo(i + 1)),
       soldByName: "Counter",
-      dueAt: onAccount ? Timestamp.fromDate(daysAgo(i - 13)) : null,
+      /*
+       * The older credit sale is past due and the newer one is not.
+       *
+       * `daysAgo(i - 13)` put both of them 4 and 9 days into the *future*, so the debtors list
+       * flagged nothing overdue and the one thing that screen exists to surface — who to chase —
+       * had no subject. Sale i=4 is now a fortnight overdue; i=9 still has a week to run.
+       */
+      dueAt: onAccount ? Timestamp.fromDate(daysAgo(i === 4 ? 14 : -7)) : null,
     });
     written += 1;
     await commitIfFull();
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Blade and gum cycles ------------------------------------------------
   /*
@@ -1494,7 +1546,7 @@ export async function seedDemoData(
     });
     written += 2;
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Fixed assets, fixed costs, holidays ---------------------------------
   onProgress("Assets, fixed costs and closures");
@@ -1549,7 +1601,7 @@ export async function seedDemoData(
     });
     written += 1;
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Attendance, deductions and per-person rates -------------------------
   /*
@@ -1561,7 +1613,19 @@ export async function seedDemoData(
    */
   onProgress("Attendance, deductions and rates");
   batch = writeBatch(db);
-  const everyone = [...operators, ...assistants, ...salaried];
+  /*
+   * Deduped by id, which matters more than it looks.
+   *
+   * Somebody who both operates a machine and assists on other jobs is in `operators` and in
+   * `assistants` — Baba Shasan is seeded exactly that way on purpose. Attendance ids are derived
+   * (`${dateKey}_${staffId}`), so a duplicated person means two writes to the same document in
+   * one batch, which Firestore rejects outright. A rejected batch takes every write in it down,
+   * so the whole register plus the deductions, rates, marketing and approvals that follow would
+   * silently never appear.
+   */
+  const everyone = [...operators, ...assistants, ...salaried].filter(
+    (person, i, all) => all.findIndex((p) => p.id === person.id) === i
+  );
 
   for (let d = 1; d <= 14; d += 1) {
     const when = daysAgo(d);
@@ -1571,8 +1635,29 @@ export async function seedDemoData(
 
     for (let s = 0; s < everyone.length; s += 1) {
       const person = everyone[s];
-      // One absence a week, rotating through the team, everyone else present.
-      const absent = (d + s) % 23 === 0;
+      /*
+       * One absence a week, rotating through the team, everyone else present.
+       *
+       * The modulus has to be near the team size, not above it: `% 23` over d≤14 and s≤9 can
+       * only ever be true at d=14,s=9, so the register demoed as a solid wall of "present" and
+       * the uncharged-absence warning had no subject.
+       */
+      const absent = (d + s) % 7 === 0;
+      // The first absence is charged and the rest are not, so the profile's "recorded vs
+      // charged" split and the register's uncharged warning each have a case on screen.
+      const chargedAbsence = absent && d <= 7;
+
+      /*
+       * A charged absence gets a real deduction, and the two hold each other's id.
+       *
+       * `linkAbsenceDeduction` is what stops a day's pay being docked twice, so seeding the
+       * absence with `deductionId: null` left the guard with nothing to demonstrate and the
+       * pairing the comment above promises did not exist.
+       */
+      const deductionRef = chargedAbsence
+        ? doc(collection(db, COL.deductions))
+        : null;
+
       batch.set(doc(db, COL.attendance, `${dateKey}_${person.id}`), {
         ...base,
         dateKey,
@@ -1580,18 +1665,35 @@ export async function seedDemoData(
         staffName: person.name,
         status: absent ? "absent" : "present",
         note: absent ? "Did not come in" : null,
-        deductionId: null,
+        deductionId: deductionRef?.id ?? null,
         markedByName: "Demo supervisor",
         markedAt: Timestamp.fromDate(when),
         markedBy: createdBy,
       });
       written += 1;
+
+      if (deductionRef) {
+        batch.set(deductionRef, {
+          ...base,
+          staffId: person.id,
+          staffName: person.name,
+          reason: `Absent on ${when.toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+          })}`,
+          amountKobo: toKobo(2500),
+          dateKey,
+          // Unapplied, so the next wage run has something to consume.
+          appliedToRunId: null,
+          workLogId: null,
+        });
+        written += 1;
+      }
       await commitIfFull();
     }
   }
-  await batch.commit();
+  await commitSection();
 
-  batch = writeBatch(db);
   for (let i = 0; i < DEDUCTION_SEED.length; i += 1) {
     const d = DEDUCTION_SEED[i];
     const person = everyone[i % everyone.length];
@@ -1628,7 +1730,7 @@ export async function seedDemoData(
     });
     written += 1;
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Marketing -----------------------------------------------------------
   onProgress("Marketing");
@@ -1741,7 +1843,7 @@ export async function seedDemoData(
     });
     written += 1;
   }
-  await batch.commit();
+  await commitSection();
 
   // --- Cutting lists and a pending approval --------------------------------
   onProgress("Cutting lists and approvals");
@@ -1790,7 +1892,7 @@ export async function seedDemoData(
     });
     written += 1;
   }
-  await batch.commit();
+  await commitSection();
 
   // Now the demo flag and any status past `submitted`, as a staff update.
   batch = writeBatch(db);
@@ -1842,7 +1944,7 @@ export async function seedDemoData(
     });
     written += 1;
   }
-  await batch.commit();
+  await commitSection();
 
   onProgress("Done");
   return { written };

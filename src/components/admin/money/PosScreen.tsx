@@ -805,7 +805,7 @@ export function PosScreen() {
                 {/* New products are set up in inventory; the counter links there rather than holding
                     a second, divergent way to create the same record. */}
                 <Link
-                  href="/admin/inventory"
+                  href="/admin/inventory/"
                   className="flex items-center gap-1.5 rounded-xl border border-night-600 px-4 py-2.5 text-sm text-cream-300 transition-colors hover:border-brass-500/60 hover:text-cream-100"
                 >
                   <Package size={14} /> Add a product

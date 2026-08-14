@@ -31,6 +31,7 @@ import {
 } from "@/lib/erp/procurement";
 import { Button, EmptyState, TextField } from "@/components/admin/ui/Fields";
 import { useErpSession } from "@/components/admin/ErpAuthProvider";
+import { PurchaseOrdersPanel } from "./PurchaseOrdersPanel";
 
 interface SupplierRow {
   id: string;
@@ -62,6 +63,7 @@ export function ProcurementScreen() {
   const canEdit = session.can("supplier.edit");
   // Admin-only across the app; record.delete is not grantable to a manager.
   const canDelete = session.can("record.delete");
+  const canSeeOrders = session.can("purchase.view");
 
   const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
   const [brands, setBrands] = useState<BrandRow[]>([]);
@@ -397,6 +399,11 @@ export function ProcurementScreen() {
               </div>
             )}
           </section>
+
+          {/* The orders the scorecards above are computed from. Below them rather than above
+              because the scores are the question this screen answers and the orders are the
+              working record that feeds them. */}
+          {canSeeOrders && <PurchaseOrdersPanel />}
 
           {!canSeePerformance && (
             <p className="mt-8 text-xs text-cream-600">

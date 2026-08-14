@@ -187,10 +187,101 @@ function boardsForMachine(
   return types.some((t) => relevant.includes(t)) ? sheets : 0;
 }
 
+/** One work log, reduced to the fields the cycle figures actually read. */
+interface CycleLog {
+  dayKey: string;
+  boardsUsed?: number;
+  items?: Array<{ workType: WageWorkType; jobId?: string }>;
+  workType?: WageWorkType;
+  jobId?: string;
+  boardType?: BoardType;
+}
+
+/**
+ * Work logs across a span of cycles, read once.
+ *
+ * Queried on `workDate` — the day the work happened, not the day it was keyed — because a log
+ * entered late still belongs to the cycle that was on the machine when the boards were cut.
+ *
+ * Bounded, unlike the per-cycle query this replaced: a workshop logging a few hundred entries a
+ * month would otherwise have every one of them read again for each cycle on screen.
+ */
+async function cycleWorkLogs(
+  db: Firestore,
+  fromKey: string,
+  toKey: string | null
+): Promise<CycleLog[]> {
+  const closingKey = toKey ?? new Date().toLocaleDateString("en-CA");
+  const snap = await getDocs(
+    query(
+      collection(db, COL.workLogs),
+      where("workDate", ">=", dayTimestamp(fromKey)),
+      where("workDate", "<=", dayTimestamp(closingKey)),
+      orderBy("workDate", "asc"),
+      fsLimit(4000)
+    )
+  );
+
+  return snap.docs.map((d) => {
+    const x = d.data() as CycleLog & { workDate?: Timestamp };
+    return {
+      // Kept as the same day key the cycles are bracketed by, so bucketing is a string
+      // comparison rather than a second timezone conversion per cycle.
+      dayKey:
+        x.workDate?.toDate().toLocaleDateString("en-CA") ?? fromKey,
+      boardsUsed: x.boardsUsed,
+      items: x.items,
+      workType: x.workType,
+      jobId: x.jobId,
+      boardType: x.boardType,
+    };
+  });
+}
+
+/**
+ * Job totals for every job touched by these logs, fetched once.
+ *
+ * Capped at 300 jobs: a span touching more than that is a reporting question, not a reason to read
+ * the whole collection. Cancelled jobs earn nothing, so they map to zero rather than being omitted
+ * — an id missing from the map cannot be told apart from one that failed to read.
+ */
+async function cycleJobRevenue(
+  db: Firestore,
+  logs: CycleLog[],
+  consumable: CycleConsumable,
+  fromKey: string,
+  toKey: string | null
+): Promise<Map<string, number>> {
+  const closingKey = toKey ?? new Date().toLocaleDateString("en-CA");
+  const relevant = consumable === "blade" ? CUTTING_WORK_TYPES : EDGING_WORK_TYPES;
+
+  const ids = new Set<string>();
+  for (const l of logs) {
+    if (l.dayKey < fromKey || l.dayKey > closingKey) continue;
+    if (boardsForMachine(l, relevant) <= 0) continue;
+    if (l.jobId) ids.add(l.jobId);
+    for (const item of l.items ?? []) if (item.jobId) ids.add(item.jobId);
+  }
+
+  const list = [...ids].slice(0, 300);
+  const out = new Map<string, number>();
+  if (list.length === 0) return out;
+
+  const snaps = await Promise.all(
+    list.map((id) => getDoc(doc(db, COL.serviceJobs, id)).catch(() => null))
+  );
+  for (const s of snaps) {
+    if (!s?.exists()) continue;
+    const x = s.data();
+    out.set(s.id, x?.status === "cancelled" ? 0 : ((x?.totalKobo as number) ?? 0));
+  }
+  return out;
+}
+
 /**
  * The metrics for one window.
  *
- * `toKey` is the closing date for a finished cycle, or today for the one still running — an open
+ * `endKey` is the closing date for a finished cycle, or null for the one still running — an open
  * cycle's figures are meaningful and waiting for it to be closed to see them defeats the purpose.
  */
 export async function cycleMetrics(
@@ -200,23 +291,33 @@ export async function cycleMetrics(
   endKey: string | null,
   costKobo: number
 ): Promise<CycleMetrics> {
+  const logs = await cycleWorkLogs(db, startKey, endKey);
+  const jobs = await cycleJobRevenue(db, logs, consumable, startKey, endKey);
+  return metricsFromLogs(logs, consumable, startKey, endKey, costKobo, jobs);
+}
+
+/**
+ * The same figures, computed from logs already in hand.
+ *
+ * Split out so a screen showing a dozen cycles reads the work logs once and buckets them, rather
+ * than issuing one unbounded query per cycle.
+ */
+export function metricsFromLogs(
+  logs: CycleLog[],
+  consumable: CycleConsumable,
+  startKey: string,
+  endKey: string | null,
+  costKobo: number,
+  revenueByJob?: Map<string, number>
+): CycleMetrics {
   const closingKey = endKey ?? new Date().toLocaleDateString("en-CA");
   const relevant = consumable === "blade" ? CUTTING_WORK_TYPES : EDGING_WORK_TYPES;
 
-  /*
-   * Work logs in the window.
-   *
-   * Queried on `workDate` — the day the work happened, not the day it was keyed — because a log
-   * entered late still belongs to the cycle that was on the machine when the boards were cut.
-   */
-  const snap = await getDocs(
-    query(
-      collection(db, COL.workLogs),
-      where("workDate", ">=", dayTimestamp(startKey)),
-      where("workDate", "<=", dayTimestamp(closingKey)),
-      orderBy("workDate", "asc")
-    )
-  );
+  const snap = {
+    docs: logs
+      .filter((l) => l.dayKey >= startKey && l.dayKey <= closingKey)
+      .map((l) => ({ data: () => l })),
+  };
 
   let boards = 0;
   let logCount = 0;
@@ -257,22 +358,17 @@ export async function cycleMetrics(
   /*
    * Revenue on the jobs worked during the cycle.
    *
-   * Read per job rather than by date range, because a job received in March and cut in April earns
-   * its money against the April blade. Capped: a cycle spanning hundreds of jobs is a reporting
-   * question, not a reason to read the whole collection.
+   * Looked up per job rather than by date range, because a job received in March and cut in April
+   * earns its money against the April blade. The figures come from a map fetched once for every
+   * cycle on screen — the previous form read up to 200 job documents per cycle, so a dozen cycles
+   * could issue a couple of thousand reads for one screen.
+   *
+   * Absent map means this is a single-cycle call that did its own fetch; an unknown job id
+   * contributes nothing rather than guessing.
    */
-  const jobList = [...jobIds].slice(0, 200);
-  let revenueKobo = 0;
-  if (jobList.length > 0) {
-    const jobs = await Promise.all(
-      jobList.map((id) => getDoc(doc(db, COL.serviceJobs, id)).catch(() => null))
-    );
-    revenueKobo = sumKobo(
-      jobs
-        .filter((s) => s?.exists() && s.data()?.status !== "cancelled")
-        .map((s) => (s!.data()?.totalKobo as number) ?? 0)
-    );
-  }
+  const revenueKobo = sumKobo(
+    [...jobIds].slice(0, 200).map((id) => revenueByJob?.get(id) ?? 0)
+  );
 
   const durationDays = endKey ? daysBetweenKeys(startKey, endKey) : daysBetweenKeys(startKey, closingKey);
 
@@ -498,27 +594,47 @@ export async function loadCycles(
   consumable: CycleConsumable,
   max = 12
 ): Promise<CycleWithMetrics[]> {
+  /*
+   * Ordered in the query and limited to what is shown, rather than fetched wholesale and sorted
+   * here. The previous form read 200 cycles to display 12, and then each of those 12 read every
+   * work log in its own window — on a busy workshop that is thousands of documents for one
+   * screen. Sorting server-side on `startKey` means the limit falls on the right end of the
+   * history instead of an arbitrary 200.
+   */
   const snap = await getDocs(
     query(
       collection(db, COL.consumableCycles),
       where("consumable", "==", consumable),
-      fsLimit(200)
+      orderBy("startKey", "desc"),
+      fsLimit(max)
     )
   );
 
-  const cycles = snap.docs
-    .map((d) => cycleFrom(d.id, d.data()))
-    // Newest first by start date, which puts the open cycle at the top: it is the most recently
-    // fitted one by construction, since fitting a new one closes the last.
-    .sort((a, b) => b.startKey.localeCompare(a.startKey))
-    .slice(0, max);
+  const cycles = snap.docs.map((d) => cycleFrom(d.id, d.data()));
+  if (cycles.length === 0) return [];
 
-  return Promise.all(
-    cycles.map(async (c) => ({
-      ...c,
-      metrics: await cycleMetrics(db, consumable, c.startKey, c.endKey, c.costKobo * c.quantity),
-    }))
-  );
+  /*
+   * One pass over the work logs for every cycle on screen, instead of one query each.
+   *
+   * The cycles are contiguous by construction — fitting a new blade closes the last — so the
+   * whole set spans a single window from the oldest start to today. Reading that window once and
+   * bucketing the logs in memory turns twelve unbounded queries into one bounded one.
+   */
+  const oldestKey = cycles[cycles.length - 1].startKey;
+  const logs = await cycleWorkLogs(db, oldestKey, null);
+  const revenueByJob = await cycleJobRevenue(db, logs, consumable, oldestKey, null);
+
+  return cycles.map((c) => ({
+    ...c,
+    metrics: metricsFromLogs(
+      logs,
+      consumable,
+      c.startKey,
+      c.endKey,
+      c.costKobo * c.quantity,
+      revenueByJob
+    ),
+  }));
 }
 
 /** A board type's label, with the unspecified bucket named for what it is. */
