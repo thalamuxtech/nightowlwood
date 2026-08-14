@@ -15,12 +15,33 @@ service cloud.firestore {
     // Capability names mirror src/lib/erp/permissions.ts. The UI hides what a
     // role can't do; these rules are what actually enforce it.
 
+    /**
+     * Accounts that get access before a `users/{uid}` document exists.
+     *
+     * Two tiers. `admin@` is the account that owns the settings, the approval matrix and who
+     * else may sign in, so it bootstraps at the top of the tree — otherwise the very first
+     * sign-in would be locked out of the screens it exists to set up. `info@` is the shared
+     * office mailbox that several people read, so it bootstraps as an administrator and does
+     * not reach the grants that govern administrators.
+     *
+     * Must stay in step with the two lists in ErpAuthProvider.tsx.
+     */
+    function bootstrapSuperAdminEmails() {
+      return ['admin@nightowl.com.ng'];
+    }
+
     function bootstrapEmails() {
       return ['admin@nightowl.com.ng', 'info@nightowl.com.ng'];
     }
 
     function bootstrapAdmin() {
       return request.auth != null && request.auth.token.email in bootstrapEmails();
+    }
+
+    /** The bootstrap account trusted with the settings that govern everybody else. */
+    function bootstrapSuperAdmin() {
+      return request.auth != null
+        && request.auth.token.email in bootstrapSuperAdminEmails();
     }
 
     function userDoc() {
@@ -172,7 +193,10 @@ service cloud.firestore {
      * examined.
      */
     function isSuperAdminOnly() {
-      return isSuperAdmin() || bootstrapAdmin();
+      // `bootstrapSuperAdmin()`, not `bootstrapAdmin()` — the shared office mailbox bootstraps
+      // as an administrator, and letting it through here would have handed it the settings and
+      // the approval matrix that this function exists to withhold from administrators.
+      return isSuperAdmin() || bootstrapSuperAdmin();
     }
 
     /**

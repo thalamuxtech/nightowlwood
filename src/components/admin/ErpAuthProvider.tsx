@@ -82,20 +82,35 @@ const EMPTY: ErpSession = {
   canReally: () => false,
 };
 
-/**
- * Emails that get admin access before a `users/{uid}` document exists.
+/*
+ * Emails that get access before a `users/{uid}` document exists.
  *
- * Must stay in sync with `bootstrapEmails()` in firestore.rules. Without this
- * the client is a chicken-and-egg trap: the rules would let these accounts
- * write their own user document, but the nav that leads to that screen is
- * filtered by a role read from the very document that doesn't exist yet.
+ * Without this the client is a chicken-and-egg trap: the rules would let these accounts write
+ * their own user document, but the nav leading to that screen is filtered by a role read from
+ * the very document that does not exist yet.
  *
- * Remove both lists once real admin documents are in place.
+ * Remove both lists once real user documents are in place.
  */
-const BOOTSTRAP_ADMIN_EMAILS = ["admin@nightowl.com.ng", "info@nightowl.com.ng"];
+const BOOTSTRAP_SUPER_ADMIN_EMAILS = ["admin@nightowl.com.ng"];
+const BOOTSTRAP_ADMIN_EMAILS = ["info@nightowl.com.ng"];
 
-function isBootstrapAdmin(email: string | null | undefined): boolean {
-  return Boolean(email && BOOTSTRAP_ADMIN_EMAILS.includes(email.toLowerCase()));
+/**
+ * The role a bootstrap account comes up as, or null when it is not one.
+ *
+ * Split by address on purpose: `admin@` is the account that owns the settings, the approval
+ * matrix and who else may sign in, so it needs the top of the tree before any user document
+ * exists. `info@` is the shared office mailbox — several people read it, so it gets an
+ * administrator's access and not the grants that govern administrators.
+ *
+ * Both lists must stay in step with `bootstrapEmails()` and `bootstrapSuperAdminEmails()` in
+ * firestore.rules, and with `bootstrapEmails()` in storage.rules.
+ */
+function bootstrapRoleFor(email: string | null | undefined): Role | null {
+  if (!email) return null;
+  const at = email.toLowerCase();
+  if (BOOTSTRAP_SUPER_ADMIN_EMAILS.includes(at)) return "super_admin";
+  if (BOOTSTRAP_ADMIN_EMAILS.includes(at)) return "admin";
+  return null;
 }
 
 const ErpAuthContext = createContext<ErpSession>(EMPTY);
@@ -169,14 +184,13 @@ export function ErpAuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
 
     /*
-     * Bootstrap accounts come up as super admin, not admin.
+     * The escape hatch that exists before any `users/{uid}` document does.
      *
-     * This is the escape hatch that exists before any `users/{uid}` document does, and the
-     * settings it has to reach — including the role list itself — are now super-admin-only. As
-     * plain admin it would have been locked out of the very screens it exists to set up, and
-     * `bootstrapAdmin()` in the rules already grants the same level.
+     * `admin@` comes up as super admin because the settings it has to reach — including the
+     * role list itself — are super-admin-only, so as a plain administrator it would be locked
+     * out of the very screens it exists to set up. `info@` comes up as an administrator.
      */
-    const fallbackRole: Role | null = isBootstrapAdmin(user.email) ? "super_admin" : null;
+    const fallbackRole: Role | null = bootstrapRoleFor(user.email);
 
     const ref = doc(getDb(), COL.users, user.uid);
     return onSnapshot(
