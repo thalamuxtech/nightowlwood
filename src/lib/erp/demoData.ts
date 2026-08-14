@@ -50,6 +50,25 @@ export const DEMO_COLLECTIONS = [
   COL.purchases,
   COL.toolRequests,
   COL.meterReadings,
+  /*
+   * Everything below was built after the seeder and had no demo data at all, so those screens
+   * demonstrated as empty — which is indistinguishable from broken, and is exactly where a bug
+   * hides because nobody ever looked at the module with figures in it.
+   */
+  COL.inventoryPos,
+  COL.sales,
+  COL.fixedAssets,
+  COL.fixedCosts,
+  COL.holidays,
+  COL.attendance,
+  COL.deductions,
+  COL.staffRates,
+  COL.approvals,
+  COL.cuttingLists,
+  COL.siteVisits,
+  COL.leads,
+  COL.followUps,
+  COL.quoteRequests,
 ] as const;
 
 interface SeedProgress {
@@ -284,6 +303,190 @@ const INVENTORY = [
   { name: "Pressing gum", category: "consumables", unit: "carton", onHand: 6, reorder: 4, naira: 18500 },
   { name: "Hinges (soft close)", category: "fittings", unit: "pair", onHand: 120, reorder: 50, naira: 1800 },
   { name: "Screws 1 1/4", category: "fittings", unit: "pack", onHand: 2, reorder: 8, naira: 2500 },
+];
+
+/** The counter's own shelf — deliberately not the same rows as company stock. */
+const POS_STOCK = [
+  { name: "18mm White MDF 8x4", category: "boards", unit: "sheet", onHand: 24, reorder: 10, cost: 28000, price: 32000 },
+  { name: "18mm HDF 8x4", category: "boards", unit: "sheet", onHand: 6, reorder: 10, cost: 24000, price: 28000 },
+  { name: "Quarter Plywood", category: "boards", unit: "sheet", onHand: 31, reorder: 15, cost: 9000, price: 11500 },
+  { name: "Edge Tape 22mm", category: "consumables", unit: "roll", onHand: 14, reorder: 8, cost: 4500, price: 6000 },
+  { name: "Wood Glue", category: "consumables", unit: "tin", onHand: 4, reorder: 6, cost: 3500, price: 4800 },
+  { name: "Cabinet Handles", category: "fittings", unit: "piece", onHand: 60, reorder: 24, cost: 1200, price: 1800 },
+  { name: "Soft Close Hinges", category: "fittings", unit: "pair", onHand: 48, reorder: 20, cost: 2500, price: 3500 },
+  { name: "Angle Irons", category: "fittings", unit: "piece", onHand: 90, reorder: 30, cost: 600, price: 1000 },
+  // Services hold no stock, so they exercise the `tracksStock: false` path at the till.
+  { name: "Cutting Service", category: "services", unit: "board", onHand: 0, reorder: 0, cost: 0, price: 3000, tracksStock: false },
+];
+
+/**
+ * Blade and gum cycles, dated to overlap the seeded work logs.
+ *
+ * One of each is left open so the "on the machine now" panel has live figures; the closed ones give
+ * the benchmark something to average.
+ */
+const CYCLE_SEED: Array<{
+  consumable: "blade" | "gum";
+  label: string;
+  startedDaysAgo: number;
+  endedDaysAgo: number | null;
+  naira: number;
+}> = [
+  { consumable: "blade", label: "Freud 350mm", startedDaysAgo: 42, endedDaysAgo: 22, naira: 145000 },
+  { consumable: "blade", label: "Leitz 350mm", startedDaysAgo: 21, endedDaysAgo: null, naira: 152000 },
+  { consumable: "gum", label: "Jowat 280.30", startedDaysAgo: 40, endedDaysAgo: 18, naira: 65000 },
+  { consumable: "gum", label: "Kleiberit 707", startedDaysAgo: 17, endedDaysAgo: null, naira: 68000 },
+];
+
+/** Machines and equipment, aged so the depreciation figures differ across the register. */
+const FIXED_ASSETS: Array<{
+  name: string;
+  category: "machine" | "vehicle" | "power" | "furniture" | "computer" | "security";
+  naira: number;
+  yearsOld: number;
+  life: number;
+  location: string;
+}> = [
+  { name: "Edge banding machine", category: "machine", naira: 12000000, yearsOld: 3, life: 10, location: "Machine hall" },
+  { name: "Sliding table saw", category: "machine", naira: 9500000, yearsOld: 5, life: 10, location: "Machine hall" },
+  { name: "Air compressor", category: "machine", naira: 850000, yearsOld: 2, life: 8, location: "Machine hall" },
+  { name: "15 KVA generator", category: "power", naira: 4200000, yearsOld: 6, life: 8, location: "Yard" },
+  { name: "AVR stabiliser", category: "power", naira: 380000, yearsOld: 4, life: 8, location: "Yard" },
+  { name: "Delivery van", category: "vehicle", naira: 7800000, yearsOld: 7, life: 8, location: "Yard" },
+  { name: "Office computer", category: "computer", naira: 620000, yearsOld: 3, life: 4, location: "Office" },
+  { name: "CCTV system", category: "security", naira: 450000, yearsOld: 2, life: 5, location: "Whole site" },
+];
+
+/** The workshop's stated commitments, from the brief's fixed-cost list. */
+const FIXED_COST_SEED: Array<{
+  name: string;
+  category: "rent" | "admin";
+  naira: number;
+  cadence: "monthly" | "quarterly" | "annual";
+  dueDay?: number;
+}> = [
+  { name: "Rent", category: "rent", naira: 4000000, cadence: "annual" },
+  { name: "Water bill", category: "admin", naira: 5000, cadence: "monthly", dueDay: 5 },
+  { name: "Canva subscription", category: "admin", naira: 2900, cadence: "monthly", dueDay: 1 },
+  { name: "Meta verified badge", category: "admin", naira: 12000, cadence: "monthly", dueDay: 1 },
+  { name: "Shasan security contribution", category: "admin", naira: 3000, cadence: "monthly", dueDay: 28 },
+  { name: "Domain & hosting", category: "admin", naira: 85000, cadence: "annual" },
+];
+
+/** Days the workshop was shut, including a multi-day one so the range logic is exercised. */
+const HOLIDAY_SEED: Array<{
+  name: string;
+  kind: "public" | "closure";
+  daysAgo: number;
+  spanDays: number;
+}> = [
+  { name: "Eid el-Kabir", kind: "public", daysAgo: 30, spanDays: 3 },
+  { name: "Workshop stock take", kind: "closure", daysAgo: 12, spanDays: 1 },
+  { name: "Independence Day", kind: "public", daysAgo: 5, spanDays: 1 },
+];
+
+/** Deductions raised but not yet taken, so the next wage run has something to consume. */
+const DEDUCTION_SEED: Array<{
+  type: "advance" | "no_show" | "penalty" | "general";
+  naira: number;
+  reason: string;
+  daysAgo: number;
+}> = [
+  { type: "advance", naira: 20000, reason: "Advance requested before Sallah", daysAgo: 9 },
+  { type: "penalty", naira: 8000, reason: "Cut an Egger sheet to the wrong size", daysAgo: 6 },
+  { type: "no_show", naira: 3077, reason: "Did not come in, no message", daysAgo: 4 },
+  { type: "general", naira: 5000, reason: "Broke a jigsaw blade through misuse", daysAgo: 2 },
+];
+
+/** Site visits, spread across interest levels so the weekly summary has a spread to show. */
+const SITE_VISITS: Array<{
+  site: string;
+  area: string;
+  siteType: "residential" | "commercial";
+  contactMade: boolean;
+  contact: string;
+  role: "engineer" | "contractor" | "owner" | "other";
+  phone: string;
+  interest: "high" | "medium" | "low";
+  situation: "not_started" | "ongoing" | "near_finishing" | "has_carpenter";
+  services: Array<"kitchen_cabinets" | "doors" | "cutting_edging" | "wardrobes" | "interior" | "glass">;
+  nextAction: "follow_up_call" | "site_revisit" | "send_quotation" | "send_samples" | "none";
+  objection?: string;
+  timeline?: string;
+}> = [
+  { site: "Danladi Residence", area: "Sharada Phase II", siteType: "residential", contactMade: true, contact: "Engr. Musa Danladi", role: "engineer", phone: "0803 456 7890", interest: "high", situation: "ongoing", services: ["kitchen_cabinets", "wardrobes"], nextAction: "send_quotation", timeline: "Within 2 weeks" },
+  { site: "Nassarawa GRA duplex", area: "Nassarawa GRA", siteType: "residential", contactMade: true, contact: "Alhaji Bello", role: "owner", phone: "0806 221 4433", interest: "medium", situation: "not_started", services: ["kitchen_cabinets"], nextAction: "follow_up_call", objection: "Your price is higher than the man doing my neighbour's.", timeline: "After the rains" },
+  { site: "Zoo Road plaza", area: "Zoo Road", siteType: "commercial", contactMade: true, contact: "Ibrahim Sani", role: "contractor", phone: "0810 555 2211", interest: "high", situation: "near_finishing", services: ["doors", "interior"], nextAction: "site_revisit", timeline: "This month" },
+  { site: "Hotoro estate", area: "Hotoro", siteType: "residential", contactMade: false, contact: "", role: "other", phone: "", interest: "low", situation: "has_carpenter", services: [], nextAction: "none" },
+  { site: "Kabuga shopping row", area: "Kabuga", siteType: "commercial", contactMade: true, contact: "Hajiya Amina", role: "owner", phone: "0805 909 1122", interest: "medium", situation: "ongoing", services: ["cutting_edging", "glass"], nextAction: "send_samples", timeline: "Next month" },
+];
+
+/** The pipeline, with one overdue, one won and one lost. */
+const LEAD_SEED: Array<{
+  name: string;
+  phone: string;
+  area: string;
+  service: string;
+  budget: "high" | "medium" | "low" | "unknown";
+  status: "new" | "contacted" | "quoted" | "won" | "lost";
+  followUps: number;
+  lastContactDaysAgo: number;
+  dueInDays: number;
+}> = [
+  { name: "Musa Danladi", phone: "0803 456 7890", area: "Sharada Phase II", service: "Kitchen cabinets, 3 wardrobes", budget: "high", status: "quoted", followUps: 3, lastContactDaysAgo: 3, dueInDays: 2 },
+  { name: "Alhaji Bello", phone: "0806 221 4433", area: "Nassarawa GRA", service: "Kitchen cabinets", budget: "medium", status: "contacted", followUps: 2, lastContactDaysAgo: 8, dueInDays: 4 },
+  { name: "Ibrahim Sani", phone: "0810 555 2211", area: "Zoo Road", service: "Office doors and interior", budget: "high", status: "won", followUps: 4, lastContactDaysAgo: 5, dueInDays: 0 },
+  { name: "Hajiya Amina", phone: "0805 909 1122", area: "Kabuga", service: "Cutting and edging, glass work", budget: "medium", status: "new", followUps: 0, lastContactDaysAgo: 1, dueInDays: 1 },
+  { name: "Sadiq Yusuf", phone: "0812 334 5566", area: "Gwale", service: "Wardrobes", budget: "low", status: "lost", followUps: 2, lastContactDaysAgo: 14, dueInDays: 0 },
+];
+
+/** Quotation requests, one still waiting so the office queue is not empty. */
+const QUOTE_REQUESTS: Array<{
+  name: string;
+  phone: string;
+  area: string;
+  work: string;
+  measured: boolean;
+  urgency: "high" | "medium" | "low";
+  status: "pending" | "quoted" | "declined";
+}> = [
+  { name: "Musa Danladi", phone: "0803 456 7890", area: "Sharada Phase II", work: "4-bedroom kitchen + 3 wardrobes", measured: true, urgency: "high", status: "quoted" },
+  { name: "Ibrahim Sani", phone: "0810 555 2211", area: "Zoo Road", work: "12 office doors", measured: false, urgency: "medium", status: "pending" },
+  { name: "Hajiya Amina", phone: "0805 909 1122", area: "Kabuga", work: "Shop fitting, cutting and edging only", measured: false, urgency: "low", status: "pending" },
+];
+
+/** Customer cutting lists, as they arrive through the public form. */
+const CUTTING_LISTS: Array<{
+  customer: string;
+  phone: string;
+  title: string;
+  status: "submitted" | "in_progress" | "cut";
+  parts: Array<Record<string, unknown>>;
+  totals: Record<string, unknown>;
+}> = [
+  {
+    customer: "Musa Danladi",
+    phone: "0803 456 7890",
+    title: "Kitchen at Sharada",
+    status: "submitted",
+    parts: [
+      { id: "p1", part: "Base cabinet side", widthMm: 600, lengthMm: 720, quantity: 8, boardType: "mfc_9x7", boardColour: "Oak brown", edgeCode: "L", edgeTapeMm: 22, notes: "" },
+      { id: "p2", part: "Base cabinet shelf", widthMm: 560, lengthMm: 700, quantity: 6, boardType: "mfc_9x7", boardColour: "Oak brown", edgeCode: "I", edgeTapeMm: 22, notes: "" },
+      { id: "p3", part: "Wall unit door", widthMm: 397, lengthMm: 700, quantity: 10, boardType: "high_glossy", boardColour: "White gloss", edgeCode: "O", edgeTapeMm: 22, notes: "Soft close" },
+    ],
+    totals: { panelCount: 24, totalBoardsRequired: 6, totalTapeMetres: 41.2 },
+  },
+  {
+    customer: "Hajiya Amina",
+    phone: "0805 909 1122",
+    title: "Shop shelving at Kabuga",
+    status: "in_progress",
+    parts: [
+      { id: "p1", part: "Shelf", widthMm: 400, lengthMm: 1200, quantity: 12, boardType: "mdf", boardColour: "Plain", edgeCode: "I", edgeTapeMm: 18, notes: "" },
+      { id: "p2", part: "Upright", widthMm: 400, lengthMm: 2100, quantity: 6, boardType: "mdf", boardColour: "Plain", edgeCode: "L", edgeTapeMm: 18, notes: "" },
+    ],
+    totals: { panelCount: 18, totalBoardsRequired: 4, totalTapeMetres: 29.4 },
+  },
 ];
 
 function daysAgo(n: number): Date {
@@ -1098,6 +1301,458 @@ export async function seedDemoData(
     }
     await batch.commit();
   }
+
+  // --- Counter stock and sales --------------------------------------------
+  /*
+   * The till's own shelf, then the sales taken off it.
+   *
+   * `inventoryPos` is separate from company stock, so seeding one does not fill the other — and the
+   * counter would otherwise demo with nothing to sell.
+   */
+  onProgress("Counter stock and sales");
+  batch = writeBatch(db);
+
+  const posItems: Array<{ id: string; name: string; unit: string; costKobo: number; priceKobo: number }> =
+    [];
+  for (const p of POS_STOCK) {
+    const ref = doc(collection(db, COL.inventoryPos));
+    batch.set(ref, {
+      ...base,
+      name: p.name,
+      category: p.category,
+      unit: p.unit,
+      quantityOnHand: p.onHand,
+      reorderLevel: p.reorder,
+      unitCostKobo: toKobo(p.cost),
+      unitPriceKobo: toKobo(p.price),
+      tracksStock: p.tracksStock ?? true,
+      active: true,
+    });
+    posItems.push({
+      id: ref.id,
+      name: p.name,
+      unit: p.unit,
+      costKobo: toKobo(p.cost),
+      priceKobo: toKobo(p.price),
+    });
+    written += 1;
+  }
+
+  /*
+   * Fourteen sales over three weeks, one of them on account.
+   *
+   * The credit sale is the point: it exercises the debtors list, the balance arithmetic and the
+   * "sold vs taken" split on the counter dashboard, none of which show anything when every sale is
+   * settled. Its customer is named, because a sale on account without one is refused.
+   */
+  for (let i = 0; i < 14; i += 1) {
+    const item = posItems[i % posItems.length];
+    const second = posItems[(i + 3) % posItems.length];
+    const qty1 = 1 + (i % 3);
+    const qty2 = i % 2 === 0 ? 1 + (i % 2) : 0;
+
+    const lines = [
+      {
+        inventoryItemId: item.id,
+        item: item.name,
+        unit: item.unit,
+        quantity: qty1,
+        unitPriceKobo: item.priceKobo,
+        unitCostKobo: item.costKobo,
+        amountKobo: qty1 * item.priceKobo,
+        tracksStock: true,
+      },
+      ...(qty2 > 0
+        ? [
+            {
+              inventoryItemId: second.id,
+              item: second.name,
+              unit: second.unit,
+              quantity: qty2,
+              unitPriceKobo: second.priceKobo,
+              unitCostKobo: second.costKobo,
+              amountKobo: qty2 * second.priceKobo,
+              tracksStock: true,
+            },
+          ]
+        : []),
+    ];
+
+    const totalKobo = lines.reduce((s, l) => s + l.amountKobo, 0);
+    const costOfGoodsKobo = lines.reduce((s, l) => s + l.quantity * l.unitCostKobo, 0);
+    // Every fifth sale goes out on account, part paid.
+    const onAccount = i % 5 === 4;
+    const amountPaidKobo = onAccount ? Math.round(totalKobo / 2) : totalKobo;
+    const balanceKobo = totalKobo - amountPaidKobo;
+    const method = (["cash", "transfer", "pos"] as const)[i % 3];
+
+    batch.set(doc(collection(db, COL.sales)), {
+      ...base,
+      receiptNumber: `RCP-${new Date().getFullYear()}-${pad(900 + i)}`,
+      customerName: onAccount ? CUSTOMERS[i % CUSTOMERS.length].name : "Walk-in",
+      customerPhone: onAccount ? CUSTOMERS[i % CUSTOMERS.length].phone : null,
+      lines,
+      subtotalKobo: totalKobo,
+      discountPercent: 0,
+      discountKobo: 0,
+      taxMode: "none",
+      taxPercent: 0,
+      taxKobo: 0,
+      taxLabel: "VAT",
+      totalKobo,
+      costOfGoodsKobo,
+      amountPaidKobo,
+      balanceKobo,
+      status: balanceKobo > 0 ? "credit" : "completed",
+      method,
+      tenderedKobo: method === "cash" ? amountPaidKobo : 0,
+      changeKobo: 0,
+      soldAt: Timestamp.fromDate(daysAgo(i + 1)),
+      soldByName: "Counter",
+      dueAt: onAccount ? Timestamp.fromDate(daysAgo(i - 13)) : null,
+    });
+    written += 1;
+    await commitIfFull();
+  }
+  await batch.commit();
+
+  // --- Blade and gum cycles ------------------------------------------------
+  /*
+   * Cycles whose windows overlap the seeded work logs.
+   *
+   * The dates matter more than the rows: `cycleMetrics` counts boards from work logs *between* the
+   * issue dates, so a cycle seeded outside that range reports zero boards and the screen looks
+   * broken. These are spaced across the same six weeks the work logs cover, and the open one runs
+   * to today so the "on the machine now" panel has live figures.
+   */
+  onProgress("Blade and gum cycles");
+  batch = writeBatch(db);
+  const key = (d: Date) => d.toLocaleDateString("en-CA");
+
+  for (const c of CYCLE_SEED) {
+    const startAt = daysAgo(c.startedDaysAgo);
+    const endAt = c.endedDaysAgo === null ? null : daysAgo(c.endedDaysAgo);
+    batch.set(doc(collection(db, COL.consumableCycles)), {
+      ...base,
+      consumable: c.consumable,
+      label: c.label,
+      startKey: key(startAt),
+      startAt: Timestamp.fromDate(startAt),
+      endKey: endAt ? key(endAt) : null,
+      endAt: endAt ? Timestamp.fromDate(endAt) : null,
+      costKobo: toKobo(c.naira),
+      quantity: 1,
+      notes: null,
+      expenseId: null,
+    });
+    // The matching service expense, dated to the issue day — the cost-recognition rule.
+    batch.set(doc(collection(db, COL.expenses)), {
+      ...base,
+      date: Timestamp.fromDate(startAt),
+      payeeType: "company",
+      payeeName: "Workshop",
+      purpose: `${c.consumable === "blade" ? "Saw blade" : "Edge-banding gum"} issued: ${c.label}`,
+      category: "consumables",
+      stream: "service",
+      amountKobo: toKobo(c.naira),
+      receiptUrl: null,
+      sourceCollection: COL.consumableCycles,
+      sourceId: null,
+    });
+    written += 2;
+  }
+  await batch.commit();
+
+  // --- Fixed assets, fixed costs, holidays ---------------------------------
+  onProgress("Assets, fixed costs and closures");
+  batch = writeBatch(db);
+
+  for (let i = 0; i < FIXED_ASSETS.length; i += 1) {
+    const a = FIXED_ASSETS[i];
+    batch.set(doc(collection(db, COL.fixedAssets)), {
+      ...base,
+      name: a.name,
+      category: a.category,
+      assetTag: `NW-${a.category.slice(0, 4).toUpperCase()}-${pad(i + 1, 3)}`,
+      costKobo: toKobo(a.naira),
+      acquiredOn: key(daysAgo(a.yearsOld * 365)),
+      usefulLifeYears: a.life,
+      residualKobo: 0,
+      location: a.location,
+      serialNumber: null,
+      supplier: null,
+      notes: null,
+      status: "in_use",
+      disposedOn: null,
+      disposalNote: null,
+    });
+    written += 1;
+  }
+
+  for (const f of FIXED_COST_SEED) {
+    batch.set(doc(collection(db, COL.fixedCosts)), {
+      ...base,
+      name: f.name,
+      category: f.category,
+      amountKobo: toKobo(f.naira),
+      cadence: f.cadence,
+      dueDay: f.dueDay ?? null,
+      active: true,
+      notes: null,
+    });
+    written += 1;
+  }
+
+  for (const h of HOLIDAY_SEED) {
+    const start = daysAgo(h.daysAgo);
+    const end = daysAgo(h.daysAgo - h.spanDays + 1);
+    batch.set(doc(collection(db, COL.holidays)), {
+      ...base,
+      name: h.name,
+      kind: h.kind,
+      startDate: Timestamp.fromDate(start),
+      endDate: Timestamp.fromDate(end),
+      notes: null,
+    });
+    written += 1;
+  }
+  await batch.commit();
+
+  // --- Attendance, deductions and per-person rates -------------------------
+  /*
+   * A fortnight of register ticks, a few deductions, and two people on their own rates.
+   *
+   * The absences are deliberately mixed: one charged (with a deduction linked to it) and one not,
+   * so the profile's "recorded vs charged" distinction and the register's uncharged warning both
+   * have something to show.
+   */
+  onProgress("Attendance, deductions and rates");
+  batch = writeBatch(db);
+  const everyone = [...operators, ...assistants, ...salaried];
+
+  for (let d = 1; d <= 14; d += 1) {
+    const when = daysAgo(d);
+    // Sunday is the workshop's rest day, so no register on it.
+    if (when.getDay() === 0) continue;
+    const dateKey = key(when);
+
+    for (let s = 0; s < everyone.length; s += 1) {
+      const person = everyone[s];
+      // One absence a week, rotating through the team, everyone else present.
+      const absent = (d + s) % 23 === 0;
+      batch.set(doc(db, COL.attendance, `${dateKey}_${person.id}`), {
+        ...base,
+        dateKey,
+        staffId: person.id,
+        staffName: person.name,
+        status: absent ? "absent" : "present",
+        note: absent ? "Did not come in" : null,
+        deductionId: null,
+        markedByName: "Demo supervisor",
+        markedAt: Timestamp.fromDate(when),
+        markedBy: createdBy,
+      });
+      written += 1;
+      await commitIfFull();
+    }
+  }
+  await batch.commit();
+
+  batch = writeBatch(db);
+  for (let i = 0; i < DEDUCTION_SEED.length; i += 1) {
+    const d = DEDUCTION_SEED[i];
+    const person = everyone[i % everyone.length];
+    batch.set(doc(collection(db, COL.deductions)), {
+      ...base,
+      staffId: person.id,
+      staffName: person.name,
+      type: d.type,
+      amountKobo: toKobo(d.naira),
+      reason: d.reason,
+      date: Timestamp.fromDate(daysAgo(d.daysAgo)),
+      workLogId: null,
+      // Left unapplied so the next wage run has something to consume, which is the
+      // behaviour worth demonstrating.
+      appliedToRunId: null,
+      appliedToRunType: null,
+      appliedAt: null,
+    });
+    written += 1;
+  }
+
+  // Two people paid above the standard rate, so `rateFor`'s per-person precedence is exercised
+  // rather than only its fallback.
+  for (let i = 0; i < Math.min(2, operators.length); i += 1) {
+    batch.set(doc(collection(db, COL.staffRates)), {
+      ...base,
+      staffId: operators[i].id,
+      staffName: operators[i].name,
+      role: "operator",
+      workType: "board",
+      rateKobo: toKobo(i === 0 ? 320 : 300),
+      effectiveFrom: Timestamp.fromDate(daysAgo(60)),
+      effectiveTo: null,
+    });
+    written += 1;
+  }
+  await batch.commit();
+
+  // --- Marketing -----------------------------------------------------------
+  onProgress("Marketing");
+  batch = writeBatch(db);
+  const marketer = salaried[0] ?? operators[0];
+  const leadIds: string[] = [];
+
+  for (let i = 0; i < SITE_VISITS.length; i += 1) {
+    const v = SITE_VISITS[i];
+    const when = daysAgo(i + 1);
+    batch.set(doc(collection(db, COL.siteVisits)), {
+      ...base,
+      staffId: marketer?.id ?? null,
+      staffName: marketer?.name ?? "Demo marketer",
+      dateKey: key(when),
+      visitedAt: Timestamp.fromDate(when),
+      siteName: v.site,
+      area: v.area,
+      siteType: v.siteType,
+      contactMade: v.contactMade,
+      contactName: v.contactMade ? v.contact : null,
+      contactRole: v.contactMade ? v.role : null,
+      contactPhone: v.contactMade ? v.phone : null,
+      interest: v.contactMade ? v.interest : null,
+      situation: v.situation,
+      services: v.services,
+      otherService: null,
+      objection: v.objection ?? null,
+      nextAction: v.nextAction,
+      expectedTimeline: v.timeline ?? null,
+      remarks: null,
+      leadId: null,
+    });
+    written += 1;
+  }
+
+  for (let i = 0; i < LEAD_SEED.length; i += 1) {
+    const l = LEAD_SEED[i];
+    const ref = doc(collection(db, COL.leads));
+    leadIds.push(ref.id);
+    const closed = l.status === "won" || l.status === "lost";
+    batch.set(ref, {
+      ...base,
+      clientName: l.name,
+      phone: l.phone,
+      area: l.area,
+      serviceNeeded: l.service,
+      budgetLevel: l.budget,
+      status: l.status,
+      sourceVisitId: null,
+      ownerName: marketer?.name ?? "Demo marketer",
+      // One is deliberately overdue, so the "due now" queue is not empty.
+      nextAction: closed ? null : "Call back with a price",
+      nextActionOn: closed ? null : key(daysAgo(l.dueInDays)),
+      notes: null,
+      followUpCount: l.followUps,
+      lastContactAt: Timestamp.fromDate(daysAgo(l.lastContactDaysAgo)),
+      closedAt: closed ? Timestamp.fromDate(daysAgo(2)) : null,
+      closeReason: l.status === "lost" ? "Went with a cheaper carpenter" : null,
+    });
+    written += 1;
+
+    for (let f = 0; f < l.followUps; f += 1) {
+      const when = daysAgo(l.lastContactDaysAgo + f * 4);
+      batch.set(doc(collection(db, COL.followUps)), {
+        ...base,
+        leadId: ref.id,
+        leadName: l.name,
+        dateKey: key(when),
+        contactedAt: Timestamp.fromDate(when),
+        method: (["call", "visit", "whatsapp"] as const)[f % 3],
+        byName: marketer?.name ?? "Demo marketer",
+        outcome:
+          f === 0
+            ? "Asked for a price on the wardrobes; sending Thursday"
+            : "Still deciding, said to check back next week",
+        nextOn: null,
+        nextAction: null,
+      });
+      written += 1;
+    }
+    await commitIfFull();
+  }
+
+  for (let i = 0; i < QUOTE_REQUESTS.length; i += 1) {
+    const q = QUOTE_REQUESTS[i];
+    batch.set(doc(collection(db, COL.quoteRequests)), {
+      ...base,
+      clientName: q.name,
+      phone: q.phone,
+      location: q.area,
+      workType: q.work,
+      measurementsAvailable: q.measured,
+      siteVisitNeeded: !q.measured,
+      urgency: q.urgency,
+      leadId: leadIds[i % Math.max(1, leadIds.length)] ?? null,
+      requestedByName: marketer?.name ?? "Demo marketer",
+      notes: null,
+      status: q.status,
+      quotedRef: q.status === "quoted" ? `INV-${new Date().getFullYear()}-0${i + 1}` : null,
+      declineReason: null,
+      createdAt: Timestamp.fromDate(daysAgo(i + 2)),
+    });
+    written += 1;
+  }
+  await batch.commit();
+
+  // --- Cutting lists and a pending approval --------------------------------
+  onProgress("Cutting lists and approvals");
+  batch = writeBatch(db);
+
+  for (let i = 0; i < CUTTING_LISTS.length; i += 1) {
+    const c = CUTTING_LISTS[i];
+    batch.set(doc(collection(db, COL.cuttingLists)), {
+      ...base,
+      listNumber: `CL-${new Date().getFullYear().toString().slice(2)}${pad(
+        new Date().getMonth() + 1,
+        2
+      )}${pad(new Date().getDate(), 2)}-DEM${i + 1}`,
+      customerName: c.customer,
+      customerPhone: c.phone,
+      title: c.title,
+      parts: c.parts,
+      wastePercent: 10,
+      offsetMm: 3,
+      notes: null,
+      status: c.status,
+      submittedByCustomer: true,
+      submittedAt: Timestamp.fromDate(daysAgo(i + 1)),
+      totals: c.totals,
+    });
+    written += 1;
+  }
+
+  /*
+   * One approval waiting on a decision.
+   *
+   * So the approvals screen has a row, and so the notification function has something to fire on
+   * when somebody presses approve — which is the only way to see that path work.
+   */
+  batch.set(doc(collection(db, COL.approvals)), {
+    ...base,
+    status: "pending",
+    action: "delete",
+    collectionName: COL.workLogs,
+    docId: "demo-work-log",
+    summary: "Work log for Bashir Usman on a job that was cancelled",
+    reason: "Logged against the wrong job — the customer cancelled before any cutting started.",
+    requestedByUid: createdBy,
+    requestedByEmail: "manager@nightowl.com.ng",
+    requestedAt: Timestamp.fromDate(daysAgo(1)),
+    decidedByUid: null,
+    decidedByEmail: null,
+    decidedAt: null,
+  });
+  written += 1;
+  await batch.commit();
 
   onProgress("Done");
   return { written };
