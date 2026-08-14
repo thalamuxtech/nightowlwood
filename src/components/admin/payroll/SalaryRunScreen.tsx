@@ -910,4 +910,6 @@ function Tile({
     <div className="rounded-2xl border border-night-700/60 bg-night-950/40 p-4">
       <p className="text-xs uppercase tracking-wider text-cream-500">{label}</p>
       <p className={`mt-1.5 font-display text-xl ${colour}`}>{value}</p>
-    <
+    </div>
+  );
+}

@@ -482,6 +482,7 @@ export function WageRunScreen() {
           )}
         </section>
       </div>
+      {dialog}
     </div>
   );
 }

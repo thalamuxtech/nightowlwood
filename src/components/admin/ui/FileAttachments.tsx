@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { getDb, getFirebaseStorage } from "@/lib/firebase";
 import { writeAudit, type AuditActor } from "@/lib/erp/audit";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 import { Button } from "@/components/admin/ui/Fields";
 
 /**
@@ -100,6 +101,7 @@ export function FileAttachments({
   hint?: string;
   gallery?: boolean;
 }) {
+  const { confirm, dialog } = useConfirmBoolean();
   const [items, setItems] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -234,9 +236,12 @@ export function FileAttachments({
   }
 
   async function remove(item: Attachment) {
-    const ok = window.confirm(
-      `Remove ${item.name} from this record?\n\nThe file itself is kept, so a link already shared still works.`
-    );
+    const ok = await confirm({
+      title: `Remove ${item.name} from this record?`,
+      body: "The file itself is kept, so a link already shared still works.",
+      confirmLabel: "Remove attachment",
+      tone: "danger",
+    });
     if (!ok) return;
 
     setError("");
@@ -415,6 +420,7 @@ export function FileAttachments({
           ))}
         </ul>
       )}
+      {dialog}
     </section>
   );
 }

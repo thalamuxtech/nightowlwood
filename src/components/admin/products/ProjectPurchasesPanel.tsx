@@ -26,6 +26,7 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 import type { AuditActor } from "@/lib/erp/audit";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 interface Row extends ProjectPurchase {
   id: string;
@@ -62,6 +63,7 @@ export function ProjectPurchasesPanel({
   actor: AuditActor;
   onError: (m: string) => void;
 }) {
+  const { confirm, dialog } = useConfirmBoolean();
   const [rows, setRows] = useState<Row[]>([]);
   const [adding, setAdding] = useState(false);
 
@@ -198,13 +200,14 @@ export function ProjectPurchasesPanel({
                       <button
                         type="button"
                         aria-label={`Remove ${r.item}`}
-                        onClick={() => {
-                          if (
-                            !window.confirm(
-                              `Remove "${r.item}"? Its expense entry is removed too, so the books stay in step.`
-                            )
-                          )
-                            return;
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: `Remove "${r.item}"?`,
+                            body: "Its expense entry is removed too, so the books stay in step.",
+                            confirmLabel: "Remove purchase",
+                            tone: "danger",
+                          });
+                          if (!ok) return;
                           deleteProjectPurchase(getDb(), actor, projectId, r.id).catch(
                             (e) =>
                               onError(
@@ -224,6 +227,7 @@ export function ProjectPurchasesPanel({
           </table>
         </div>
       )}
+      {dialog}
     </section>
   );
 }

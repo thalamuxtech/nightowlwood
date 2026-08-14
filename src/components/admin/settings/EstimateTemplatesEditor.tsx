@@ -34,6 +34,7 @@ import {
   TextField,
 } from "@/components/admin/ui/Fields";
 import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider";
+import { useConfirmBoolean } from "@/components/admin/ui/ConfirmDialog";
 
 /**
  * The estimate templates, editable.
@@ -47,6 +48,7 @@ import { useAuditActor, useErpSession } from "@/components/admin/ErpAuthProvider
  * from memory and pretending a price never changes.
  */
 export function EstimateTemplatesEditor() {
+  const { confirm, dialog } = useConfirmBoolean();
   const session = useErpSession();
 
   const [templates, setTemplates] = useState<StoredTemplate[]>([]);
@@ -114,9 +116,12 @@ export function EstimateTemplatesEditor() {
   }
 
   async function reset(template: StoredTemplate) {
-    const ok = window.confirm(
-      `Put ${template.label} back to the standard list?\n\nYour changes to this template are discarded. Projects already estimated keep what they had.`
-    );
+    const ok = await confirm({
+      title: `Put ${template.label} back to the standard list?`,
+      body: "Your changes to this template are discarded. Projects already estimated keep what they had.",
+      confirmLabel: "Restore standard",
+      tone: "warn",
+    });
     if (!ok) return;
 
     setError("");
@@ -376,6 +381,7 @@ export function EstimateTemplatesEditor() {
           })}
         </div>
       )}
+      {dialog}
     </section>
   );
 }

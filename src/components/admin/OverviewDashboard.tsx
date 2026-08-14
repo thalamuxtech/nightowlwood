@@ -101,6 +101,8 @@ interface SalePoint {
    */
   netKobo: number;
   costKobo: number;
+  /** Still owed on a sale that went out on account. */
+  balanceKobo: number;
   soldAtMs: number | null;
   customerName: string;
 }
@@ -285,6 +287,7 @@ export function OverviewDashboard() {
                 id: d.id,
                 netKobo: (x.totalKobo ?? 0) - (x.taxKobo ?? 0),
                 costKobo: x.costOfGoodsKobo ?? 0,
+                balanceKobo: x.balanceKobo ?? 0,
                 soldAtMs: x.soldAt?.toMillis?.() ?? null,
                 customerName: x.customerName ?? "",
               };
@@ -432,6 +435,20 @@ export function OverviewDashboard() {
     // would either miss it or double it depending on which side was read.
     const collected = inRange.reduce((s, j) => s + j.paidKobo, 0);
     const outstanding = jobs.reduce((s, j) => s + j.balanceKobo, 0);
+
+    /*
+     * What the counter is still owed, kept separate from the job figure above.
+     *
+     * A sale on account counts as revenue the day the goods leave, so without this the
+     * dashboard would show the earnings and none of the debt behind them. Not folded into
+     * `outstanding`: that one is the service ledger and the tile says so, and quietly widening
+     * it would change what a figure means without changing its label.
+     *
+     * Unbounded by the range on purpose, like the job figure — a debt from two months ago is
+     * exactly the one that needs chasing, so limiting it to the window would hide the worst of
+     * it.
+     */
+    const counterOwed = sales.reduce((s, x) => s + x.balanceKobo, 0);
     const spend = expenses
       .filter((e) => e.dateMs !== null && e.dateMs >= since)
       .reduce((s, e) => s + e.amountKobo, 0);
@@ -460,6 +477,7 @@ export function OverviewDashboard() {
       allRevenue: serviceRevenue + productRevenue + retailRevenue,
       collected,
       outstanding,
+      counterOwed,
       spend,
       jobCount: inRange.length,
       projectCount: projectsInRange.length,
@@ -636,11 +654,26 @@ export function OverviewDashboard() {
                   value={totals.collected}
                   format={(n) => formatNaira(n)}
                 />
+                {/*
+                  * Outstanding, with the counter's debt folded into the same tile.
+                  *
+                  * Two receivables tiles would be a distinction nobody acts on — the question is
+                  * "how much are we owed", not "owed through which ledger" — but they come from
+                  * two places that cannot be summed upstream, so the tile adds them and the
+                  * caption says what is in it.
+                  */}
                 <Figure
-                  label="Outstanding, services"
-                  value={totals.outstanding}
+                  label={
+                    totals.counterOwed > 0 ? "Outstanding, all lines" : "Outstanding, services"
+                  }
+                  value={totals.outstanding + totals.counterOwed}
                   format={(n) => formatNaira(n)}
-                  warn={totals.outstanding > 0}
+                  warn={totals.outstanding + totals.counterOwed > 0}
+                  hint={
+                    totals.counterOwed > 0
+                      ? `${formatNaira(totals.outstanding)} on jobs, ${formatNaira(totals.counterOwed)} at the counter`
+                      : undefined
+                  }
                 />
               </>
             )}
@@ -898,12 +931,15 @@ function Figure({
   format,
   accent,
   warn,
+  /** What the figure is made of, when the label alone cannot say it. */
+  hint,
 }: {
   label: string;
   value: number;
   format: (n: number) => string;
   accent?: boolean;
   warn?: boolean;
+  hint?: string;
 }) {
   return (
     <motion.div
@@ -924,6 +960,7 @@ function Figure({
           warn ? "text-amber-300" : accent ? "text-brass-300" : "text-cream-50"
         }`}
       />
+      {hint && <p className="mt-1.5 text-xs leading-relaxed text-cream-600">{hint}</p>}
     </motion.div>
   );
 }
